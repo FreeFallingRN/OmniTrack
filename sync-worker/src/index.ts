@@ -111,3 +111,4 @@ export function setupCronTrigger(): void {
 
   console.log("✅ Time-driven trigger successfully set to run syncMoonReader every 10 minutes.");
 }
+

@@ -35,3 +35,4 @@ export interface ScriptConfig {
   targetDriveFolder: string;
   lastSyncTimestamp: number;
 }
+

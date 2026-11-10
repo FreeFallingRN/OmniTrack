@@ -19,7 +19,15 @@ async function runMigrations() {
   console.log("🚀 Starting database migrations...");
   console.log(`Connecting to: ${connectionString.replace(/:[^:@]+@/, ":****@")}`);
 
-  const sql = postgres(connectionString, { max: 1 });
+  const isLocalHost = connectionString.includes("localhost") || connectionString.includes("127.0.0.1");
+
+  // Explicit SSL configuration prevents SELF_SIGNED_CERT_IN_CHAIN on Supabase connection poolers
+  const sql = postgres(connectionString, {
+    max: 1,
+    ssl: isLocalHost ? false : { rejectUnauthorized: false },
+    onnotice: () => {}, // Suppress verbose Postgres notice messages in CI logs
+  });
+
   const db = drizzle(sql);
 
   try {
@@ -42,21 +50,19 @@ async function runMigrations() {
       END;
       $$ LANGUAGE plpgsql;
 
-      -- Apply updated_at trigger to series, media_entries, and authors
-      DROP TRIGGER IF EXISTS set_series_updated_at ON series;
-      CREATE TRIGGER set_series_updated_at
-      BEFORE UPDATE ON series
-      FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-      DROP TRIGGER IF EXISTS set_media_entries_updated_at ON media_entries;
-      CREATE TRIGGER set_media_entries_updated_at
-      BEFORE UPDATE ON media_entries
-      FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-      DROP TRIGGER IF EXISTS set_authors_updated_at ON authors;
-      CREATE TRIGGER set_authors_updated_at
-      BEFORE UPDATE ON authors
-      FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+      -- Apply updated_at triggers safely if tables exist
+      DO $$
+      DECLARE
+          tbl text;
+          tables text[] := ARRAY['series', 'media_entries', 'authors'];
+      BEGIN
+          FOREACH tbl IN ARRAY tables LOOP
+              IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = tbl) THEN
+                  EXECUTE format('DROP TRIGGER IF EXISTS %I ON %I;', 'set_' || tbl || '_updated_at', tbl);
+                  EXECUTE format('CREATE TRIGGER %I BEFORE UPDATE ON %I FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();', 'set_' || tbl || '_updated_at', tbl);
+              END IF;
+          END LOOP;
+      END $$;
 
       -- 2. Ensure single active target trigger for series and media_entries
       CREATE OR REPLACE FUNCTION ensure_single_active_series()
@@ -71,12 +77,17 @@ async function runMigrations() {
       END;
       $$ LANGUAGE plpgsql;
 
-      DROP TRIGGER IF EXISTS trigger_ensure_single_active_series ON series;
-      CREATE TRIGGER trigger_ensure_single_active_series
-      BEFORE INSERT OR UPDATE OF is_active_target ON series
-      FOR EACH ROW
-      WHEN (NEW.is_active_target = TRUE)
-      EXECUTE FUNCTION ensure_single_active_series();
+      DO $$
+      BEGIN
+          IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'series') THEN
+              DROP TRIGGER IF EXISTS trigger_ensure_single_active_series ON series;
+              CREATE TRIGGER trigger_ensure_single_active_series
+              BEFORE INSERT OR UPDATE OF is_active_target ON series
+              FOR EACH ROW
+              WHEN (NEW.is_active_target = TRUE)
+              EXECUTE FUNCTION ensure_single_active_series();
+          END IF;
+      END $$;
 
       CREATE OR REPLACE FUNCTION ensure_single_active_entry()
       RETURNS TRIGGER AS $$
@@ -90,12 +101,17 @@ async function runMigrations() {
       END;
       $$ LANGUAGE plpgsql;
 
-      DROP TRIGGER IF EXISTS trigger_ensure_single_active_entry ON media_entries;
-      CREATE TRIGGER trigger_ensure_single_active_entry
-      BEFORE INSERT OR UPDATE OF is_active_target ON media_entries
-      FOR EACH ROW
-      WHEN (NEW.is_active_target = TRUE)
-      EXECUTE FUNCTION ensure_single_active_entry();
+      DO $$
+      BEGIN
+          IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'media_entries') THEN
+              DROP TRIGGER IF EXISTS trigger_ensure_single_active_entry ON media_entries;
+              CREATE TRIGGER trigger_ensure_single_active_entry
+              BEFORE INSERT OR UPDATE OF is_active_target ON media_entries
+              FOR EACH ROW
+              WHEN (NEW.is_active_target = TRUE)
+              EXECUTE FUNCTION ensure_single_active_entry();
+          END IF;
+      END $$;
 
       -- 3. Row Level Security (RLS) for all tables
       DO $$
@@ -113,9 +129,11 @@ async function runMigrations() {
           ];
       BEGIN
           FOREACH tbl IN ARRAY tables LOOP
-              EXECUTE format('ALTER TABLE IF EXISTS %I ENABLE ROW LEVEL SECURITY;', tbl);
-              EXECUTE format('DROP POLICY IF EXISTS "Allow anon and auth all on %s" ON %I;', tbl, tbl);
-              EXECUTE format('CREATE POLICY "Allow anon and auth all on %s" ON %I FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);', tbl, tbl);
+              IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = tbl) THEN
+                  EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY;', tbl);
+                  EXECUTE format('DROP POLICY IF EXISTS "Allow anon and auth all on %s" ON %I;', tbl, tbl);
+                  EXECUTE format('CREATE POLICY "Allow anon and auth all on %s" ON %I FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);', tbl, tbl);
+              END IF;
           END LOOP;
       END $$;
 
@@ -127,11 +145,13 @@ async function runMigrations() {
       BEGIN
           IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
               FOREACH tbl IN ARRAY tables LOOP
-                  IF NOT EXISTS (
-                      SELECT 1 FROM pg_publication_tables 
-                      WHERE pubname = 'supabase_realtime' AND tablename = tbl
-                  ) THEN
-                      EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE %I;', tbl);
+                  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = tbl) THEN
+                      IF NOT EXISTS (
+                          SELECT 1 FROM pg_publication_tables 
+                          WHERE pubname = 'supabase_realtime' AND tablename = tbl
+                      ) THEN
+                          EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE %I;', tbl);
+                      END IF;
                   END IF;
               END LOOP;
           END IF;
@@ -142,9 +162,9 @@ async function runMigrations() {
     console.log("🎉 All migrations completed successfully!");
   } catch (error) {
     console.error("❌ Migration failed:", error);
-    process.exit(1);
+    process.exitCode = 1;
   } finally {
-    await sql.end();
+    await sql.end({ timeout: 5 });
   }
 }
 
