@@ -1,0 +1,151 @@
+import { drizzle } from "drizzle-orm/postgres-js";
+import { migrate } from "drizzle-orm/postgres-js/migrator";
+import postgres from "postgres";
+import * as dotenv from "dotenv";
+import * as path from "path";
+
+// Load root .env or local .env
+dotenv.config({ path: path.resolve(__dirname, "../../.env") });
+dotenv.config();
+
+const connectionString = process.env.DATABASE_URL || process.env.SUPABASE_DB_URL;
+
+if (!connectionString) {
+  console.error("❌ [ERROR] DATABASE_URL or SUPABASE_DB_URL environment variable is required.");
+  process.exit(1);
+}
+
+async function runMigrations() {
+  console.log("🚀 Starting database migrations...");
+  console.log(`Connecting to: ${connectionString.replace(/:[^:@]+@/, ":****@")}`);
+
+  const sql = postgres(connectionString, { max: 1 });
+  const db = drizzle(sql);
+
+  try {
+    const migrationsFolder = path.resolve(__dirname, "../migrations");
+    console.log(`📂 Applying schema migrations from: ${migrationsFolder}`);
+
+    await migrate(db, { migrationsFolder });
+    console.log("✅ Drizzle schema migrations applied successfully.");
+
+    // Apply database triggers, RLS policies, and realtime publications
+    console.log("⚙️  Configuring PostgreSQL functions, triggers, and RLS policies...");
+
+    await sql.unsafe(`
+      -- 1. Ensure updated_at auto-update trigger function
+      CREATE OR REPLACE FUNCTION update_updated_at_column()
+      RETURNS TRIGGER AS $$
+      BEGIN
+          NEW.updated_at = now();
+          RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+
+      -- Apply updated_at trigger to series, media_entries, and authors
+      DROP TRIGGER IF EXISTS set_series_updated_at ON series;
+      CREATE TRIGGER set_series_updated_at
+      BEFORE UPDATE ON series
+      FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+      DROP TRIGGER IF EXISTS set_media_entries_updated_at ON media_entries;
+      CREATE TRIGGER set_media_entries_updated_at
+      BEFORE UPDATE ON media_entries
+      FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+      DROP TRIGGER IF EXISTS set_authors_updated_at ON authors;
+      CREATE TRIGGER set_authors_updated_at
+      BEFORE UPDATE ON authors
+      FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+      -- 2. Ensure single active target trigger for series and media_entries
+      CREATE OR REPLACE FUNCTION ensure_single_active_series()
+      RETURNS TRIGGER AS $$
+      BEGIN
+          IF NEW.is_active_target = TRUE THEN
+              UPDATE series
+              SET is_active_target = FALSE
+              WHERE id <> NEW.id AND is_active_target = TRUE;
+          END IF;
+          RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+
+      DROP TRIGGER IF EXISTS trigger_ensure_single_active_series ON series;
+      CREATE TRIGGER trigger_ensure_single_active_series
+      BEFORE INSERT OR UPDATE OF is_active_target ON series
+      FOR EACH ROW
+      WHEN (NEW.is_active_target = TRUE)
+      EXECUTE FUNCTION ensure_single_active_series();
+
+      CREATE OR REPLACE FUNCTION ensure_single_active_entry()
+      RETURNS TRIGGER AS $$
+      BEGIN
+          IF NEW.is_active_target = TRUE THEN
+              UPDATE media_entries
+              SET is_active_target = FALSE
+              WHERE id <> NEW.id AND is_active_target = TRUE;
+          END IF;
+          RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+
+      DROP TRIGGER IF EXISTS trigger_ensure_single_active_entry ON media_entries;
+      CREATE TRIGGER trigger_ensure_single_active_entry
+      BEFORE INSERT OR UPDATE OF is_active_target ON media_entries
+      FOR EACH ROW
+      WHEN (NEW.is_active_target = TRUE)
+      EXECUTE FUNCTION ensure_single_active_entry();
+
+      -- 3. Row Level Security (RLS) for all tables
+      DO $$
+      DECLARE
+          tbl text;
+          tables text[] := ARRAY[
+              'series',
+              'media_entries',
+              'alternate_titles',
+              'authors',
+              'series_authors',
+              'media_relations',
+              'progress_history',
+              'external_links'
+          ];
+      BEGIN
+          FOREACH tbl IN ARRAY tables LOOP
+              EXECUTE format('ALTER TABLE IF EXISTS %I ENABLE ROW LEVEL SECURITY;', tbl);
+              EXECUTE format('DROP POLICY IF EXISTS "Allow anon and auth all on %s" ON %I;', tbl, tbl);
+              EXECUTE format('CREATE POLICY "Allow anon and auth all on %s" ON %I FOR ALL TO anon, authenticated USING (true) WITH CHECK (true);', tbl, tbl);
+          END LOOP;
+      END $$;
+
+      -- 4. Supabase Realtime publication
+      DO $$
+      DECLARE
+          tbl text;
+          tables text[] := ARRAY['series', 'media_entries', 'alternate_titles', 'progress_history', 'external_links'];
+      BEGIN
+          IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+              FOREACH tbl IN ARRAY tables LOOP
+                  IF NOT EXISTS (
+                      SELECT 1 FROM pg_publication_tables 
+                      WHERE pubname = 'supabase_realtime' AND tablename = tbl
+                  ) THEN
+                      EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE %I;', tbl);
+                  END IF;
+              END LOOP;
+          END IF;
+      END $$;
+    `);
+
+    console.log("✅ Triggers, RLS, and Realtime publications verified.");
+    console.log("🎉 All migrations completed successfully!");
+  } catch (error) {
+    console.error("❌ Migration failed:", error);
+    process.exit(1);
+  } finally {
+    await sql.end();
+  }
+}
+
+runMigrations();
