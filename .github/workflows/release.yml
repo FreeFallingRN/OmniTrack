@@ -28,7 +28,11 @@ jobs:
       - name: Decode Release Keystore
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | tr -d '\r\n' | base64 -d > omnitrack-release.jks
-          echo "Decoded Keystore size: $(wc -c < omnitrack-release.jks) bytes"
+          if [ ! -s omnitrack-release.jks ]; then
+            echo "Error: omnitrack-release.jks is 0 bytes. Check KEYSTORE_BASE64 secret in GitHub."
+            exit 1
+          fi
+          echo "Keystore decoded successfully ($(wc -c < omnitrack-release.jks) bytes)."
         working-directory: android
 
       - name: Grant Execute Permission for Gradle
@@ -36,7 +40,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build Signed Release APK
-        run: ./gradlew assembleRelease --no-daemon
+        run: ./gradlew assembleRelease --no-daemon --no-configuration-cache
         working-directory: android
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
