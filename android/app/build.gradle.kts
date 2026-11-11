@@ -58,8 +58,9 @@ extensions.configure<ApplicationExtension> {
                 if (debugKeystore.exists()) {
                     initWith(getByName("debug"))
                 } else {
-                    // If running in CI without keystore secrets, unset signingConfig to prevent validation errors
-                    storeFile = null
+                    throw GradleException(
+                        "Release build failed: omnitrack-release.jks or environment secrets (KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD) were not found on this machine."
+                    )
                 }
             }
         }

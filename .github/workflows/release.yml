@@ -22,15 +22,19 @@ jobs:
           java-version: "17"
           distribution: "temurin"
 
-      - name: Decode Keystore
+      - name: Setup Gradle Cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode Release Keystore
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/release.jks
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > omnitrack-release.jks
+        working-directory: android
 
       - name: Grant Execute Permission for Gradle
         working-directory: ./android
         run: chmod +x gradlew
 
-      - name: Build Release APK
+      - name: Build Signed Release APK
         run: ./gradlew assembleRelease --no-daemon
         working-directory: android
         env:
