@@ -10,7 +10,36 @@ permissions:
   contents: write
 
 jobs:
+  validate-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract version from build.gradle.kts
+        id: gradle_version
+        run: |
+          # Extract versionName value from app/build.gradle.kts
+          VERSION_NAME=$(grep 'versionName =' app/build.gradle.kts | sed 's/.*versionName = "\(.*\)"/\1/')
+          echo "Gradle versionName: $VERSION_NAME"
+          echo "version=$VERSION_NAME" >> $GITHUB_OUTPUT
+
+      - name: Verify Tag matches Gradle Version
+        run: |
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          GRADLE_VERSION=${{ steps.gradle_version.outputs.version }}
+
+          echo "Checking tag v$TAG_VERSION against Gradle version $GRADLE_VERSION"
+
+          if [ "$TAG_VERSION" != "$GRADLE_VERSION" ]; then
+            echo "Error: Git tag (v$TAG_VERSION) does not match versionName ($GRADLE_VERSION) in app/build.gradle.kts!"
+            exit 1
+          else
+            echo "Version check passed successfully!"
+          fi
+
   release:
+    needs: validate-version
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code

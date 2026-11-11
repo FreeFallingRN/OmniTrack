@@ -134,116 +134,143 @@ fun OmniTrackHomeScreen(
             }
         }
     ) { innerPadding ->
-        Column(
+        // Switch content based on active bottom nav tab index
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .statusBarsPadding()
-                .padding(horizontal = 16.dp)
         ) {
-            Spacer(modifier = Modifier.height(8.dp))
+            when (bottomNavIndex) {
+                0 -> {
+                    // 0: Library View (Your main search, tabs, and media list)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .statusBarsPadding()
+                            .padding(horizontal = 16.dp)
+                    ) {
+                        Spacer(modifier = Modifier.height(8.dp))
 
-            // Search Bar
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = { Text("Search library...", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)) },
-                leadingIcon = {
-                    Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Icons.Default.Close, contentDescription = "Clear", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(14.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                    focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                    unfocusedBorderColor = androidx.compose.ui.graphics.Color.Transparent
-                ),
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Media Type Tabs (Novels, Comics, Anime, Movies)
-            ScrollableTabRow(
-                selectedTabIndex = selectedTabMediaType.ordinal,
-                edgePadding = 0.dp,
-                containerColor = androidx.compose.ui.graphics.Color.Transparent,
-                indicator = { tabPositions ->
-                    if (selectedTabMediaType.ordinal < tabPositions.size) {
-                        TabRowDefaults.SecondaryIndicator(
-                            modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTabMediaType.ordinal]),
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                },
-                divider = {}
-            ) {
-                MediaType.entries.forEach { mediaType ->
-                    Tab(
-                        selected = selectedTabMediaType == mediaType,
-                        onClick = { selectedTabMediaType = mediaType },
-                        text = {
-                            Text(
-                                text = mediaType.label,
-                                fontWeight = if (selectedTabMediaType == mediaType) FontWeight.Bold else FontWeight.Normal,
-                                color = if (selectedTabMediaType == mediaType) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Filtered Media List
-            val filteredList = seriesList.filter { series ->
-                val matchesType = series.type == selectedTabMediaType
-                val matchesStatus = series.userStatus == selectedUserStatus
-                val matchesSearch = searchQuery.isBlank() || series.title.contains(searchQuery, ignoreCase = true)
-                matchesType && matchesStatus && matchesSearch
-            }
-
-            if (filteredList.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "No entries found",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                    )
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    items(filteredList, key = { it.id }) { series ->
-                        TrackedMediaRow(
-                            series = series,
-                            onClick = { selectedSeriesForDetail = series },
-                            onToggleActiveTarget = {
-                                viewModel.toggleActiveTarget(series.id, !series.isActiveTarget)
-                                onTogglePinNotification(series)
+                        // Search Bar
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = { Text("Search library...", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)) },
+                            leadingIcon = {
+                                Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             },
-                            onIncrement = {
-                                viewModel.updateProgress(series.id, series.currentCumulativeUnit + 1.0)
-                            }
+                            trailingIcon = {
+                                if (searchQuery.isNotEmpty()) {
+                                    IconButton(onClick = { searchQuery = "" }) {
+                                        Icon(Icons.Default.Close, contentDescription = "Clear", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            },
+                            singleLine = true,
+                            shape = RoundedCornerShape(14.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                                unfocusedBorderColor = androidx.compose.ui.graphics.Color.Transparent
+                            ),
+                            modifier = Modifier.fillMaxWidth()
                         )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Media Type Tabs (Novels, Comics, Anime, Movies)
+                        ScrollableTabRow(
+                            selectedTabIndex = selectedTabMediaType.ordinal,
+                            edgePadding = 0.dp,
+                            containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                            indicator = { tabPositions ->
+                                if (selectedTabMediaType.ordinal < tabPositions.size) {
+                                    TabRowDefaults.SecondaryIndicator(
+                                        modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTabMediaType.ordinal]),
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            },
+                            divider = {}
+                        ) {
+                            MediaType.entries.forEach { mediaType ->
+                                Tab(
+                                    selected = selectedTabMediaType == mediaType,
+                                    onClick = { selectedTabMediaType = mediaType },
+                                    text = {
+                                        Text(
+                                            text = mediaType.label,
+                                            fontWeight = if (selectedTabMediaType == mediaType) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (selectedTabMediaType == mediaType) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Filtered Media List
+                        val filteredList = seriesList.filter { series ->
+                            val matchesType = series.type == selectedTabMediaType
+                            val matchesStatus = series.userStatus == selectedUserStatus
+                            val matchesSearch = searchQuery.isBlank() || series.title.contains(searchQuery, ignoreCase = true)
+                            matchesType && matchesStatus && matchesSearch
+                        }
+
+                        if (filteredList.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .weight(1f),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "No entries found",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                )
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                items(filteredList, key = { it.id }) { series ->
+                                    TrackedMediaRow(
+                                        series = series,
+                                        onClick = { selectedSeriesForDetail = series },
+                                        onToggleActiveTarget = {
+                                            viewModel.toggleActiveTarget(series.id, !series.isActiveTarget)
+                                            onTogglePinNotification(series)
+                                        },
+                                        onIncrement = {
+                                            viewModel.updateProgress(series.id, series.currentCumulativeUnit + 1.0)
+                                        }
+                                    )
+                                }
+                            }
+                        }
                     }
+                }
+                1 -> {
+                    // 1: Explore View (Placeholder or your explore screen)
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Explore Screen", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                2 -> {
+                    // 2: History View (Placeholder or your history screen)
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("History Screen", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                3 -> {
+                    // 3: Settings View (Loads the settings screen with our update checker card!)
+                    OmniTrackSettingsScreen()
                 }
             }
         }

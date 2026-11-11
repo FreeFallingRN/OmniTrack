@@ -19,8 +19,6 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.omnitrack.app.BuildConfig
-import com.omnitrack.app.data.GitHubRelease
-import com.omnitrack.app.data.UpdateChecker
 import com.omnitrack.app.data.local.AppDatabase
 import com.omnitrack.app.data.repository.SeriesRepositoryImpl
 import com.omnitrack.app.domain.model.Series
@@ -28,16 +26,20 @@ import com.omnitrack.app.domain.repository.SeriesRepository
 import com.omnitrack.app.service.ActionNotificationService
 import com.omnitrack.app.ui.screens.OmniTrackHomeScreen
 import com.omnitrack.app.ui.theme.OmniTrackTheme
+import com.omnitrack.app.utils.GitHubRelease
+import com.omnitrack.app.utils.UpdateChecker
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.android.Android
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.remember
 
 class MainActivity : ComponentActivity() {
 
-    private var availableUpdate by mutableStateOf<GitHubRelease?>(null)
+    var availableUpdate by mutableStateOf<Triple<String, String, String>?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -89,7 +91,11 @@ class MainActivity : ComponentActivity() {
         // Check for updates from GitHub releases on app startup
         lifecycleScope.launch {
             try {
-                availableUpdate = UpdateChecker.checkForUpdates()
+                val pInfo = packageManager.getPackageInfo(packageName, 0)
+                val currentVersion = pInfo.versionName ?: "1.0.0"
+
+                // Pass current version to checkForUpdate
+                availableUpdate = UpdateChecker.checkForUpdate(currentVersion)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -98,6 +104,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             OmniTrackTheme {
                 val seriesViewModel: SeriesViewModel = viewModel(factory = viewModelFactory)
+                val coroutineScope = rememberCoroutineScope()
+                var isDownloadingUpdate by remember { mutableStateOf(false) }
 
                 OmniTrackHomeScreen(
                     viewModel = seriesViewModel,
@@ -107,23 +115,36 @@ class MainActivity : ComponentActivity() {
                 )
 
                 // Render Update Available dialog if a newer GitHub release is detected
-                availableUpdate?.let { release ->
+                availableUpdate?.let { (version, releaseName, downloadUrl) ->
                     AlertDialog(
-                        onDismissRequest = { availableUpdate = null },
-                        title = { Text("Update Available (${release.tagName})") },
-                        text = { Text("A new version of OmniTrack is available on GitHub. Would you like to download it?") },
+                        onDismissRequest = { if (!isDownloadingUpdate) availableUpdate = null },
+                        title = { Text("Update Available (v$version)") },
+                        text = {
+                            Text(if (isDownloadingUpdate) "Downloading update..." else "A new version of OmniTrack ($releaseName) is available. Would you like to download and install it?")
+                        },
                         confirmButton = {
-                            TextButton(onClick = {
-                                val intent = Intent(Intent.ACTION_VIEW, release.htmlUrl.toUri())
-                                startActivity(intent)
-                                availableUpdate = null
-                            }) {
-                                Text("Download")
+                            if (!isDownloadingUpdate) {
+                                TextButton(onClick = {
+                                    isDownloadingUpdate = true
+                                    coroutineScope.launch {
+                                        val success = UpdateChecker.downloadAndInstallApk(this@MainActivity, downloadUrl) { progress ->
+                                            // Optional: track progress if you want a progress bar in the dialog
+                                        }
+                                        isDownloadingUpdate = false
+                                        if (success) {
+                                            availableUpdate = null
+                                        }
+                                    }
+                                }) {
+                                    Text("Download & Install")
+                                }
                             }
                         },
                         dismissButton = {
-                            TextButton(onClick = { availableUpdate = null }) {
-                                Text("Later")
+                            if (!isDownloadingUpdate) {
+                                TextButton(onClick = { availableUpdate = null }) {
+                                    Text("Later")
+                                }
                             }
                         }
                     )
