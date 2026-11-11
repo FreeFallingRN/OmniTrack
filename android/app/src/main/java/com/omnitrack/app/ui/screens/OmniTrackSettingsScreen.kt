@@ -13,12 +13,12 @@ import com.omnitrack.app.ui.components.UpdateSettingsCard
 @Composable
 fun OmniTrackSettingsScreen() {
     val context = LocalContext.current
-    var appVersion by remember { mutableStateOf("1.0.0") }
+    var appVersion by remember { mutableStateOf("0.0.0") }
 
     LaunchedEffect(Unit) {
         try {
             val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            appVersion = pInfo.versionName ?: "1.0.0"
+            appVersion = pInfo.versionName ?: "0.0.0"
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -31,17 +31,6 @@ fun OmniTrackSettingsScreen() {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Screen Title
-        Text(
-            text = "Settings",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground
-        )
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        // Update Card Component
         UpdateSettingsCard()
     }
 }

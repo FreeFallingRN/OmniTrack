@@ -55,43 +55,44 @@ fun OmniTrackHomeScreen(
                     .padding(vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                // Status filter pills: fully round circle shape with zero elevation
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    UserStatus.entries.forEach { status ->
-                        val isSelected = selectedUserStatus == status
-                        Surface(
-                            shape = CircleShape, // <-- Explicitly set shape here so Surface draws a true pill capsule
-                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer
-                            else androidx.compose.ui.graphics.Color.Transparent,
-                            tonalElevation = 0.dp,
-                            shadowElevation = 0.dp,
-                            onClick = { selectedUserStatus = status }
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                                contentAlignment = Alignment.Center
+                // Status filter pills: only render at the bottom when on the Library screen (index 0)
+                if (bottomNavIndex == 0) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        UserStatus.entries.forEach { status ->
+                            val isSelected = selectedUserStatus == status
+                            Surface(
+                                shape = CircleShape,
+                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer
+                                else androidx.compose.ui.graphics.Color.Transparent,
+                                tonalElevation = 0.dp,
+                                shadowElevation = 0.dp,
+                                onClick = { selectedUserStatus = status }
                             ) {
-                                Text(
-                                    text = status.label,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
-                                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                )
+                                Box(
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = status.label,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
+                                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
                             }
                         }
                     }
                 }
 
-                // Custom bottom bar row: completely clean layout with zero outer rims or outlines
+                // Main bottom navigation bar row
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -142,7 +143,7 @@ fun OmniTrackHomeScreen(
         ) {
             when (bottomNavIndex) {
                 0 -> {
-                    // 0: Library View (Your main search, tabs, and media list)
+                    // 0: Library View (Search bar, media tabs, and list)
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -257,19 +258,19 @@ fun OmniTrackHomeScreen(
                     }
                 }
                 1 -> {
-                    // 1: Explore View (Placeholder or your explore screen)
+                    // 1: Explore View
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text("Explore Screen", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 2 -> {
-                    // 2: History View (Placeholder or your history screen)
+                    // 2: History View
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text("History Screen", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 3 -> {
-                    // 3: Settings View (Loads the settings screen with our update checker card!)
+                    // 3: Settings View
                     OmniTrackSettingsScreen()
                 }
             }
