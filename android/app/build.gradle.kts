@@ -23,26 +23,27 @@ val supabaseUrl: String = (localProperties.getProperty("SUPABASE_URL")
 val supabaseAnonKey: String = (localProperties.getProperty("SUPABASE_ANON_KEY")
     ?: System.getenv("SUPABASE_ANON_KEY") ?: "").trim()
 
-// Auto-decode keystore if missing locally or on CI
-val keystoreFile = rootProject.file("omnitrack-release.jks")
+// Resolve or auto-decode keystore file
+val releaseStoreFile = rootProject.file("omnitrack-release.jks")
 val rawBase64Secret = System.getenv("KEYSTORE_BASE64") ?: ""
 
-if ((!keystoreFile.exists() || keystoreFile.length() == 0L) && rawBase64Secret.isNotBlank()) {
+if ((!releaseStoreFile.exists() || releaseStoreFile.length() == 0L) && rawBase64Secret.isNotBlank()) {
     try {
         val cleanBase64 = rawBase64Secret.replace("\r", "").replace("\n", "").replace(" ", "").trim()
         val decodedBytes = Base64.getDecoder().decode(cleanBase64)
-        keystoreFile.writeBytes(decodedBytes)
+        releaseStoreFile.writeBytes(decodedBytes)
     } catch (e: Exception) {
         logger.error("Failed to decode KEYSTORE_BASE64 environment variable: ${e.message}")
     }
 }
 
-val keystorePassword: String = (localProperties.getProperty("KEYSTORE_PASSWORD")
+// Distinct variable names to prevent Kotlin DSL receiver shadowing inside SigningConfig scope
+val releaseStorePassword: String = (localProperties.getProperty("KEYSTORE_PASSWORD")
     ?: System.getenv("KEYSTORE_PASSWORD") ?: "").trim()
-val keyAlias: String = (localProperties.getProperty("KEY_ALIAS")
+val releaseKeyAlias: String = (localProperties.getProperty("KEY_ALIAS")
     ?: (localProperties.getProperty("KEYSTORE_ALIAS")
         ?: (System.getenv("KEY_ALIAS") ?: (System.getenv("KEYSTORE_ALIAS") ?: "")))).trim()
-val keyPassword: String = (localProperties.getProperty("KEY_PASSWORD")
+val releaseKeyPassword: String = (localProperties.getProperty("KEY_PASSWORD")
     ?: System.getenv("KEY_PASSWORD") ?: "").trim()
 
 extensions.configure<ApplicationExtension> {
@@ -62,20 +63,18 @@ extensions.configure<ApplicationExtension> {
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
     }
 
-    signingConfigs {
-        create("release") {
-            storeFile = keystoreFile
-            storePassword = keystorePassword
-            this.keyAlias = keyAlias
-            this.keyPassword = keyPassword
-        }
+    val releaseSigningConfig = signingConfigs.create("release") {
+        storeFile = releaseStoreFile
+        storePassword = releaseStorePassword
+        keyAlias = releaseKeyAlias
+        keyPassword = releaseKeyPassword
     }
 
     buildTypes {
         getByName("release") {
             isMinifyEnabled = false
             isShrinkResources = false
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = releaseSigningConfig
         }
     }
 
