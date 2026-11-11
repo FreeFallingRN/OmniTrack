@@ -55,7 +55,7 @@ extensions.configure<ApplicationExtension> {
         minSdk = 26
         targetSdk = 37
         versionCode = 2
-        versionName = "1.3.0"
+        versionName = "v1.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
