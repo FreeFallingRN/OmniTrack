@@ -27,7 +27,8 @@ val keystorePassword = localProperties.getProperty("KEYSTORE_PASSWORD") ?: Syste
 val keyAlias = localProperties.getProperty("KEY_ALIAS") ?: System.getenv("KEY_ALIAS") ?: ""
 val keyPassword = localProperties.getProperty("KEY_PASSWORD") ?: System.getenv("KEY_PASSWORD") ?: ""
 
-val hasValidReleaseSigning = keystoreFile.exists() && keystorePassword.isNotEmpty() && keyAlias.isNotEmpty() && keyPassword.isNotEmpty()
+val isKeystoreFileValid = keystoreFile.exists() && keystoreFile.length() > 0L
+val hasValidReleaseSigning = isKeystoreFileValid && keystorePassword.isNotEmpty() && keyAlias.isNotEmpty() && keyPassword.isNotEmpty()
 
 extensions.configure<ApplicationExtension> {
     namespace = "com.omnitrack.app"
@@ -54,13 +55,16 @@ extensions.configure<ApplicationExtension> {
                 this.keyAlias = keyAlias
                 this.keyPassword = keyPassword
             } else {
-                val debugKeystore = file("${System.getProperty("user.home")}/.android/debug.keystore")
-                if (debugKeystore.exists()) {
-                    initWith(getByName("debug"))
-                } else {
-                    throw GradleException(
-                        "Release build failed: omnitrack-release.jks or environment secrets (KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD) were not found on this machine."
-                    )
+                val isReleaseBuild = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+                if (isReleaseBuild) {
+                    val missingParams = mutableListOf<String>()
+                    if (!keystoreFile.exists()) missingParams.add("File 'omnitrack-release.jks' does not exist")
+                    else if (keystoreFile.length() == 0L) missingParams.add("File 'omnitrack-release.jks' exists but is 0 bytes")
+                    if (keystorePassword.isEmpty()) missingParams.add("KEYSTORE_PASSWORD env var is empty")
+                    if (keyAlias.isNullOrEmpty()) missingParams.add("KEY_ALIAS env var is empty")
+                    if (keyPassword.isNullOrEmpty()) missingParams.add("KEY_PASSWORD env var is empty")
+
+                    throw GradleException("Release build failed due to missing signing inputs:\n  - " + missingParams.joinToString("\n  - "))
                 }
             }
         }
@@ -70,13 +74,7 @@ extensions.configure<ApplicationExtension> {
         getByName("release") {
             isMinifyEnabled = false
             isShrinkResources = false
-
-            // Only assign release signing config if a valid keystore file exists
-            signingConfig = if (hasValidReleaseSigning || file("${System.getProperty("user.home")}/.android/debug.keystore").exists()) {
-                signingConfigs.getByName("release")
-            } else {
-                null
-            }
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
