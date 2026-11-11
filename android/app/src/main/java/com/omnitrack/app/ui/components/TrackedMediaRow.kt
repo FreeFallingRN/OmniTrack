@@ -68,8 +68,12 @@ fun TrackedMediaRow(
             Spacer(modifier = Modifier.height(4.dp))
 
             Text(
-                text = "${series.unitName} ${series.currentCumulativeUnit.toInt()}" +
-                        (series.totalUnits?.let { " / ${it.toInt()} Chapters" } ?: " Chapters"),
+                text = buildString {
+                    append("${series.unitName} ${series.currentCumulativeUnit.toInt()}")
+                    if (series.totalUnits != null && series.totalUnits > 0) {
+                        append(" / ${series.totalUnits.toInt()}")
+                    }
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
