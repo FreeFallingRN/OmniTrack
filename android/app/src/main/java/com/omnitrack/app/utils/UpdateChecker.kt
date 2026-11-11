@@ -35,12 +35,13 @@ object UpdateChecker {
     private val json = Json { ignoreUnknownKeys = true }
 
     // Replace with your actual GitHub repository (e.g., "owner/repo")
-    private const val GITHUB_REPO = "your-username/OmniTrack"
+    private const val GITHUB_REPO = "FreeFallingRN/OmniTrack"
 
     suspend fun checkForUpdate(currentVersion: String): Triple<String, String, String>? {
         return try {
             val response: String = client.get("https://api.github.com/repos/$GITHUB_REPO/releases/latest") {
                 header("Accept", "application/vnd.github+json")
+                header("User-Agent", "OmniTrack-App") // <-- Add this line here
             }.body()
 
             val release = json.decodeFromString<GitHubRelease>(response)
