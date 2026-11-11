@@ -30,7 +30,7 @@ jobs:
         working-directory: ./android
         run: chmod +x gradlew
 
-      - name: Build Signed Release APK
+      - name: Build Release APK
         run: ./gradlew assembleRelease --no-daemon
         working-directory: android
         env:
@@ -40,10 +40,16 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
 
-      - name: Rename Release APK Output
+      - name: Prepare Release Artifact
         run: |
           TAG_NAME=${GITHUB_REF#refs/tags/}
-          mv android/app/build/outputs/apk/release/app-release.apk android/app/build/outputs/apk/release/omnitrack-${TAG_NAME}.apk
+          APK_FILE=$(find android/app/build/outputs/apk/release -type f -name "*.apk" | head -n 1)
+          if [ -z "$APK_FILE" ]; then
+            echo "Error: No APK found in release output directory!"
+            exit 1
+          fi
+          echo "Found APK at: $APK_FILE"
+          mv "$APK_FILE" "android/app/build/outputs/apk/release/omnitrack-${TAG_NAME}.apk"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
