@@ -1,4 +1,5 @@
 import com.android.build.api.dsl.ApplicationExtension
+import java.util.Base64
 import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
@@ -22,7 +23,21 @@ val supabaseUrl: String = (localProperties.getProperty("SUPABASE_URL")
 val supabaseAnonKey: String = (localProperties.getProperty("SUPABASE_ANON_KEY")
     ?: System.getenv("SUPABASE_ANON_KEY") ?: "").trim()
 
+// 1. Keystore File Resolution & Fallback Auto-Decode from Environment
 val keystoreFile = rootProject.file("omnitrack-release.jks")
+val rawBase64Secret = System.getenv("KEYSTORE_BASE64") ?: ""
+
+if ((!keystoreFile.exists() || keystoreFile.length() == 0L) && rawBase64Secret.isNotBlank()) {
+    try {
+        val cleanBase64 = rawBase64Secret.replace("\r", "").replace("\n", "").replace(" ", "").trim()
+        val decodedBytes = Base64.getDecoder().decode(cleanBase64)
+        keystoreFile.writeBytes(decodedBytes)
+    } catch (e: Exception) {
+        logger.error("Failed to decode KEYSTORE_BASE64 environment variable: ${e.message}")
+    }
+}
+
+// 2. Resolve Passwords & Alias
 val keystorePassword: String = (localProperties.getProperty("KEYSTORE_PASSWORD")
     ?: System.getenv("KEYSTORE_PASSWORD") ?: "").trim()
 val keyAlias: String = (localProperties.getProperty("KEY_ALIAS")
@@ -31,11 +46,21 @@ val keyAlias: String = (localProperties.getProperty("KEY_ALIAS")
 val keyPassword: String = (localProperties.getProperty("KEY_PASSWORD")
     ?: System.getenv("KEY_PASSWORD") ?: "").trim()
 
-val isKeystoreFileValid = keystoreFile.exists() && keystoreFile.length() > 0L
-val hasValidReleaseSigning = isKeystoreFileValid
+val isKeystoreValid = keystoreFile.exists() && keystoreFile.length() > 0L
+val hasValidReleaseSigning = isKeystoreValid
         && keystorePassword.isNotEmpty()
         && keyAlias.isNotEmpty()
         && keyPassword.isNotEmpty()
+
+// 3. Print Diagnostics during Gradle Configuration
+println("==================================================")
+println("[OmniTrack Build Diagnostic]")
+println("  - Keystore File Exist: ${keystoreFile.exists()} (${keystoreFile.length()} bytes)")
+println("  - KEYSTORE_BASE64 env present: ${rawBase64Secret.isNotEmpty()}")
+println("  - KEYSTORE_PASSWORD present: ${keystorePassword.isNotEmpty()}")
+println("  - KEY_ALIAS / KEYSTORE_ALIAS present: ${keyAlias.isNotEmpty()}")
+println("  - KEY_PASSWORD present: ${keyPassword.isNotEmpty()}")
+println("==================================================")
 
 extensions.configure<ApplicationExtension> {
     namespace = "com.omnitrack.app"
@@ -68,6 +93,9 @@ extensions.configure<ApplicationExtension> {
                     storePassword = "android"
                     this.keyAlias = "androiddebugkey"
                     this.keyPassword = "android"
+                } else {
+                    // Assign dummy storeFile to satisfy AGP task registration if missing, then fail configuration
+                    storeFile = keystoreFile
                 }
             }
         }
@@ -77,22 +105,17 @@ extensions.configure<ApplicationExtension> {
         getByName("release") {
             isMinifyEnabled = false
             isShrinkResources = false
+            signingConfig = signingConfigs.getByName("release")
 
-            val releaseConfig = signingConfigs.getByName("release")
-            if (releaseConfig.storeFile != null) {
-                signingConfig = releaseConfig
-            } else {
-                val isReleaseTask = gradle.startParameter.taskNames.any { it.contains("release", ignoreCase = true) }
-                if (isReleaseTask) {
-                    val missing = mutableListOf<String>()
-                    if (!keystoreFile.exists()) missing.add("Keystore file 'omnitrack-release.jks' missing at ${keystoreFile.absolutePath}")
-                    else if (keystoreFile.length() == 0L) missing.add("Keystore file 'omnitrack-release.jks' exists but is 0 bytes")
-                    if (keystorePassword.isEmpty()) missing.add("KEYSTORE_PASSWORD environment variable is empty")
-                    if (keyAlias.isEmpty()) missing.add("KEY_ALIAS / KEYSTORE_ALIAS environment variable is empty")
-                    if (keyPassword.isEmpty()) missing.add("KEY_PASSWORD environment variable is empty")
+            if (!hasValidReleaseSigning && !file("${System.getProperty("user.home")}/.android/debug.keystore").exists()) {
+                val missing = mutableListOf<String>()
+                if (!keystoreFile.exists()) missing.add("Keystore file ('omnitrack-release.jks') is missing or failed Base64 decode")
+                else if (keystoreFile.length() == 0L) missing.add("Keystore file is 0 bytes")
+                if (keystorePassword.isEmpty()) missing.add("KEYSTORE_PASSWORD environment variable is missing")
+                if (keyAlias.isEmpty()) missing.add("KEY_ALIAS / KEYSTORE_ALIAS environment variable is missing")
+                if (keyPassword.isEmpty()) missing.add("KEY_PASSWORD environment variable is missing")
 
-                    throw GradleException("Release build failed because signing credentials are incomplete:\n  - " + missing.joinToString("\n  - "))
-                }
+                throw GradleException("Release build configuration aborted due to missing signing inputs:\n  * " + missing.joinToString("\n  * "))
             }
         }
     }
