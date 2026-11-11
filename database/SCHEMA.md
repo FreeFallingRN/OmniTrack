@@ -2,7 +2,7 @@
 
 ```mermaid
 erDiagram
-    SERIES ||--o{ MEDIA_ENTRIES : "contains books or seasons"
+    SERIES |o--o{ MEDIA_ENTRIES : "contains books or seasons (optional)"
     SERIES ||--o{ ALTERNATE_TITLES : "has alternate/translated titles"
     MEDIA_ENTRIES ||--o{ ALTERNATE_TITLES : "entry-specific titles"
     SERIES ||--o{ EXTERNAL_LINKS : "platform/store reading URLs"
@@ -17,9 +17,9 @@ erDiagram
         uuid id PK "gen_random_uuid()"
         text title "Primary title"
         text clean_title "Generated lowercase alphanumeric"
-        media_type type "novel | comic | anime | movie"
-        publishing_status publishing_status "announced | releasing | hiatus | completed | discontinued"
-        user_status user_status "planning | in_progress | completed | paused | dropped"
+        media_type type "novel | comic | anime | movie"[cite: 8]
+        publishing_status publishing_status "announced | releasing | hiatus | completed | discontinued"[cite: 8]
+        user_status user_status "planning | in_progress | completed | paused | dropped"[cite: 8]
         numeric current_cumulative_unit "Total cumulative units logged"
         numeric total_units "Overall series chapters/episodes"
         text unit_name "Chapter | Episode | Volume"
@@ -32,20 +32,20 @@ erDiagram
 
     MEDIA_ENTRIES {
         uuid id PK "gen_random_uuid()"
-        uuid series_id FK "References series(id) ON DELETE CASCADE"
-        text title "e.g. 'Book 1: Unsouled', 'Season 2 Part 2'"
-        numeric sequence_number "Order: 1.00, 2.00, 2.50..."
-        publishing_status publishing_status "announced | releasing | hiatus | completed | discontinued"
-        user_status user_status "planning | in_progress | completed | paused | dropped"
-        numeric current_unit "Chapter/Ep inside this book/season"
-        numeric total_units "Total units in this book/season"
-        numeric start_cumulative_unit "Offset for series cumulative total"
-        text unit_name "Chapter | Episode"
-        text source_url "Legacy/direct reading URL"
-        text platform "Moon+ Reader | Royal Road | Crunchyroll"
-        boolean is_active_target "Pinned active entry"
-        timestamptz created_at "Audit timestamp"
-        timestamptz updated_at "Audit timestamp (auto-trigger)"
+        uuid series_id FK "References series(id) ON DELETE CASCADE (Nullable for standalone works)"[cite: 10]
+        text title "e.g. 'Book 1: Unsouled', 'Season 2 Part 2'"[cite: 10]
+        numeric sequence_number "Order: 1.00, 2.00, 2.50..."[cite: 10]
+        publishing_status publishing_status "announced | releasing | hiatus | completed | discontinued"[cite: 8, 10]
+        user_status user_status "planning | in_progress | completed | paused | dropped"[cite: 8, 10]
+        numeric current_unit "Chapter/Ep inside this book/season"[cite: 10]
+        numeric total_units "Total units in this book/season"[cite: 10]
+        numeric start_cumulative_unit "Offset for series cumulative total"[cite: 10]
+        text unit_name "Chapter | Episode"[cite: 10]
+        text source_url "Legacy/direct reading URL"[cite: 10]
+        text platform "Moon+ Reader | Royal Road | Crunchyroll"[cite: 10]
+        boolean is_active_target "Pinned active entry"[cite: 10]
+        timestamptz created_at "Audit timestamp"[cite: 10]
+        timestamptz updated_at "Audit timestamp (auto-trigger)"[cite: 10]
     }
 
     EXTERNAL_LINKS {
@@ -91,7 +91,7 @@ erDiagram
         bigint id PK "Auto-incrementing identity"
         uuid source_series_id FK "References series(id)"
         uuid target_series_id FK "References series(id)"
-        relation_type relation_type "adaptation | source_material | sequel | prequel | spin_off"
+        relation_type relation_type "adaptation | source_material | sequel | prequel | spin_off"[cite: 8]
         text notes "e.g. 'Anime covers Webnovel Books 1 through 3'"
         timestamptz created_at "Audit timestamp"
     }
@@ -110,6 +110,7 @@ erDiagram
 ```
 
 ### Table Definitions in Code:
+
 - [`series`](file:///c:/Users/benjv/Dev/OmniTrack/database/src/schema/series.ts)
 - [`media_entries`](file:///c:/Users/benjv/Dev/OmniTrack/database/src/schema/entries.ts)
 - [`external_links`](file:///c:/Users/benjv/Dev/OmniTrack/database/src/schema/links.ts)
