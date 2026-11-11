@@ -54,7 +54,13 @@ extensions.configure<ApplicationExtension> {
                 this.keyAlias = keyAlias
                 this.keyPassword = keyPassword
             } else {
-                initWith(getByName("debug"))
+                val debugKeystore = file("${System.getProperty("user.home")}/.android/debug.keystore")
+                if (debugKeystore.exists()) {
+                    initWith(getByName("debug"))
+                } else {
+                    // If running in CI without keystore secrets, unset signingConfig to prevent validation errors
+                    storeFile = null
+                }
             }
         }
     }
@@ -63,7 +69,13 @@ extensions.configure<ApplicationExtension> {
         getByName("release") {
             isMinifyEnabled = false
             isShrinkResources = false
-            signingConfig = signingConfigs.getByName("release")
+
+            // Only assign release signing config if a valid keystore file exists
+            signingConfig = if (hasValidReleaseSigning || file("${System.getProperty("user.home")}/.android/debug.keystore").exists()) {
+                signingConfigs.getByName("release")
+            } else {
+                null
+            }
         }
     }
 
