@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
@@ -106,7 +107,7 @@ fun OmniTrackHomeScreen(
                 ) {
                     val navItems = listOf(
                         Triple(0, Icons.Default.Home, "Library"),
-                        Triple(1, Icons.Default.Search, "Explore"),
+                        Triple(1, Icons.Default.LibraryAdd, "Manage library"),
                         Triple(2, Icons.Default.DateRange, "History"),
                         Triple(3, Icons.Default.Settings, "Settings")
                     )

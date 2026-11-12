@@ -1,6 +1,7 @@
 package com.omnitrack.app.ui.screens
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
@@ -20,13 +21,20 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -84,101 +92,146 @@ fun LibraryManagementScreen(viewModel: SeriesViewModel) {
     var showAuthorEditor by remember { mutableStateOf(false) }
     var selectedSeries by remember { mutableStateOf<SeriesDto?>(null) }
     var selectedAuthor by remember { mutableStateOf<AuthorDto?>(null) }
+    var selectedId by remember { mutableStateOf<String?>(null) }
+    var selectedKind by remember { mutableStateOf<String?>(null) }
+    var showDeleteWarning by remember { mutableStateOf(false) }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text("Manage library", style = MaterialTheme.typography.headlineSmall)
-        Text(
-            "Create and maintain series, books, and authors.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Books", "Series", "Authors").forEachIndexed { index, label ->
+    Scaffold(
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = {
+                    selectedId = null
+                    when (selectedSection) {
+                        0 -> { editorEntry = null; showEntryEditor = true }
+                        1 -> { selectedSeries = null; showSeriesEditor = true }
+                        else -> { selectedAuthor = null; showAuthorEditor = true }
+                    }
+                }
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Add")
+            }
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(innerPadding)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text("Manage library", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                "Create and maintain media, series, and authors.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                listOf("Media", "Serie", "Author").forEachIndexed { index, label ->
                 if (selectedSection == index) {
                     FilledTonalButton(onClick = { selectedSection = index }) { Text(label) }
                 } else {
-                    OutlinedButton(onClick = { selectedSection = index }) { Text(label) }
+                    TextButton(onClick = {
+                        selectedSection = index
+                        selectedId = null
+                        selectedKind = null
+                    }) { Text(label) }
                 }
             }
-        }
-        HorizontalDivider()
+            }
 
-        when (selectedSection) {
-            0 -> {
-                Button(onClick = { editorEntry = null; showEntryEditor = true }) {
-                    Text("Add book")
+            if (selectedId != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    Text(
+                        text = "Selected for deletion",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    IconButton(onClick = { showDeleteWarning = true }) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete selected")
+                    }
                 }
+            }
+            HorizontalDivider()
+
+            when (selectedSection) {
+            0 -> {
                 entries.forEach { entry ->
                     ManagementRow(
                         title = entry.title,
                         subtitle = "${entry.seriesTitle ?: "No series"} • ${entry.authors.joinToString().ifBlank { "No author" }}",
-                        onEdit = { editorEntry = entry; showEntryEditor = true },
-                        onDelete = {
-                            scope.launch {
-                                try {
-                                    SupabaseService.deleteEntry(entry.id)
-                                    reloadToken++
-                                } catch (e: Exception) {
-                                    error = e.message ?: "Could not delete book"
-                                }
-                            }
-                        },
-                        warning = "This permanently deletes the book, its author links, progress, and history."
+                        selected = selectedId == entry.id,
+                        onClick = { editorEntry = entry; showEntryEditor = true },
+                        onLongClick = { selectedId = entry.id; selectedKind = "media" }
                     )
                 }
             }
             1 -> {
-                Button(onClick = { selectedSeries = null; showSeriesEditor = true }) {
-                    Text("Add series")
-                }
                 series.forEach { item ->
                     ManagementRow(
                         title = item.title,
                         subtitle = "${entries.count { it.seriesId == item.id }} book(s)",
-                        onEdit = { selectedSeries = item; showSeriesEditor = true },
-                        onDelete = {
-                            scope.launch {
-                                try {
-                                    SupabaseService.deleteSeries(item.id)
-                                    reloadToken++
-                                } catch (e: Exception) {
-                                    error = e.message ?: "Could not delete series"
-                                }
-                            }
-                        },
-                        warning = "This permanently deletes the series, every book in it, their progress, and history."
+                        selected = selectedId == item.id,
+                        onClick = { selectedSeries = item; showSeriesEditor = true },
+                        onLongClick = { selectedId = item.id; selectedKind = "series" }
                     )
                 }
             }
             else -> {
-                Button(onClick = { selectedAuthor = null; showAuthorEditor = true }) {
-                    Text("Add author")
-                }
                 authors.forEach { author ->
                     ManagementRow(
                         title = author.name,
                         subtitle = "Author",
-                        onEdit = { selectedAuthor = author; showAuthorEditor = true },
-                        onDelete = {
-                            scope.launch {
-                                try {
-                                    SupabaseService.deleteAuthor(author.id)
-                                    reloadToken++
-                                } catch (e: Exception) {
-                                    error = e.message ?: "Could not delete author"
-                                }
-                            }
-                        },
-                        warning = "This permanently deletes the author and removes the author link from every book."
+                        selected = selectedId == author.id,
+                        onClick = { selectedAuthor = author; showAuthorEditor = true },
+                        onLongClick = { selectedId = author.id; selectedKind = "author" }
                     )
                 }
             }
+            }
         }
+    }
+
+    if (showDeleteWarning && selectedId != null) {
+        val selectedEntry = entries.firstOrNull { it.id == selectedId }
+        val selectedSeriesItem = series.firstOrNull { it.id == selectedId }
+        val selectedAuthorItem = authors.firstOrNull { it.id == selectedId }
+        val warning = when (selectedKind) {
+            "media" -> "This permanently deletes ${selectedEntry?.title ?: "the entry"}, its author links, progress, and history."
+            "series" -> "This permanently deletes ${selectedSeriesItem?.title ?: "the series"}, every entry in it, their progress, and history."
+            else -> "This permanently deletes ${selectedAuthorItem?.name ?: "the author"} and removes the author link from every entry."
+        }
+        AlertDialog(
+            onDismissRequest = { showDeleteWarning = false },
+            title = { Text("Permanent deletion") },
+            text = { Text(warning) },
+            confirmButton = {
+                HoldToDeleteButton {
+                    scope.launch {
+                        try {
+                            when (selectedKind) {
+                                "media" -> SupabaseService.deleteEntry(selectedId!!)
+                                "series" -> SupabaseService.deleteSeries(selectedId!!)
+                                "author" -> SupabaseService.deleteAuthor(selectedId!!)
+                            }
+                            showDeleteWarning = false
+                            selectedId = null
+                            selectedKind = null
+                            reloadToken++
+                        } catch (e: Exception) {
+                            error = e.message ?: "Could not delete selected item"
+                        }
+                    }
+                }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteWarning = false }) { Text("Cancel") } }
+        )
     }
 
     if (showSeriesEditor) {
@@ -306,37 +359,27 @@ fun LibraryManagementScreen(viewModel: SeriesViewModel) {
 private fun ManagementRow(
     title: String,
     subtitle: String,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
-    warning: String
+    selected: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
 ) {
-    var showWarning by remember { mutableStateOf(false) }
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Card(
+        modifier = Modifier.combinedClickable(
+            onClick = onClick,
+            onLongClick = onLongClick
+        ),
+        colors = CardDefaults.cardColors(
+            containerColor = if (selected) {
+                MaterialTheme.colorScheme.errorContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
             }
-            TextButton(onClick = onEdit) { Text("Edit") }
-            TextButton(onClick = { showWarning = true }) { Text("Delete") }
-        }
-    }
-    if (showWarning) {
-        AlertDialog(
-            onDismissRequest = { showWarning = false },
-            title = { Text("Permanent deletion") },
-            text = { Text(warning) },
-            confirmButton = {
-                HoldToDeleteButton {
-                    showWarning = false
-                    onDelete()
-                }
-            },
-            dismissButton = { TextButton(onClick = { showWarning = false }) { Text("Cancel") } }
         )
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
@@ -409,7 +452,7 @@ private fun EntryEditorDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (existing == null) "Add book" else "Edit book") },
+        title = { Text(if (existing == null) "New entry" else "Edit entry") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(title, { title = it }, label = { Text("Book title") }, singleLine = true)

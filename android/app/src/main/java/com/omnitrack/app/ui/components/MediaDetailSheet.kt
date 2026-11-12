@@ -13,17 +13,22 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,6 +55,7 @@ fun MediaDetailSheet(
     var progressText by remember(entry.id) {
         mutableStateOf(entry.currentUnit.toString())
     }
+    var showCover by remember(entry.id) { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -88,63 +94,48 @@ fun MediaDetailSheet(
                             AsyncImage(
                                 model = entry.coverUrl,
                                 contentDescription = "${entry.title} cover",
-                                modifier = Modifier.fillMaxSize()
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clickable { showCover = true }
                             )
                         }
                     }
 
-                    Column(modifier = Modifier.weight(1f)) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
                         Text(
                             text = entry.title,
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "${entry.type.label} • ${entry.userStatus.label}",
+                            text = "${entry.type.label.removeSuffix("s")} by " +
+                                entry.authors.joinToString(", ").ifBlank { "Unknown author" },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         entry.seriesTitle?.let {
                             Text(
-                                text = it,
+                                text = "$it (series)",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                    }
-                }
-            }
-
-            item {
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-            }
-
-            item {
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        DetailRow(
-                            label = "Progress",
-                            value = "${entry.unitName} ${entry.currentUnit}" +
-                                (entry.totalUnits?.let { " / $it" } ?: "")
-                        )
-                        DetailRow(
-                            label = "Status",
-                            value = entry.userStatus.label
-                        )
-                        DetailRow(
-                            label = "Canon",
-                            value = if (entry.isCanon) "Canon" else "Side story"
-                        )
-                        if (entry.authors.isNotEmpty()) {
-                            DetailRow(label = "Author", value = entry.authors.joinToString(", "))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            StatusPill(entry.userStatus.label)
+                            if (!entry.isCanon) {
+                                Text(
+                                    text = "Non-canon",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.tertiary
+                                )
+                            }
                         }
                     }
                 }
@@ -158,9 +149,22 @@ fun MediaDetailSheet(
                         color = MaterialTheme.colorScheme.primary
                     )
                     Row(
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        OutlinedTextField(
+                            value = progressText,
+                            onValueChange = { value ->
+                                progressText = value
+                                value.toDoubleOrNull()?.let(onUpdateProgress)
+                            },
+                            label = { Text(entry.unitName) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        )
                         FilledTonalButton(
                             onClick = {
                                 val next = (progressText.toDoubleOrNull() ?: entry.currentUnit) + 1.0
@@ -179,18 +183,6 @@ fun MediaDetailSheet(
                         ) {
                             Text("+10")
                         }
-                        OutlinedTextField(
-                            value = progressText,
-                            onValueChange = { value ->
-                                progressText = value
-                                value.toDoubleOrNull()?.let(onUpdateProgress)
-                            },
-                            label = { Text(entry.unitName) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            singleLine = true,
-                            modifier = Modifier.width(112.dp),
-                            shape = RoundedCornerShape(12.dp)
-                        )
                     }
                 }
             }
@@ -242,23 +234,41 @@ fun MediaDetailSheet(
             }
         }
     }
+
+    if (showCover && !entry.coverUrl.isNullOrBlank()) {
+        Dialog(
+            onDismissRequest = { showCover = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+                    .clickable { showCover = false },
+                contentAlignment = Alignment.Center
+            ) {
+                AsyncImage(
+                    model = entry.coverUrl,
+                    contentDescription = "${entry.title} cover enlarged",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxWidth().padding(20.dp)
+                )
+            }
+        }
+    }
 }
 
 @Composable
-private fun DetailRow(label: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
+private fun StatusPill(status: String) {
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
     ) {
         Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium
+            text = status,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
         )
     }
 }
