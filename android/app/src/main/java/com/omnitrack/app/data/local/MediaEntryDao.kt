@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface MediaEntryDao {
-    @Query("SELECT * FROM media_entries ORDER BY isActiveTarget DESC, title ASC")
+    @Query("SELECT * FROM media_entries ORDER BY title ASC")
     fun getAllEntries(): Flow<List<MediaEntryEntity>>
 
     @Query("SELECT * FROM media_entries WHERE seriesId = :seriesId")
@@ -23,8 +23,6 @@ interface MediaEntryDao {
     @Query("UPDATE media_entries SET currentUnit = :newProgress WHERE id = :id")
     suspend fun updateProgress(id: String, newProgress: Double)
 
-    @Query("UPDATE media_entries SET isActiveTarget = :isActive WHERE id = :id")
-    suspend fun updateActiveTargetState(id: String, isActive: Boolean)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(entries: List<MediaEntryEntity>)

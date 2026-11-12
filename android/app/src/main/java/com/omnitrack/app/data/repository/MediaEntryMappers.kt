@@ -22,9 +22,7 @@ fun MediaEntryEntity.toDomain(): MediaEntry = MediaEntry(
     platformId = platformId,
     platform = platform,
     currentUnit = currentUnit,
-    totalUnits = totalUnits,
     unitName = unitName,
-    isActiveTarget = isActiveTarget
 )
 
 fun MediaEntryDto.toEntity(
@@ -46,7 +44,5 @@ fun MediaEntryDto.toEntity(
     platformId = platformId,
     platform = platform?.name,
     currentUnit = currentUnit,
-    totalUnits = totalUnits,
     unitName = unitName,
-    isActiveTarget = isActiveTarget
 )

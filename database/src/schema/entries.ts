@@ -34,7 +34,6 @@ export const mediaEntries = pgTable(
 
     // Progress within THIS specific book/season (resets per book)
     currentUnit: unitNumber("current_unit").default("0.00"),
-    totalUnits: optionalUnitNumber("total_units"),
 
     unitName: text("unit_name").notNull().default("Chapter"),
 
@@ -43,17 +42,11 @@ export const mediaEntries = pgTable(
     platformId: uuid("platform_id").references(() => platforms.id, { onDelete: "set null" }),
     coverUrl: text("cover_url"),
 
-    // Flag for active entry pinned to Android persistent notification
-    isActiveTarget: boolean("is_active_target").default(false),
-
     ...timestamps,
   },
   (table) => [
     index("idx_media_entries_series_id").on(table.seriesId),
     index("idx_media_entries_user_status").on(table.userStatus),
-    index("idx_media_entries_is_active")
-      .on(table.isActiveTarget)
-      .where(sql`is_active_target = TRUE`),
   ]
 );
 

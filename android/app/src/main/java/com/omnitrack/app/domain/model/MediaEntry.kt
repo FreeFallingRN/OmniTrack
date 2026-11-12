@@ -16,7 +16,5 @@ data class MediaEntry(
     val platformId: String? = null,
     val platform: String? = null,
     val currentUnit: Double,
-    val totalUnits: Double? = null,
     val unitName: String = "Chapter",
-    val isActiveTarget: Boolean = false
 )

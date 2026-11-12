@@ -78,6 +78,20 @@
       "when": 1794487695642,
       "tag": "0010_misty_ma_gnuci",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794488538531,
+      "tag": "0011_living_sister_grimm",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1794489546810,
+      "tag": "0012_brave_mentor",
+      "breakpoints": true
     }
   ]
 }

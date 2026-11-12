@@ -133,7 +133,6 @@ private data class EntryFormData(
     val publishingStatus: String,
     val sequenceNumber: Double,
     val currentUnit: Double,
-    val totalUnits: Double?,
     val unitName: String,
     val isCanon: Boolean
 )
@@ -620,7 +619,6 @@ private fun EntryEditorDialog(
     var publishingStatus by remember { mutableStateOf("releasing") }
     var sequenceNumber by remember { mutableStateOf(existing?.sequenceNumber?.toString() ?: "1") }
     var currentUnit by remember { mutableStateOf(existing?.currentUnit?.toString() ?: "0") }
-    var totalUnits by remember { mutableStateOf("") }
     var unitName by remember { mutableStateOf("Chapter") }
     var isCanon by remember { mutableStateOf(existing?.isCanon ?: true) }
     var validationError by remember { mutableStateOf<String?>(null) }
@@ -674,7 +672,6 @@ private fun EntryEditorDialog(
                 Selector("Publishing status", publishingStatus, publishingStatuses, { it }) { publishingStatus = it }
                 OutlinedTextField(sequenceNumber, { sequenceNumber = it }, label = { Text("Sequence number") }, singleLine = true)
                 OutlinedTextField(currentUnit, { currentUnit = it }, label = { Text("Current progress") }, singleLine = true)
-                OutlinedTextField(totalUnits, { totalUnits = it }, label = { Text("Total units") }, singleLine = true)
                 OutlinedTextField(unitName, { unitName = it }, label = { Text("Unit name") }, singleLine = true)
                 OutlinedTextField(platform, { platform = it }, label = { Text("Platform") }, singleLine = true)
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -732,7 +729,7 @@ private fun EntryEditorDialog(
                             if (createAuthor) AuthorFormData(newAuthor, newAuthorNative.ifBlank { null }, newAuthorImage.ifBlank { null }, newAuthorBio.ifBlank { null }) else null,
                             coverUrl, sourceUrl, platform, userStatus, publishingStatus,
                             sequenceNumber.toDoubleOrNull() ?: 1.0, currentUnit.toDoubleOrNull() ?: 0.0,
-                            totalUnits.toDoubleOrNull(), unitName, isCanon
+                            unitName, isCanon
                         )
                     )
                 }

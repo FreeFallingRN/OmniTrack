@@ -17,12 +17,13 @@ import androidx.compose.ui.unit.dp
 import com.omnitrack.app.domain.model.MediaEntry
 import coil.compose.AsyncImage
 
+fun formatUnit(value: Double): String =
+    if (value % 1.0 == 0.0) value.toInt().toString() else value.toString()
+
 @Composable
 fun TrackedMediaRow(
     entry: MediaEntry,
     onClick: () -> Unit,
-    onToggleActiveTarget: () -> Unit,
-    onIncrement: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -78,52 +79,12 @@ fun TrackedMediaRow(
 
             Text(
                 text = buildString {
-                    append("${entry.unitName} ${entry.currentUnit.toInt()}")
-                    if (entry.totalUnits != null && entry.totalUnits > 0) {
-                        append(" / ${entry.totalUnits.toInt()}")
-                    }
+                    append("${entry.unitName} ${formatUnit(entry.currentUnit)}")
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
 
-        // Right: Action buttons (+1 and library pin)
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            IconButton(
-                onClick = onToggleActiveTarget,
-                modifier = Modifier.size(36.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.PushPin,
-                    contentDescription = "Pin",
-                    tint = if (entry.isActiveTarget) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-
-            Surface(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(20.dp))
-                    .clickable { onIncrement() },
-                color = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-            ) {
-                Box(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "+1",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
     }
 }

@@ -64,30 +64,6 @@ async function runMigrations() {
           END LOOP;
       END $$;
 
-      CREATE OR REPLACE FUNCTION ensure_single_active_entry()
-      RETURNS TRIGGER AS $$
-      BEGIN
-          IF NEW.is_active_target = TRUE THEN
-              UPDATE media_entries
-              SET is_active_target = FALSE
-              WHERE id <> NEW.id AND is_active_target = TRUE;
-          END IF;
-          RETURN NEW;
-      END;
-      $$ LANGUAGE plpgsql;
-
-      DO $$
-      BEGIN
-          IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'media_entries') THEN
-              DROP TRIGGER IF EXISTS trigger_ensure_single_active_entry ON media_entries;
-              CREATE TRIGGER trigger_ensure_single_active_entry
-              BEFORE INSERT OR UPDATE OF is_active_target ON media_entries
-              FOR EACH ROW
-              WHEN (NEW.is_active_target = TRUE)
-              EXECUTE FUNCTION ensure_single_active_entry();
-          END IF;
-      END $$;
-
       CREATE OR REPLACE FUNCTION preserve_progress_history_start()
       RETURNS TRIGGER AS $$
       BEGIN

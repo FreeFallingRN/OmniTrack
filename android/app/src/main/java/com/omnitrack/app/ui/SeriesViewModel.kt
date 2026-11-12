@@ -40,12 +40,6 @@ class SeriesViewModel(
         }
     }
 
-    fun toggleActiveTarget(id: String, isActive: Boolean) {
-        viewModelScope.launch {
-            repository.setActiveTarget(id, isActive)
-        }
-    }
-
     fun deleteMediaEntry(id: String) {
         viewModelScope.launch {
             repository.deleteMediaEntry(id)

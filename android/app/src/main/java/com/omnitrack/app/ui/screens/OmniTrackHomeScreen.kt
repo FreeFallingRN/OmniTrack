@@ -279,12 +279,6 @@ fun OmniTrackHomeScreen(
                                         TrackedMediaRow(
                                             entry = entry,
                                             onClick = { selectedEntryForDetail = entry },
-                                            onToggleActiveTarget = {
-                                                viewModel.toggleActiveTarget(entry.id, !entry.isActiveTarget)
-                                            },
-                                            onIncrement = {
-                                                viewModel.updateProgress(entry.id, entry.currentUnit + 1.0)
-                                            }
                                         )
                                     }
                                 }
@@ -368,7 +362,6 @@ fun OmniTrackHomeScreen(
                                 userStatus = form.userStatus,
                                 publishingStatus = form.publishingStatus,
                                 currentUnit = form.currentUnit,
-                                totalUnits = form.totalUnits,
                                 unitName = form.unitName,
                                 sourceUrl = form.sourceUrl,
                                 platformId = platformId,
@@ -392,7 +385,6 @@ fun OmniTrackHomeScreen(
                             publishingStatus = form.publishingStatus,
                             sequenceNumber = form.sequenceNumber,
                             currentUnit = form.currentUnit,
-                            totalUnits = form.totalUnits,
                             unitName = form.unitName,
                             isCanon = form.isCanon
                         )

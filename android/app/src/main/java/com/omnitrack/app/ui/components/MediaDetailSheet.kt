@@ -232,8 +232,7 @@ fun MediaDetailSheet(
                                 )
                             }
                             Text(
-                                text = "${relatedEntry.currentUnit.toInt()}" +
-                                    (relatedEntry.totalUnits?.let { " / ${it.toInt()}" } ?: ""),
+                                text = formatUnit(relatedEntry.currentUnit),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.primary
                             )

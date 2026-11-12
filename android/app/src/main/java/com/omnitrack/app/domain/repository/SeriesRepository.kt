@@ -7,6 +7,5 @@ interface SeriesRepository {
     fun getMediaEntriesStream(): Flow<List<MediaEntry>>
     suspend fun fetchFromSupabase()
     suspend fun updateProgress(id: String, newProgress: Double)
-    suspend fun setActiveTarget(id: String, isActive: Boolean)
     suspend fun deleteMediaEntry(id: String)
 }

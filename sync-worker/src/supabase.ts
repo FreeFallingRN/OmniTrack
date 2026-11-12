@@ -96,8 +96,7 @@ export class SupabaseClient {
 
       const entries = this.request(entryUrl, "get");
       if (entries && entries.length > 0) {
-        // Target active entry, or specific entry, or first entry
-        const entry = entries.find((e: any) => e.is_active_target) || entries[0];
+        const entry = entries[0];
         return {
           seriesId,
           seriesTitle,

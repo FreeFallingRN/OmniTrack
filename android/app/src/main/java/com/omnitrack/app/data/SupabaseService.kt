@@ -239,7 +239,6 @@ object SupabaseService {
         publishingStatus: String,
         sequenceNumber: Double,
         currentUnit: Double,
-        totalUnits: Double?,
         unitName: String,
         isCanon: Boolean
     ) {
@@ -257,7 +256,6 @@ object SupabaseService {
                     publishingStatus = publishingStatus,
                     sequenceNumber = sequenceNumber,
                     currentUnit = currentUnit,
-                    totalUnits = totalUnits,
                     unitName = unitName.trim(),
                     isCanon = isCanon
                 )

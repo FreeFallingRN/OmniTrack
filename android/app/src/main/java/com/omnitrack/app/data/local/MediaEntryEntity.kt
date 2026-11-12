@@ -20,7 +20,5 @@ data class MediaEntryEntity(
     val platformId: String?,
     val platform: String?,
     val currentUnit: Double,
-    val totalUnits: Double?,
     val unitName: String,
-    val isActiveTarget: Boolean
 )

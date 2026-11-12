@@ -20,13 +20,11 @@ data class MediaEntryDto(
     @SerialName("publishing_status") val publishingStatus: String = "releasing",
     @SerialName("is_canon") val isCanon: Boolean = true,
     @SerialName("current_unit") val currentUnit: Double = 0.0,
-    @SerialName("total_units") val totalUnits: Double? = null,
     @SerialName("unit_name") val unitName: String = "Chapter",
     @SerialName("cover_url") val coverUrl: String? = null,
     @SerialName("source_url") val sourceUrl: String? = null,
     @SerialName("platform_id") val platformId: String? = null,
     val platform: PlatformRefDto? = null,
-    @SerialName("is_active_target") val isActiveTarget: Boolean = false
 )
 
 @Serializable

@@ -106,21 +106,6 @@ class SeriesRepositoryImpl(
         }
     }
 
-    override suspend fun setActiveTarget(id: String, isActive: Boolean) {
-        mediaEntryDao.updateActiveTargetState(id, isActive)
-        if (supabaseUrl.isBlank()) return
-        try {
-            httpClient.patch("$supabaseUrl/rest/v1/media_entries?id=eq.$id") {
-                header("apikey", supabaseKey)
-                header("Authorization", "Bearer $supabaseKey")
-                contentType(ContentType.Application.Json)
-                setBody(mapOf("is_active_target" to isActive))
-            }
-        } catch (e: Exception) {
-            Log.e("SeriesRepository", "Failed to update active target on Supabase", e)
-        }
-    }
-
     override suspend fun deleteMediaEntry(id: String) {
         mediaEntryDao.deleteEntryById(id)
     }

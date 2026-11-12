@@ -11,17 +11,22 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -67,7 +72,6 @@ data class MediaEntryEditorData(
     val publishingStatus: String,
     val sequenceNumber: Double,
     val currentUnit: Double,
-    val totalUnits: Double?,
     val unitName: String,
     val platformId: String?,
     val newPlatform: NewPlatformData?,
@@ -95,6 +99,9 @@ data class NewPlatformData(
 
 private val publishingStatuses = listOf("announced", "releasing", "hiatus", "completed", "discontinued")
 
+private fun String.capitalizeStatus(): String =
+    replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MediaEntryEditorSheet(
@@ -117,6 +124,7 @@ fun MediaEntryEditorSheet(
         } catch (e: Exception) {
             error = e.message ?: "Could not load series and authors"
         }
+
     }
 
     var title by remember { mutableStateOf(existing?.title.orEmpty()) }
@@ -127,9 +135,8 @@ fun MediaEntryEditorSheet(
     }
     var userStatus by remember { mutableStateOf(existing?.userStatus?.value ?: "planning") }
     var publishingStatus by remember { mutableStateOf(existing?.publishingStatus ?: "releasing") }
-    var sequence by remember { mutableStateOf(existing?.sequenceNumber?.toString() ?: "1") }
+    var sequence by remember { mutableStateOf(existing?.sequenceNumber?.toInt()?.toString() ?: "1") }
     var currentUnit by remember { mutableStateOf(existing?.currentUnit?.toString() ?: "0") }
-    var totalUnits by remember { mutableStateOf(existing?.totalUnits?.toString().orEmpty()) }
     var unitName by remember { mutableStateOf(existing?.unitName ?: "Chapter") }
     var platformId by remember { mutableStateOf(existing?.platformId) }
     var sourceUrl by remember { mutableStateOf(existing?.sourceUrl.orEmpty()) }
@@ -148,6 +155,7 @@ fun MediaEntryEditorSheet(
     var newPlatformWebsiteUrl by remember { mutableStateOf("") }
     var newPlatformLogoUrl by remember { mutableStateOf("") }
     var findingPlatformLogo by remember { mutableStateOf(false) }
+    var showMediaDetails by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -173,34 +181,14 @@ fun MediaEntryEditorSheet(
                 )
             }
             item {
-                Button(
-                    onClick = {
-                        scope.launch(Dispatchers.IO) {
-                            findingPlatformLogo = true
-                            val found = CoverLookup.findOpenGraphImage(newPlatformWebsiteUrl)
-                            withContext(Dispatchers.Main) {
-                                findingPlatformLogo = false
-                                if (found != null) newPlatformLogoUrl = found
-                            }
-                        }
-                    },
-                    enabled = newPlatformWebsiteUrl.isNotBlank() && !findingPlatformLogo
-                ) {
-                    Text(if (findingPlatformLogo) "Finding logo…" else "Find logo from website")
-                }
-            }
-            if (newPlatformLogoUrl.isNotBlank()) {
-                item {
-                    AsyncImage(
-                        model = newPlatformLogoUrl,
-                        contentDescription = "Platform logo preview",
-                        modifier = Modifier.fillMaxWidth().height(96.dp),
-                        contentScale = ContentScale.Fit
-                    )
-                }
-            }
-            item {
-                Selector("Type", type.label, MediaType.entries, { it.label }) { type = it }
+                StatusButtonGroup(
+                    label = "Type",
+                    selected = type.value,
+                    options = MediaType.entries.map { it.value to it.label.removeSuffix("s") },
+                    onSelected = { value ->
+                        type = MediaType.fromValue(value)
+                    }
+                )
             }
             item {
                 Selector(
@@ -233,11 +221,22 @@ fun MediaEntryEditorSheet(
                     }
                 }
                 item {
-                    Selector("Series publishing status", newSeriesPublishingStatus, publishingStatuses, { it }) {
+                    Selector(
+                        "Series publishing status",
+                        newSeriesPublishingStatus,
+                        publishingStatuses,
+                        { it.capitalizeStatus() }
+                    ) {
                         newSeriesPublishingStatus = it
                     }
                 }
-                item { EntryField("Series unit name", newSeriesUnitName) { newSeriesUnitName = it } }
+                item {
+                    EntryField(
+                        "Series unit name",
+                        newSeriesUnitName,
+                        onValueChange = { newSeriesUnitName = it }
+                    )
+                }
             }
             item {
                 Selector(
@@ -264,22 +263,6 @@ fun MediaEntryEditorSheet(
                     )
                 }
             }
-            item { HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp)) }
-            item { Text("Media details", style = MaterialTheme.typography.titleMedium) }
-            item {
-                Selector("User status", userStatus, UserStatus.entries, { it.label }) {
-                    userStatus = it.value
-                }
-            }
-            item {
-                Selector("Publishing status", publishingStatus, publishingStatuses, { it }) {
-                    publishingStatus = it
-                }
-            }
-            item { EntryField("Sequence number", sequence) { sequence = it } }
-            item { EntryField("Current progress", currentUnit) { currentUnit = it } }
-            item { EntryField("Total units", totalUnits) { totalUnits = it } }
-            item { EntryField("Unit name", unitName) { unitName = it } }
             item {
                 Selector(
                     "Platform",
@@ -311,10 +294,78 @@ fun MediaEntryEditorSheet(
                     )
                 }
             }
+            item { HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp)) }
             item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    androidx.compose.material3.Checkbox(isCanon, { isCanon = it })
-                    Text("Canon entry")
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showMediaDetails = !showMediaDetails }
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Media details",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Icon(
+                        imageVector = if (showMediaDetails) {
+                            Icons.Default.KeyboardArrowUp
+                        } else {
+                            Icons.Default.KeyboardArrowDown
+                        },
+                        contentDescription = if (showMediaDetails) "Collapse media details" else "Expand media details",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            if (showMediaDetails) {
+                item {
+                    StatusButtonGroup(
+                        label = "User status",
+                        selected = userStatus,
+                        options = UserStatus.entries.map { it.value to it.label },
+                        onSelected = { userStatus = it }
+                    )
+                }
+                item {
+                    StatusButtonGroup(
+                        label = "Publishing status",
+                        selected = publishingStatus,
+                        options = publishingStatuses.map { it to it.capitalizeStatus() },
+                        onSelected = { publishingStatus = it }
+                    )
+                }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        EntryField(
+                            label = "Pos. in series",
+                            value = sequence,
+                            onValueChange = { sequence = it },
+                            modifier = Modifier.weight(1f),
+                            keyboardType = KeyboardType.Number
+                        )
+                        EntryField(
+                            label = "Current ${unitName.trim().lowercase()}",
+                            value = currentUnit,
+                            onValueChange = { currentUnit = it },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+                item {
+                    EntryField(
+                        "Unit name",
+                        unitName,
+                        onValueChange = { unitName = it }
+                    )
+                }
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.Checkbox(isCanon, { isCanon = it })
+                        Text("Canon entry")
+                    }
                 }
             }
             item { HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp)) }
@@ -411,7 +462,6 @@ fun MediaEntryEditorSheet(
                                     publishingStatus = publishingStatus,
                                     sequenceNumber = sequence.toDoubleOrNull() ?: 1.0,
                                     currentUnit = currentUnit.toDoubleOrNull() ?: 0.0,
-                                    totalUnits = totalUnits.toDoubleOrNull(),
                                     unitName = unitName,
                                     sourceUrl = sourceUrl.ifBlank { null },
                                     coverUrl = coverUrl.ifBlank { null },
@@ -439,15 +489,45 @@ fun MediaEntryEditorSheet(
 }
 
 @Composable
-private fun EntryField(label: String, value: String, onValueChange: (String) -> Unit) {
+private fun EntryField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    keyboardType: KeyboardType = KeyboardType.Decimal
+) {
     OutlinedTextField(
         value,
         onValueChange,
         label = { Text(label) },
-        modifier = Modifier.fillMaxWidth(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        modifier = modifier.fillMaxWidth(),
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         singleLine = true
     )
+}
+
+@Composable
+private fun StatusButtonGroup(
+    label: String,
+    selected: String,
+    options: List<Pair<String, String>>,
+    onSelected: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label, style = MaterialTheme.typography.labelMedium)
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            options.forEach { (value, text) ->
+                FilterChip(
+                    selected = selected == value,
+                    onClick = { onSelected(value) },
+                    label = { Text(text) }
+                )
+            }
+        }
+    }
 }
 
 @Composable

@@ -31,11 +31,9 @@ erDiagram
         user_status user_status "planning | in_progress | completed | paused | dropped"[cite: 8, 10]
         boolean is_canon "Canon entry within the brand"
         numeric current_unit "Chapter/Ep inside this book/season"[cite: 10]
-        numeric total_units "Total units in this book/season"[cite: 10]
         text unit_name "Chapter | Episode"[cite: 10]
         text source_url "Legacy/direct reading URL"[cite: 10]
         uuid platform_id FK "References platforms(id) ON DELETE SET NULL"
-        boolean is_active_target "Pinned active entry"[cite: 10]
         timestamptz created_at "Audit timestamp"[cite: 10]
         timestamptz updated_at "Audit timestamp (auto-trigger)"[cite: 10]
     }

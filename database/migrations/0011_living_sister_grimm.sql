@@ -1,0 +1,1 @@
+ALTER TABLE "media_entries" DROP COLUMN "total_units";
