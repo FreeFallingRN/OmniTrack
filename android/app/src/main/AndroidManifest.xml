@@ -3,8 +3,6 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
@@ -37,19 +35,6 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
-
-        <!-- Persistent Action Notification Service -->
-        <service
-            android:name=".service.ActionNotificationService"
-            android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="shortService" />
-
-        <!-- Notification Action Broadcast Receiver -->
-        <receiver
-            android:name=".receiver.QuickActionReceiver"
-            android:enabled="true"
-            android:exported="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

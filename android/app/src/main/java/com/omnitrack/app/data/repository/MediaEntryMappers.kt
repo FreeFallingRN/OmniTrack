@@ -12,22 +12,29 @@ fun MediaEntryEntity.toDomain(): MediaEntry = MediaEntry(
     seriesTitle = seriesTitle,
     title = title,
     type = MediaType.fromValue(type),
+    sequenceNumber = sequenceNumber,
     userStatus = UserStatus.fromValue(userStatus),
     isCanon = isCanon,
+    authors = authorNames.split("|").filter { it.isNotBlank() },
     currentUnit = currentUnit,
     totalUnits = totalUnits,
     unitName = unitName,
     isActiveTarget = isActiveTarget
 )
 
-fun MediaEntryDto.toEntity(seriesTitle: String?): MediaEntryEntity = MediaEntryEntity(
+fun MediaEntryDto.toEntity(
+    seriesTitle: String?,
+    authorNames: List<String>
+): MediaEntryEntity = MediaEntryEntity(
     id = id,
     seriesId = seriesId,
     seriesTitle = seriesTitle,
     title = title,
     type = type,
+    sequenceNumber = sequenceNumber,
     userStatus = userStatus,
     isCanon = isCanon,
+    authorNames = authorNames.joinToString("|"),
     currentUnit = currentUnit,
     totalUnits = totalUnits,
     unitName = unitName,

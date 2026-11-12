@@ -35,8 +35,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OmniTrackHomeScreen(
-    viewModel: SeriesViewModel,
-    onTogglePinNotification: (MediaEntry) -> Unit
+    viewModel: SeriesViewModel
 ) {
     val mediaEntries by viewModel.mediaEntries.collectAsState()
 
@@ -261,7 +260,6 @@ fun OmniTrackHomeScreen(
                                             onClick = { selectedEntryForDetail = entry },
                                             onToggleActiveTarget = {
                                                 viewModel.toggleActiveTarget(entry.id, !entry.isActiveTarget)
-                                                onTogglePinNotification(entry)
                                             },
                                             onIncrement = {
                                                 viewModel.updateProgress(entry.id, entry.currentUnit + 1.0)
@@ -296,13 +294,12 @@ fun OmniTrackHomeScreen(
     selectedEntryForDetail?.let { entry ->
         MediaDetailSheet(
             entry = entry,
+            relatedEntries = mediaEntries
+                .filter { it.seriesId == entry.seriesId && it.id != entry.id }
+                .sortedBy { it.sequenceNumber },
             onDismiss = { selectedEntryForDetail = null },
             onUpdateProgress = { newProgress -> viewModel.updateProgress(entry.id, newProgress) },
-            onToggleActiveTarget = { isActive -> viewModel.toggleActiveTarget(entry.id, isActive) },
-            onDelete = {
-                viewModel.deleteMediaEntry(entry.id)
-                selectedEntryForDetail = null
-            }
+            onSelectEntry = { selectedEntryForDetail = it }
         )
     }
 }

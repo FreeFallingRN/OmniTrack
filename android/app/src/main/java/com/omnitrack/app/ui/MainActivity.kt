@@ -1,8 +1,5 @@
 package com.omnitrack.app.ui
 
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -21,9 +18,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.omnitrack.app.BuildConfig
 import com.omnitrack.app.data.local.AppDatabase
 import com.omnitrack.app.data.repository.SeriesRepositoryImpl
-import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.repository.SeriesRepository
-import com.omnitrack.app.service.ActionNotificationService
 import com.omnitrack.app.ui.screens.OmniTrackHomeScreen
 import com.omnitrack.app.ui.theme.OmniTrackTheme
 import com.omnitrack.app.utils.GitHubRelease
@@ -81,13 +76,6 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // Notification permission request for Android 13+
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
-            }
-        }
-
         // Check for updates from GitHub releases on app startup
         lifecycleScope.launch {
             try {
@@ -108,10 +96,7 @@ class MainActivity : ComponentActivity() {
                 var isDownloadingUpdate by remember { mutableStateOf(false) }
 
                 OmniTrackHomeScreen(
-                    viewModel = seriesViewModel,
-                    onTogglePinNotification = { entry ->
-                        updatePinnedNotification(entry)
-                    }
+                    viewModel = seriesViewModel
                 )
 
                 // Render Update Available dialog if a newer GitHub release is detected
@@ -153,12 +138,4 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun updatePinnedNotification(entry: MediaEntry) {
-        val intent = Intent(this, ActionNotificationService::class.java).apply {
-            putExtra("SERIES_ID", entry.id)
-            putExtra("TITLE", entry.title)
-            putExtra("CURRENT_UNIT", entry.currentUnit)
-        }
-        startForegroundService(intent)
-    }
 }
