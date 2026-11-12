@@ -17,6 +17,7 @@ data class MediaEntryEntity(
     val authorNames: String,
     val coverUrl: String?,
     val sourceUrl: String?,
+    val platformId: String?,
     val platform: String?,
     val currentUnit: Double,
     val totalUnits: Double?,

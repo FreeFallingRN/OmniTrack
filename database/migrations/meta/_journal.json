@@ -64,6 +64,13 @@
       "when": 1794486132831,
       "tag": "0008_soft_lockjaw",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794487020061,
+      "tag": "0009_perpetual_ultimates",
+      "breakpoints": true
     }
   ]
 }

@@ -19,7 +19,6 @@ export const series = pgTable(
 
     // Metadata
     rating: smallint("rating"),
-    notes: text("notes"),
     ...timestamps,
   },
   (table) => [index("idx_series_clean_title").on(table.cleanTitle)]

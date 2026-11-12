@@ -13,6 +13,7 @@ data class MediaEntry(
     val authors: List<String> = emptyList(),
     val coverUrl: String? = null,
     val sourceUrl: String? = null,
+    val platformId: String? = null,
     val platform: String? = null,
     val currentUnit: Double,
     val totalUnits: Double? = null,

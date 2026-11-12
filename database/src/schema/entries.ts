@@ -1,6 +1,7 @@
 import { pgTable, uuid, text, boolean, numeric, index } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { series } from "./series";
+import { platforms } from "./platforms";
 import { mediaTypeEnum, userStatusEnum, publishingStatusEnum } from "./enums";
 import { pkUuid, unitNumber, optionalUnitNumber, timestamps } from "./helpers";
 
@@ -39,7 +40,7 @@ export const mediaEntries = pgTable(
 
     // Source Metadata
     sourceUrl: text("source_url"),
-    platform: text("platform"),
+    platformId: uuid("platform_id").references(() => platforms.id, { onDelete: "set null" }),
     coverUrl: text("cover_url"),
 
     // Flag for active entry pinned to Android persistent notification

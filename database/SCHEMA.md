@@ -8,6 +8,7 @@ erDiagram
     SERIES ||--o{ EXTERNAL_LINKS : "platform/store reading URLs"
     MEDIA_ENTRIES ||--o{ EXTERNAL_LINKS : "entry-specific store URLs"
     MEDIA_ENTRIES ||--o{ ENTRY_AUTHORS : "credited to"
+    PLATFORMS ||--o{ MEDIA_ENTRIES : "published or read on"
     AUTHORS ||--o{ ENTRY_AUTHORS : "created"
     MEDIA_ENTRIES ||--o{ PROGRESS_HISTORY : "entry progress"
 
@@ -16,7 +17,6 @@ erDiagram
         text title "Primary title"
         text clean_title "Generated lowercase alphanumeric"
         smallint rating "1 - 10"
-        text notes "User notes & commentary"
         timestamptz created_at "Audit timestamp"
         timestamptz updated_at "Audit timestamp (auto-trigger)"
     }
@@ -34,10 +34,18 @@ erDiagram
         numeric total_units "Total units in this book/season"[cite: 10]
         text unit_name "Chapter | Episode"[cite: 10]
         text source_url "Legacy/direct reading URL"[cite: 10]
-        text platform "Moon+ Reader | Royal Road | Crunchyroll"[cite: 10]
+        uuid platform_id FK "References platforms(id) ON DELETE SET NULL"
         boolean is_active_target "Pinned active entry"[cite: 10]
         timestamptz created_at "Audit timestamp"[cite: 10]
         timestamptz updated_at "Audit timestamp (auto-trigger)"[cite: 10]
+    }
+
+    PLATFORMS {
+        uuid id PK "gen_random_uuid()"
+        text name "Platform name"
+        text website_url "Platform website"
+        timestamptz created_at "Audit timestamp"
+        timestamptz updated_at "Audit timestamp"
     }
 
     EXTERNAL_LINKS {
@@ -68,7 +76,7 @@ erDiagram
         text name "Display name (e.g. 'Chugong')"
         text native_name "Native name (e.g. '추공')"
         text image_url "Avatar or photo URL"
-        text bio "Biography or notes"
+        text bio "Biography"
         timestamptz created_at "Audit timestamp"
         timestamptz updated_at "Audit timestamp"
     }

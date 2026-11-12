@@ -12,9 +12,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.LibraryAdd
+import androidx.compose.material.icons.filled.LocalLibrary
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
@@ -31,6 +31,7 @@ import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.UserStatus
 import com.omnitrack.app.data.SupabaseService
 import com.omnitrack.app.data.model.CreateSeriesRequest
+import com.omnitrack.app.data.model.CreatePlatformRequest
 import com.omnitrack.app.ui.SeriesViewModel
 import com.omnitrack.app.ui.components.MediaDetailSheet
 import com.omnitrack.app.ui.components.MediaEntryEditorData
@@ -125,8 +126,8 @@ fun OmniTrackHomeScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     val navItems = listOf(
-                        Triple(0, Icons.Default.Home, "Library"),
-                        Triple(1, Icons.Default.LibraryAdd, "Manage library"),
+                        Triple(0, Icons.Default.LocalLibrary, "Library"),
+                        Triple(1, Icons.Default.AccountTree, "Manage library"),
                         Triple(2, Icons.Default.DateRange, "History"),
                         Triple(3, Icons.Default.Settings, "Settings")
                     )
@@ -350,6 +351,12 @@ fun OmniTrackHomeScreen(
                         null,
                         null
                     ).id
+                    val platformId = form.platformId ?: SupabaseService.createPlatform(
+                        CreatePlatformRequest(
+                            name = form.newPlatform!!.name,
+                            websiteUrl = form.newPlatform.websiteUrl
+                        )
+                    ).id
                     if (editorEntry == null) {
                         SupabaseService.createEntry(
                             com.omnitrack.app.data.model.CreateEntryRequest(
@@ -363,7 +370,7 @@ fun OmniTrackHomeScreen(
                                 totalUnits = form.totalUnits,
                                 unitName = form.unitName,
                                 sourceUrl = form.sourceUrl,
-                                platform = form.platform,
+                                platformId = platformId,
                                 coverUrl = form.coverUrl,
                                 isCanon = form.isCanon
                             )
@@ -377,9 +384,9 @@ fun OmniTrackHomeScreen(
                             type = form.type.value,
                             seriesId = seriesId,
                             authorId = authorId,
+                            platformId = platformId,
                             coverUrl = form.coverUrl,
                             sourceUrl = form.sourceUrl,
-                            platform = form.platform,
                             userStatus = form.userStatus,
                             publishingStatus = form.publishingStatus,
                             sequenceNumber = form.sequenceNumber,

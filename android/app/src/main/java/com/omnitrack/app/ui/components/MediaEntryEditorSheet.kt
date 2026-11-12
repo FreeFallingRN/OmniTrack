@@ -47,6 +47,7 @@ import coil.compose.AsyncImage
 import com.omnitrack.app.data.SupabaseService
 import com.omnitrack.app.data.model.AuthorDto
 import com.omnitrack.app.data.model.SeriesDto
+import com.omnitrack.app.data.model.PlatformDto
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.model.UserStatus
@@ -68,7 +69,8 @@ data class MediaEntryEditorData(
     val currentUnit: Double,
     val totalUnits: Double?,
     val unitName: String,
-    val platform: String?,
+    val platformId: String?,
+    val newPlatform: NewPlatformData?,
     val sourceUrl: String?,
     val coverUrl: String?,
     val isCanon: Boolean
@@ -85,6 +87,11 @@ data class NewAuthorData(
     val name: String
 )
 
+data class NewPlatformData(
+    val name: String,
+    val websiteUrl: String?
+)
+
 private val publishingStatuses = listOf("announced", "releasing", "hiatus", "completed", "discontinued")
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -97,6 +104,7 @@ fun MediaEntryEditorSheet(
 ) {
     var series by remember { mutableStateOf<List<SeriesDto>>(emptyList()) }
     var authors by remember { mutableStateOf<List<AuthorDto>>(emptyList()) }
+    var platforms by remember { mutableStateOf<List<PlatformDto>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
@@ -104,6 +112,7 @@ fun MediaEntryEditorSheet(
         try {
             series = SupabaseService.getSeries()
             authors = SupabaseService.getAuthors()
+            platforms = SupabaseService.getPlatforms()
         } catch (e: Exception) {
             error = e.message ?: "Could not load series and authors"
         }
@@ -121,7 +130,7 @@ fun MediaEntryEditorSheet(
     var currentUnit by remember { mutableStateOf(existing?.currentUnit?.toString() ?: "0") }
     var totalUnits by remember { mutableStateOf(existing?.totalUnits?.toString().orEmpty()) }
     var unitName by remember { mutableStateOf(existing?.unitName ?: "Chapter") }
-    var platform by remember { mutableStateOf(existing?.platform.orEmpty()) }
+    var platformId by remember { mutableStateOf(existing?.platformId) }
     var sourceUrl by remember { mutableStateOf(existing?.sourceUrl.orEmpty()) }
     var coverUrl by remember { mutableStateOf(existing?.coverUrl.orEmpty()) }
     var isCanon by remember { mutableStateOf(existing?.isCanon ?: true) }
@@ -133,6 +142,9 @@ fun MediaEntryEditorSheet(
     var newSeriesPublishingStatus by remember { mutableStateOf("releasing") }
     var newSeriesUnitName by remember { mutableStateOf("Chapter") }
     var newAuthorName by remember { mutableStateOf("") }
+    var createPlatform by remember { mutableStateOf(false) }
+    var newPlatformName by remember { mutableStateOf("") }
+    var newPlatformWebsiteUrl by remember { mutableStateOf("") }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -238,7 +250,37 @@ fun MediaEntryEditorSheet(
             item { EntryField("Current progress", currentUnit) { currentUnit = it } }
             item { EntryField("Total units", totalUnits) { totalUnits = it } }
             item { EntryField("Unit name", unitName) { unitName = it } }
-            item { EntryField("Platform", platform) { platform = it } }
+            item {
+                Selector(
+                    "Platform",
+                    platforms.firstOrNull { it.id == platformId }?.name ?: "Choose platform",
+                    platforms,
+                    { it.name },
+                    onAdd = { createPlatform = true; platformId = null }
+                ) { platformId = it.id; createPlatform = false }
+            }
+            if (createPlatform) {
+                item { HorizontalDivider() }
+                item { Text("New platform details", style = MaterialTheme.typography.titleMedium) }
+                item {
+                    OutlinedTextField(
+                        newPlatformName,
+                        { newPlatformName = it },
+                        label = { Text("Platform name") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                }
+                item {
+                    OutlinedTextField(
+                        newPlatformWebsiteUrl,
+                        { newPlatformWebsiteUrl = it },
+                        label = { Text("Website URL (optional)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                }
+            }
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     androidx.compose.material3.Checkbox(isCanon, { isCanon = it })
@@ -307,7 +349,8 @@ fun MediaEntryEditorSheet(
                         val selectedAuthor = authorId
                         if (title.isBlank() ||
                             (selectedSeries == null && (!createSeries || newSeriesTitle.isBlank())) ||
-                            (selectedAuthor == null && (!createAuthor || newAuthorName.isBlank()))
+                            (selectedAuthor == null && (!createAuthor || newAuthorName.isBlank())) ||
+                            (platformId == null && (!createPlatform || newPlatformName.isBlank()))
                         ) {
                             error = "Title, series, and author are required."
                         } else {
@@ -326,13 +369,19 @@ fun MediaEntryEditorSheet(
                                     } else null,
                                     authorId = selectedAuthor,
                                     newAuthor = if (createAuthor) NewAuthorData(newAuthorName) else null,
+                                    platformId = platformId,
+                                    newPlatform = if (createPlatform) {
+                                        NewPlatformData(
+                                            name = newPlatformName,
+                                            websiteUrl = newPlatformWebsiteUrl.ifBlank { null }
+                                        )
+                                    } else null,
                                     userStatus = userStatus,
                                     publishingStatus = publishingStatus,
                                     sequenceNumber = sequence.toDoubleOrNull() ?: 1.0,
                                     currentUnit = currentUnit.toDoubleOrNull() ?: 0.0,
                                     totalUnits = totalUnits.toDoubleOrNull(),
                                     unitName = unitName,
-                                    platform = platform.ifBlank { null },
                                     sourceUrl = sourceUrl.ifBlank { null },
                                     coverUrl = coverUrl.ifBlank { null },
                                     isCanon = isCanon

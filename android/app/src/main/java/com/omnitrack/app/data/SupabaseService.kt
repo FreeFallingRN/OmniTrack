@@ -5,6 +5,9 @@ import com.omnitrack.app.data.model.CreateEntryRequest
 import com.omnitrack.app.data.model.UpdateSeriesRequest
 import com.omnitrack.app.data.model.UpdateEntryRequest
 import com.omnitrack.app.data.model.CreateSeriesRequest
+import com.omnitrack.app.data.model.CreatePlatformRequest
+import com.omnitrack.app.data.model.PlatformDto
+import com.omnitrack.app.data.model.UpdatePlatformRequest
 import com.omnitrack.app.data.model.AuthorDto
 import com.omnitrack.app.data.model.EntryAuthorDto
 import com.omnitrack.app.data.model.ExternalLinkDto
@@ -47,7 +50,7 @@ object SupabaseService {
 
     suspend fun getSeries(): List<SeriesDto> {
         return client.get(
-            "$supabaseUrl/rest/v1/series?select=id,title,clean_title,rating,notes,created_at,updated_at&order=updated_at.desc"
+            "$supabaseUrl/rest/v1/series?select=id,title,clean_title,rating,created_at,updated_at&order=updated_at.desc"
         ).body()
     }
 
@@ -60,14 +63,37 @@ object SupabaseService {
 
     suspend fun getMediaEntries(seriesId: String): List<MediaEntryDto> {
         return client.get(
-            "$supabaseUrl/rest/v1/media_entries?series_id=eq.$seriesId&select=*&order=sequence_number.asc"
+            "$supabaseUrl/rest/v1/media_entries?series_id=eq.$seriesId&select=*,platform:platforms(id,name,website_url)&order=sequence_number.asc"
         ).body()
     }
 
     suspend fun getAllMediaEntries(): List<MediaEntryDto> {
         return client.get(
-            "$supabaseUrl/rest/v1/media_entries?select=*&order=sequence_number.asc"
+            "$supabaseUrl/rest/v1/media_entries?select=*,platform:platforms(id,name,website_url)&order=sequence_number.asc"
         ).body()
+    }
+
+    suspend fun getPlatforms(): List<PlatformDto> {
+        return client.get("$supabaseUrl/rest/v1/platforms?select=*&order=name.asc").body()
+    }
+
+    suspend fun createPlatform(request: CreatePlatformRequest): PlatformDto {
+        return client.post("$supabaseUrl/rest/v1/platforms") {
+            contentType(ContentType.Application.Json)
+            header("Prefer", "return=representation")
+            setBody(request)
+        }.body<List<PlatformDto>>().first()
+    }
+
+    suspend fun updatePlatform(id: String, request: UpdatePlatformRequest) {
+        client.patch("$supabaseUrl/rest/v1/platforms?id=eq.$id") {
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }
+    }
+
+    suspend fun deletePlatform(id: String) {
+        client.delete("$supabaseUrl/rest/v1/platforms?id=eq.$id")
     }
 
     suspend fun getExternalLinks(seriesId: String): List<ExternalLinkDto> {
@@ -184,15 +210,13 @@ object SupabaseService {
         id: String,
         title: String,
         rating: Int?,
-        notes: String?
     ) {
         client.patch("$supabaseUrl/rest/v1/series?id=eq.$id") {
             contentType(ContentType.Application.Json)
             setBody(
                 UpdateSeriesRequest(
                     title = title.trim(),
-                    rating = rating,
-                    notes = notes?.trim()?.ifBlank { null }
+                    rating = rating
                 )
             )
         }
@@ -208,9 +232,9 @@ object SupabaseService {
         type: String,
         seriesId: String,
         authorId: String,
+        platformId: String?,
         coverUrl: String?,
         sourceUrl: String?,
-        platform: String?,
         userStatus: String,
         publishingStatus: String,
         sequenceNumber: Double,
@@ -228,7 +252,7 @@ object SupabaseService {
                     seriesId = seriesId,
                     coverUrl = coverUrl?.trim()?.ifBlank { null },
                     sourceUrl = sourceUrl?.trim()?.ifBlank { null },
-                    platform = platform?.trim()?.ifBlank { null },
+                    platformId = platformId,
                     userStatus = userStatus,
                     publishingStatus = publishingStatus,
                     sequenceNumber = sequenceNumber,

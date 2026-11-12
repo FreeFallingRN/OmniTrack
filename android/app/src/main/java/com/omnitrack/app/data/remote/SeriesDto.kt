@@ -24,8 +24,15 @@ data class MediaEntryDto(
     @SerialName("unit_name") val unitName: String = "Chapter",
     @SerialName("cover_url") val coverUrl: String? = null,
     @SerialName("source_url") val sourceUrl: String? = null,
-    @SerialName("platform") val platform: String? = null,
+    @SerialName("platform_id") val platformId: String? = null,
+    val platform: PlatformRefDto? = null,
     @SerialName("is_active_target") val isActiveTarget: Boolean = false
+)
+
+@Serializable
+data class PlatformRefDto(
+    val id: String,
+    val name: String
 )
 
 @Serializable

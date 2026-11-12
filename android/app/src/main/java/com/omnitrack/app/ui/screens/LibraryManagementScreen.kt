@@ -21,7 +21,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -67,8 +66,7 @@ private val publishingStatuses = listOf("announced", "releasing", "hiatus", "com
 
 private data class SeriesFormData(
     val title: String,
-    val rating: Int?,
-    val notes: String?
+    val rating: Int?
 )
 
 private val seriesStatusPriority = listOf(
@@ -121,7 +119,6 @@ private data class EntryFormData(
     val newSeriesTotal: Double?,
     val newSeriesUnitName: String,
     val newSeriesRating: Int?,
-    val newSeriesNotes: String?,
     val authorId: String?,
     val newAuthor: AuthorFormData?,
     val coverUrl: String,
@@ -169,19 +166,6 @@ fun LibraryManagementScreen(viewModel: SeriesViewModel) {
     var showDeleteWarning by remember { mutableStateOf(false) }
 
     Scaffold(
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = {
-                    selectedId = null
-                    when (selectedSection) {
-                        0 -> { selectedSeries = null; showSeriesEditor = true }
-                        else -> { selectedAuthor = null; showAuthorEditor = true }
-                    }
-                }
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Add")
-            }
-        }
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -307,16 +291,14 @@ fun LibraryManagementScreen(viewModel: SeriesViewModel) {
                             SupabaseService.createSeries(
                                 CreateSeriesRequest(
                                     title = form.title,
-                                    rating = form.rating,
-                                    notes = form.notes
+                                    rating = form.rating
                                 )
                             )
                         } else {
                             SupabaseService.updateSeries(
                                 selectedSeries!!.id,
                                 form.title,
-                                form.rating,
-                                form.notes
+                                form.rating
                             )
                         }
                         showSeriesEditor = false
@@ -431,7 +413,6 @@ private fun SeriesEditorDialog(
 ) {
     var title by remember { mutableStateOf(existing?.title.orEmpty()) }
     var rating by remember { mutableStateOf(existing?.rating?.toString().orEmpty()) }
-    var notes by remember { mutableStateOf(existing?.notes.orEmpty()) }
 
     EditorDialog(
         title = if (existing == null) "Add series" else "Edit series",
@@ -440,7 +421,7 @@ private fun SeriesEditorDialog(
             if (title.isNotBlank()) {
                 onSave(
                     SeriesFormData(
-                        title, rating.toIntOrNull(), notes.ifBlank { null }
+                        title, rating.toIntOrNull()
                     )
                 )
             }
@@ -462,7 +443,6 @@ private fun SeriesEditorDialog(
             singleLine = true
         )
         OutlinedTextField(rating, { rating = it }, label = { Text("Rating") }, singleLine = true)
-        OutlinedTextField(notes, { notes = it }, label = { Text("Notes") }, minLines = 2)
     }
 }
 
@@ -517,7 +497,6 @@ private fun EntryEditorDialog(
     var newSeriesTotal by remember { mutableStateOf("") }
     var newSeriesUnit by remember { mutableStateOf("Chapter") }
     var newSeriesRating by remember { mutableStateOf("") }
-    var newSeriesNotes by remember { mutableStateOf("") }
     var newAuthor by remember { mutableStateOf("") }
     var newAuthorNative by remember { mutableStateOf("") }
     var newAuthorImage by remember { mutableStateOf("") }
@@ -560,7 +539,6 @@ private fun EntryEditorDialog(
                     OutlinedTextField(newSeriesTotal, { newSeriesTotal = it }, label = { Text("Total units") }, singleLine = true)
                     OutlinedTextField(newSeriesUnit, { newSeriesUnit = it }, label = { Text("Unit name") }, singleLine = true)
                     OutlinedTextField(newSeriesRating, { newSeriesRating = it }, label = { Text("Rating") }, singleLine = true)
-                    OutlinedTextField(newSeriesNotes, { newSeriesNotes = it }, label = { Text("Notes") }, minLines = 2)
                 }
                 EntitySelector(
                     label = "Author",
@@ -638,7 +616,7 @@ private fun EntryEditorDialog(
                         EntryFormData(
                             title, type, seriesId, finalSeries, newSeriesStatus, newSeriesPublishing,
                             newSeriesCurrent.toDoubleOrNull(), newSeriesTotal.toDoubleOrNull(), newSeriesUnit,
-                            newSeriesRating.toIntOrNull(), newSeriesNotes.ifBlank { null }, authorId,
+                            newSeriesRating.toIntOrNull(), authorId,
                             if (createAuthor) AuthorFormData(newAuthor, newAuthorNative.ifBlank { null }, newAuthorImage.ifBlank { null }, newAuthorBio.ifBlank { null }) else null,
                             coverUrl, sourceUrl, platform, userStatus, publishingStatus,
                             sequenceNumber.toDoubleOrNull() ?: 1.0, currentUnit.toDoubleOrNull() ?: 0.0,

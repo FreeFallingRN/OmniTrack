@@ -4,6 +4,7 @@ export * from "./series";
 export * from "./entries";
 export * from "./titles";
 export * from "./authors";
+export * from "./platforms";
 export * from "./history";
 export * from "./links";
 export * from "./relations";
