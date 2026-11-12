@@ -10,6 +10,7 @@ data class MediaEntry(
     val userStatus: UserStatus,
     val isCanon: Boolean = true,
     val authors: List<String> = emptyList(),
+    val coverUrl: String? = null,
     val currentUnit: Double,
     val totalUnits: Double? = null,
     val unitName: String = "Chapter",

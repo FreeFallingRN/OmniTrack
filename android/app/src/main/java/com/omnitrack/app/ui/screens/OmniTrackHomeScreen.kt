@@ -272,10 +272,7 @@ fun OmniTrackHomeScreen(
                     }
                 }
                 1 -> {
-                    // 1: Explore View
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("Explore Screen", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    LibraryManagementScreen(viewModel = viewModel)
                 }
                 2 -> {
                     // 2: History View

@@ -15,6 +15,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.omnitrack.app.domain.model.MediaEntry
+import coil.compose.AsyncImage
 
 @Composable
 fun TrackedMediaRow(
@@ -41,12 +42,20 @@ fun TrackedMediaRow(
                 .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = entry.title.take(2).uppercase(),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
-            )
+            if (entry.coverUrl.isNullOrBlank()) {
+                Text(
+                    text = entry.title.take(2).uppercase(),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            } else {
+                AsyncImage(
+                    model = entry.coverUrl,
+                    contentDescription = "${entry.title} cover",
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
 
         // Middle: Title & Chapter Progress

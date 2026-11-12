@@ -3,6 +3,8 @@ package com.omnitrack.app.data
 import com.omnitrack.app.BuildConfig
 import com.omnitrack.app.data.model.CreateEntryRequest
 import com.omnitrack.app.data.model.CreateSeriesRequest
+import com.omnitrack.app.data.model.AuthorDto
+import com.omnitrack.app.data.model.EntryAuthorDto
 import com.omnitrack.app.data.model.ExternalLinkDto
 import com.omnitrack.app.data.model.MediaEntryDto
 import com.omnitrack.app.data.model.ProgressHistoryRequest
@@ -16,6 +18,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
+import io.ktor.client.request.delete
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
@@ -133,5 +136,76 @@ object SupabaseService {
             setBody(request)
         }.body()
         return list.first()
+    }
+
+    suspend fun getAuthors(): List<AuthorDto> =
+        client.get("$supabaseUrl/rest/v1/authors?select=*&order=name.asc").body()
+
+    suspend fun getEntryAuthors(entryId: String): List<EntryAuthorDto> =
+        client.get("$supabaseUrl/rest/v1/entry_authors?entry_id=eq.$entryId&select=*").body()
+
+    suspend fun createAuthor(name: String): AuthorDto {
+        val list: List<AuthorDto> = client.post("$supabaseUrl/rest/v1/authors") {
+            contentType(ContentType.Application.Json)
+            header("Prefer", "return=representation")
+            setBody(mapOf("name" to name.trim()))
+        }.body()
+        return list.first()
+    }
+
+    suspend fun updateAuthor(id: String, name: String) {
+        client.patch("$supabaseUrl/rest/v1/authors?id=eq.$id") {
+            contentType(ContentType.Application.Json)
+            setBody(mapOf("name" to name.trim()))
+        }
+    }
+
+    suspend fun deleteAuthor(id: String) {
+        client.delete("$supabaseUrl/rest/v1/authors?id=eq.$id")
+    }
+
+    suspend fun updateSeries(id: String, title: String) {
+        client.patch("$supabaseUrl/rest/v1/series?id=eq.$id") {
+            contentType(ContentType.Application.Json)
+            setBody(mapOf("title" to title.trim()))
+        }
+    }
+
+    suspend fun deleteSeries(id: String) {
+        client.delete("$supabaseUrl/rest/v1/series?id=eq.$id")
+    }
+
+    suspend fun updateEntry(
+        id: String,
+        title: String,
+        type: String,
+        seriesId: String,
+        authorId: String,
+        coverUrl: String?
+    ) {
+        client.patch("$supabaseUrl/rest/v1/media_entries?id=eq.$id") {
+            contentType(ContentType.Application.Json)
+            setBody(
+                mapOf(
+                    "title" to title.trim(),
+                    "type" to type,
+                    "series_id" to seriesId,
+                    "cover_url" to coverUrl?.trim()?.ifBlank { null }
+                )
+            )
+        }
+        replaceEntryAuthor(id, authorId)
+    }
+
+    suspend fun deleteEntry(id: String) {
+        client.delete("$supabaseUrl/rest/v1/media_entries?id=eq.$id")
+    }
+
+    suspend fun replaceEntryAuthor(entryId: String, authorId: String) {
+        client.delete("$supabaseUrl/rest/v1/entry_authors?entry_id=eq.$entryId")
+        client.post("$supabaseUrl/rest/v1/entry_authors") {
+            contentType(ContentType.Application.Json)
+            setBody(mapOf("entry_id" to entryId, "author_id" to authorId, "role" to "author"))
+        }
     }
 }

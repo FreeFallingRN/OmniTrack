@@ -21,6 +21,7 @@ data class MediaEntryDto(
     @SerialName("current_unit") val currentUnit: Double = 0.0,
     @SerialName("total_units") val totalUnits: Double? = null,
     @SerialName("unit_name") val unitName: String = "Chapter",
+    @SerialName("cover_url") val coverUrl: String? = null,
     @SerialName("is_active_target") val isActiveTarget: Boolean = false
 )
 

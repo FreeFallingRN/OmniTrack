@@ -14,6 +14,7 @@ data class MediaEntryEntity(
     val userStatus: String,
     val isCanon: Boolean,
     val authorNames: String,
+    val coverUrl: String?,
     val currentUnit: Double,
     val totalUnits: Double?,
     val unitName: String,

@@ -35,6 +35,7 @@ data class MediaEntryDto(
     @SerialName("source_url") val sourceUrl: String? = null,
     val platform: String? = null,
     @SerialName("is_active_target") val isActiveTarget: Boolean,
+    @SerialName("cover_url") val coverUrl: String? = null,
     @SerialName("created_at") val createdAt: String,
     @SerialName("updated_at") val updatedAt: String,
 )
@@ -75,6 +76,23 @@ data class CreateEntryRequest(
     @SerialName("unit_name") val unitName: String,
     @SerialName("source_url") val sourceUrl: String? = null,
     val platform: String? = null,
+    @SerialName("cover_url") val coverUrl: String? = null,
+)
+
+@Serializable
+data class AuthorDto(
+    val id: String,
+    val name: String,
+    @SerialName("native_name") val nativeName: String? = null,
+    @SerialName("image_url") val imageUrl: String? = null,
+    val bio: String? = null,
+)
+
+@Serializable
+data class EntryAuthorDto(
+    @SerialName("entry_id") val entryId: String,
+    @SerialName("author_id") val authorId: String,
+    val role: String = "author",
 )
 
 @Serializable

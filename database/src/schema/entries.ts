@@ -40,6 +40,7 @@ export const mediaEntries = pgTable(
     // Source Metadata
     sourceUrl: text("source_url"),
     platform: text("platform"),
+    coverUrl: text("cover_url"),
 
     // Flag for active entry pinned to Android persistent notification
     isActiveTarget: boolean("is_active_target").default(false),

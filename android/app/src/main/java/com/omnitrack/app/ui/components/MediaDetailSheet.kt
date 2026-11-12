@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -35,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.omnitrack.app.domain.model.MediaEntry
+import coil.compose.AsyncImage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -73,14 +75,22 @@ fun MediaDetailSheet(
                             .background(MaterialTheme.colorScheme.primaryContainer),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = entry.title.split(" ").take(2)
-                                .mapNotNull { it.firstOrNull()?.uppercase() }.joinToString("")
-                                .ifEmpty { "TR" },
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
+                        if (entry.coverUrl.isNullOrBlank()) {
+                            Text(
+                                text = entry.title.split(" ").take(2)
+                                    .mapNotNull { it.firstOrNull()?.uppercase() }.joinToString("")
+                                    .ifEmpty { "TR" },
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        } else {
+                            AsyncImage(
+                                model = entry.coverUrl,
+                                contentDescription = "${entry.title} cover",
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                     }
 
                     Column(modifier = Modifier.weight(1f)) {
