@@ -8,7 +8,6 @@ data class SeriesDto(
     val id: String,
     val title: String,
     @SerialName("clean_title") val cleanTitle: String? = null,
-    val type: String,
     @SerialName("user_status") val userStatus: String,
     @SerialName("publishing_status") val publishingStatus: String,
     @SerialName("current_cumulative_unit") val currentCumulativeUnit: Double,
@@ -16,7 +15,6 @@ data class SeriesDto(
     @SerialName("unit_name") val unitName: String,
     val rating: Int? = null,
     val notes: String? = null,
-    @SerialName("is_active_target") val isActiveTarget: Boolean,
     @SerialName("created_at") val createdAt: String,
     @SerialName("updated_at") val updatedAt: String,
 )
@@ -55,7 +53,6 @@ data class ExternalLinkDto(
 @Serializable
 data class CreateSeriesRequest(
     val title: String,
-    val type: String,
     @SerialName("user_status") val userStatus: String,
     @SerialName("publishing_status") val publishingStatus: String,
     @SerialName("unit_name") val unitName: String,

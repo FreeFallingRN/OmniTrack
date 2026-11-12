@@ -10,6 +10,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.omnitrack.app.data.SupabaseService
+import com.omnitrack.app.data.model.CreateEntryRequest
 import com.omnitrack.app.data.model.CreateSeriesRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -60,13 +61,24 @@ fun ShareSheetUI(sharedUrl: String, onDismiss: () -> Unit) {
             Button(
                 onClick = {
                     scope.launch(Dispatchers.IO) {
-                        SupabaseService.createSeries(
+                        val series = SupabaseService.createSeries(
                             CreateSeriesRequest(
                                 title = title,
-                                type = "novel",
                                 userStatus = "in_progress",
-                                publishingStatus = "ongoing",
+                                publishingStatus = "releasing",
                                 unitName = unitName
+                            )
+                        )
+                        SupabaseService.createEntry(
+                            CreateEntryRequest(
+                                seriesId = series.id,
+                                title = title,
+                                type = "novel",
+                                sequenceNumber = 1.0,
+                                userStatus = "in_progress",
+                                publishingStatus = "releasing",
+                                unitName = unitName,
+                                sourceUrl = sharedUrl
                             )
                         )
                         withContext(Dispatchers.Main) { onDismiss() }

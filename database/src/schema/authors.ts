@@ -1,5 +1,5 @@
 import { pgTable, uuid, text, primaryKey, index } from "drizzle-orm/pg-core";
-import { series } from "./series";
+import { mediaEntries } from "./entries";
 import { pkUuid, timestamps } from "./helpers";
 
 /**
@@ -17,15 +17,15 @@ export const authors = pgTable("authors", {
 });
 
 /**
- * Series Authors Junction Table
- * Associates creators with their works and specific roles.
+ * Entry Authors Junction Table
+ * Associates creators with a specific book, season, adaptation, or standalone work.
  */
-export const seriesAuthors = pgTable(
-  "series_authors",
+export const entryAuthors = pgTable(
+  "entry_authors",
   {
-    seriesId: uuid("series_id")
+    entryId: uuid("entry_id")
       .notNull()
-      .references(() => series.id, { onDelete: "cascade" }),
+      .references(() => mediaEntries.id, { onDelete: "cascade" }),
 
     authorId: uuid("author_id")
       .notNull()
@@ -34,13 +34,13 @@ export const seriesAuthors = pgTable(
     role: text("role").notNull().default("author"), // 'author', 'illustrator', 'studio', 'director'
   },
   (table) => [
-    primaryKey({ columns: [table.seriesId, table.authorId, table.role] }),
-    index("idx_series_authors_author_id").on(table.authorId),
+    primaryKey({ columns: [table.entryId, table.authorId, table.role] }),
+    index("idx_entry_authors_author_id").on(table.authorId),
   ]
 );
 
 export type Author = typeof authors.$inferSelect;
 export type NewAuthor = typeof authors.$inferInsert;
 
-export type SeriesAuthor = typeof seriesAuthors.$inferSelect;
-export type NewSeriesAuthor = typeof seriesAuthors.$inferInsert;
+export type EntryAuthor = typeof entryAuthors.$inferSelect;
+export type NewEntryAuthor = typeof entryAuthors.$inferInsert;

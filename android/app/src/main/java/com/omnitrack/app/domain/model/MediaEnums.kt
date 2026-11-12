@@ -26,16 +26,3 @@ enum class UserStatus(val value: String, val label: String) {
         }
     }
 }
-
-data class Series(
-    val id: String,
-    val title: String,
-    val type: MediaType,
-    val userStatus: UserStatus,
-    val currentCumulativeUnit: Double,
-    val totalUnits: Double? = null,
-    val unitName: String = "Chapter",
-    val rating: Int? = null,
-    val notes: String = "",
-    val isActiveTarget: Boolean = false
-)

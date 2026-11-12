@@ -42,7 +42,7 @@ object SupabaseService {
 
     suspend fun getSeries(): List<SeriesDto> {
         return client.get(
-            "$supabaseUrl/rest/v1/series?select=id,title,clean_title,type,user_status,publishing_status,current_cumulative_unit,total_units,unit_name,rating,notes,is_active_target,created_at,updated_at&order=updated_at.desc"
+            "$supabaseUrl/rest/v1/series?select=id,title,clean_title,user_status,publishing_status,current_cumulative_unit,total_units,unit_name,rating,notes,created_at,updated_at&order=updated_at.desc"
         ).body()
     }
 

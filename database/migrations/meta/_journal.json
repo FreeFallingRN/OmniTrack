@@ -29,6 +29,13 @@
       "when": 1794474674866,
       "tag": "0003_slimy_albert_cleary",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794475118730,
+      "tag": "0004_slow_bulldozer",
+      "breakpoints": true
     }
   ]
 }

@@ -2,7 +2,7 @@ import { relations } from "drizzle-orm";
 import { series } from "./series";
 import { mediaEntries } from "./entries";
 import { alternateTitles } from "./titles";
-import { authors, seriesAuthors } from "./authors";
+import { authors, entryAuthors } from "./authors";
 import { mediaRelations } from "./relations_model";
 import { progressHistory } from "./history";
 import { externalLinks } from "./links";
@@ -10,7 +10,6 @@ import { externalLinks } from "./links";
 export const seriesRelations = relations(series, ({ many }) => ({
   entries: many(mediaEntries),
   alternateTitles: many(alternateTitles),
-  authors: many(seriesAuthors),
   history: many(progressHistory),
   links: many(externalLinks),
   adaptations: many(mediaRelations, { relationName: "sourceSeries" }),
@@ -25,6 +24,7 @@ export const mediaEntriesRelations = relations(mediaEntries, ({ one, many }) => 
   alternateTitles: many(alternateTitles),
   history: many(progressHistory),
   links: many(externalLinks),
+  authors: many(entryAuthors),
 }));
 
 export const alternateTitlesRelations = relations(alternateTitles, ({ one }) => ({
@@ -39,16 +39,16 @@ export const alternateTitlesRelations = relations(alternateTitles, ({ one }) => 
 }));
 
 export const authorsRelations = relations(authors, ({ many }) => ({
-  series: many(seriesAuthors),
+  entries: many(entryAuthors),
 }));
 
-export const seriesAuthorsRelations = relations(seriesAuthors, ({ one }) => ({
-  series: one(series, {
-    fields: [seriesAuthors.seriesId],
-    references: [series.id],
+export const entryAuthorsRelations = relations(entryAuthors, ({ one }) => ({
+  entry: one(mediaEntries, {
+    fields: [entryAuthors.entryId],
+    references: [mediaEntries.id],
   }),
   author: one(authors, {
-    fields: [seriesAuthors.authorId],
+    fields: [entryAuthors.authorId],
     references: [authors.id],
   }),
 }));

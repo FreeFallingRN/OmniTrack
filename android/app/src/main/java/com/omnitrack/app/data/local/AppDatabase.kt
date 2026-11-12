@@ -6,13 +6,12 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [SeriesEntity::class, MediaEntryEntity::class],
-    version = 6,
+    entities = [MediaEntryEntity::class],
+    version = 7,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
 
-    abstract fun seriesDao(): SeriesDao
     abstract fun mediaEntryDao(): MediaEntryDao
 
     companion object {

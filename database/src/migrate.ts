@@ -64,31 +64,6 @@ async function runMigrations() {
           END LOOP;
       END $$;
 
-      -- 2. Ensure single active target trigger for series and media_entries
-      CREATE OR REPLACE FUNCTION ensure_single_active_series()
-      RETURNS TRIGGER AS $$
-      BEGIN
-          IF NEW.is_active_target = TRUE THEN
-              UPDATE series
-              SET is_active_target = FALSE
-              WHERE id <> NEW.id AND is_active_target = TRUE;
-          END IF;
-          RETURN NEW;
-      END;
-      $$ LANGUAGE plpgsql;
-
-      DO $$
-      BEGIN
-          IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'series') THEN
-              DROP TRIGGER IF EXISTS trigger_ensure_single_active_series ON series;
-              CREATE TRIGGER trigger_ensure_single_active_series
-              BEFORE INSERT OR UPDATE OF is_active_target ON series
-              FOR EACH ROW
-              WHEN (NEW.is_active_target = TRUE)
-              EXECUTE FUNCTION ensure_single_active_series();
-          END IF;
-      END $$;
-
       CREATE OR REPLACE FUNCTION ensure_single_active_entry()
       RETURNS TRIGGER AS $$
       BEGIN
@@ -113,7 +88,7 @@ async function runMigrations() {
           END IF;
       END $$;
 
-      -- 3. Row Level Security (RLS) for all tables
+      -- 2. Row Level Security (RLS) for all tables
       DO $$
       DECLARE
           tbl text;
@@ -122,7 +97,7 @@ async function runMigrations() {
               'media_entries',
               'alternate_titles',
               'authors',
-              'series_authors',
+              'entry_authors',
               'media_relations',
               'progress_history',
               'external_links'
@@ -137,7 +112,7 @@ async function runMigrations() {
           END LOOP;
       END $$;
 
-      -- 4. Supabase Realtime publication
+      -- 3. Supabase Realtime publication
       DO $$
       DECLARE
           tbl text;

@@ -7,7 +7,7 @@ erDiagram
     MEDIA_ENTRIES ||--o{ ALTERNATE_TITLES : "entry-specific titles"
     SERIES ||--o{ EXTERNAL_LINKS : "platform/store reading URLs"
     MEDIA_ENTRIES ||--o{ EXTERNAL_LINKS : "entry-specific store URLs"
-    SERIES ||--o{ SERIES_AUTHORS : "credited to"
+    MEDIA_ENTRIES ||--o{ ENTRY_AUTHORS : "credited to"
     AUTHORS ||--o{ SERIES_AUTHORS : "created"
     SERIES ||--o{ MEDIA_RELATIONS : "source / adaptation"
     SERIES ||--o{ PROGRESS_HISTORY : "series progress"
@@ -17,7 +17,6 @@ erDiagram
         uuid id PK "gen_random_uuid()"
         text title "Primary title"
         text clean_title "Generated lowercase alphanumeric"
-        media_type type "novel | comic | anime | movie"[cite: 8]
         publishing_status publishing_status "announced | releasing | hiatus | completed | discontinued"[cite: 8]
         user_status user_status "planning | in_progress | completed | paused | dropped"[cite: 8]
         numeric current_cumulative_unit "Total cumulative units logged"
@@ -25,7 +24,6 @@ erDiagram
         text unit_name "Chapter | Episode | Volume"
         smallint rating "1 - 10"
         text notes "User notes & commentary"
-        boolean is_active_target "Pinned active series"
         timestamptz created_at "Audit timestamp"
         timestamptz updated_at "Audit timestamp (auto-trigger)"
     }
@@ -81,8 +79,8 @@ erDiagram
         timestamptz updated_at "Audit timestamp"
     }
 
-    SERIES_AUTHORS {
-        uuid series_id PK,FK "References series(id)"
+    ENTRY_AUTHORS {
+        uuid entry_id PK,FK "References media_entries(id)"
         uuid author_id PK,FK "References authors(id)"
         text role "author | illustrator | studio | director"
     }
@@ -113,6 +111,7 @@ erDiagram
 
 - [`series`](file:///c:/Users/benjv/Dev/OmniTrack/database/src/schema/series.ts)
 - [`media_entries`](file:///c:/Users/benjv/Dev/OmniTrack/database/src/schema/entries.ts)
+- [`entry_authors`](file:///c:/Users/benjv/Dev/OmniTrack/database/src/schema/authors.ts)
 - [`external_links`](file:///c:/Users/benjv/Dev/OmniTrack/database/src/schema/links.ts)
 - [`alternate_titles`](file:///c:/Users/benjv/Dev/OmniTrack/database/src/schema/titles.ts)
 - [`authors`](file:///c:/Users/benjv/Dev/OmniTrack/database/src/schema/authors.ts)
