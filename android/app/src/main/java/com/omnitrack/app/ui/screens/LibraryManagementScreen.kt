@@ -58,6 +58,7 @@ import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.model.UserStatus
 import com.omnitrack.app.ui.SeriesViewModel
+import com.omnitrack.app.ui.components.DeleteCountdownButton
 import com.omnitrack.app.utils.CoverLookup
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -110,29 +111,6 @@ private data class AuthorFormData(
     val nativeName: String?,
     val imageUrl: String?,
     val bio: String?
-)
-
-private data class EntryFormData(
-    val title: String,
-    val type: MediaType,
-    val seriesId: String?,
-    val newSeriesName: String,
-    val newSeriesUserStatus: String,
-    val newSeriesPublishingStatus: String,
-    val newSeriesCurrent: Double?,
-    val newSeriesTotal: Double?,
-    val newSeriesRating: Int?,
-    val authorId: String?,
-    val newAuthor: AuthorFormData?,
-    val coverUrl: String,
-    val sourceUrl: String,
-    val platform: String,
-    val userStatus: String,
-    val publishingStatus: String,
-    val sequenceNumber: Double,
-    val currentUnit: Double,
-    val unitName: String,
-    val isCanon: Boolean
 )
 
 @Composable
@@ -319,7 +297,7 @@ fun LibraryManagementScreen(
             title = { Text("Permanent deletion") },
             text = { Text(warning) },
             confirmButton = {
-                HoldToDeleteButton {
+                DeleteCountdownButton {
                     scope.launch {
                         try {
                             when (selectedKind) {
@@ -516,32 +494,6 @@ private fun seriesEntryCountLabel(entries: List<MediaEntry>): String =
         .ifBlank { "No works" }
 
 @Composable
-private fun HoldToDeleteButton(onConfirmed: () -> Unit) {
-    var secondsRemaining by remember { mutableIntStateOf(-1) }
-    LaunchedEffect(secondsRemaining) {
-        if (secondsRemaining > 0) {
-            kotlinx.coroutines.delay(1000)
-            secondsRemaining--
-        }
-    }
-    Button(
-        onClick = {
-            if (secondsRemaining == 0) onConfirmed()
-            else if (secondsRemaining < 0) secondsRemaining = 2
-        },
-        enabled = secondsRemaining <= 0
-    ) {
-        Text(
-            when {
-                secondsRemaining < 0 -> "Start 2-second countdown"
-                secondsRemaining > 0 -> "Delete available in ${secondsRemaining}s"
-                else -> "Delete permanently"
-            }
-        )
-    }
-}
-
-@Composable
 private fun SeriesEditorDialog(
     existing: SeriesDto?,
     derivedUserStatus: String,
@@ -612,159 +564,6 @@ private fun AuthorEditorDialog(
 }
 
 @Composable
-private fun EntryEditorDialog(
-    existing: MediaEntry?,
-    entries: List<MediaEntry>,
-    series: List<SeriesDto>,
-    authors: List<AuthorDto>,
-    onDismiss: () -> Unit,
-    onSave: (EntryFormData) -> Unit
-) {
-    var title by remember { mutableStateOf(existing?.title.orEmpty()) }
-    var type by remember { mutableStateOf(existing?.type ?: MediaType.NOVEL) }
-    var seriesId by remember { mutableStateOf(existing?.seriesId) }
-    var authorId by remember(existing?.id, authors) {
-        mutableStateOf(authors.firstOrNull { existing?.authors?.contains(it.name) == true }?.id)
-    }
-    var createSeries by remember { mutableStateOf(false) }
-    var createAuthor by remember { mutableStateOf(false) }
-    var newSeries by remember { mutableStateOf("") }
-    var newSeriesStatus by remember { mutableStateOf("planning") }
-    var newSeriesPublishing by remember { mutableStateOf("releasing") }
-    var newSeriesCurrent by remember { mutableStateOf("") }
-    var newSeriesTotal by remember { mutableStateOf("") }
-    var newSeriesRating by remember { mutableStateOf("") }
-    var newAuthor by remember { mutableStateOf("") }
-    var newAuthorNative by remember { mutableStateOf("") }
-    var newAuthorImage by remember { mutableStateOf("") }
-    var newAuthorBio by remember { mutableStateOf("") }
-    var coverUrl by remember { mutableStateOf(existing?.coverUrl.orEmpty()) }
-    var sourceUrl by remember(existing?.id) { mutableStateOf(existing?.sourceUrl.orEmpty()) }
-    var platform by remember { mutableStateOf(existing?.platform.orEmpty()) }
-    var userStatus by remember { mutableStateOf("planning") }
-    var publishingStatus by remember { mutableStateOf("releasing") }
-    var sequenceNumber by remember { mutableStateOf(existing?.sequenceNumber?.toString() ?: "1") }
-    var currentUnit by remember { mutableStateOf(existing?.currentUnit?.toString() ?: "0") }
-    var unitName by remember { mutableStateOf("Chapter") }
-    var isCanon by remember { mutableStateOf(existing?.isCanon ?: true) }
-    var validationError by remember { mutableStateOf<String?>(null) }
-    var isFindingCover by remember { mutableStateOf(false) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (existing == null) "New entry" else "Edit entry") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(title, { title = it }, label = { Text("Entry title") }, singleLine = true)
-                Selector("Type", type.label, MediaType.entries, { it.label }) { type = it }
-                EntitySelector(
-                    label = "Series",
-                    selected = series.firstOrNull { it.id == seriesId }?.title ?: "Choose series",
-                    options = series,
-                    optionText = { it.title },
-                    onSelected = { seriesId = it.id; createSeries = false },
-                    onAdd = { createSeries = !createSeries }
-                )
-                if (createSeries) {
-                    HorizontalDivider()
-                    Text("New series details", style = MaterialTheme.typography.titleSmall)
-                    OutlinedTextField(newSeries, { newSeries = it }, label = { Text("Series name") }, singleLine = true)
-                    Selector("User status", newSeriesStatus, UserStatus.entries, { it.label }) { newSeriesStatus = it.value }
-                    Selector("Publishing status", newSeriesPublishing, publishingStatuses, { it }) { newSeriesPublishing = it }
-                    OutlinedTextField(newSeriesCurrent, { newSeriesCurrent = it }, label = { Text("Cumulative progress") }, singleLine = true)
-                    OutlinedTextField(newSeriesTotal, { newSeriesTotal = it }, label = { Text("Total units") }, singleLine = true)
-                    OutlinedTextField(newSeriesRating, { newSeriesRating = it }, label = { Text("Rating") }, singleLine = true)
-                }
-                EntitySelector(
-                    label = "Author",
-                    selected = authors.firstOrNull { it.id == authorId }?.name ?: "Choose author",
-                    options = authors,
-                    optionText = { it.name },
-                    onSelected = { authorId = it.id; createAuthor = false },
-                    onAdd = { createAuthor = !createAuthor }
-                )
-                if (createAuthor) {
-                    HorizontalDivider()
-                    Text("New author details", style = MaterialTheme.typography.titleSmall)
-                    OutlinedTextField(newAuthor, { newAuthor = it }, label = { Text("Author name") }, singleLine = true)
-                    OutlinedTextField(newAuthorNative, { newAuthorNative = it }, label = { Text("Native name") }, singleLine = true)
-                    OutlinedTextField(newAuthorImage, { newAuthorImage = it }, label = { Text("Image URL") }, singleLine = true)
-                    OutlinedTextField(newAuthorBio, { newAuthorBio = it }, label = { Text("Biography") }, minLines = 2)
-                }
-                HorizontalDivider()
-                Text("Media details", style = MaterialTheme.typography.titleSmall)
-                Selector("User status", userStatus, UserStatus.entries, { it.label }) { userStatus = it.value }
-                Selector("Publishing status", publishingStatus, publishingStatuses, { it }) { publishingStatus = it }
-                OutlinedTextField(sequenceNumber, { sequenceNumber = it }, label = { Text("Sequence number") }, singleLine = true)
-                OutlinedTextField(currentUnit, { currentUnit = it }, label = { Text("Current progress") }, singleLine = true)
-                OutlinedTextField(unitName, { unitName = it }, label = { Text("Unit name") }, singleLine = true)
-                OutlinedTextField(platform, { platform = it }, label = { Text("Platform") }, singleLine = true)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    androidx.compose.material3.Checkbox(checked = isCanon, onCheckedChange = { isCanon = it })
-                    Text("Canon entry")
-                }
-                HorizontalDivider()
-                Text("Publication and cover", style = MaterialTheme.typography.titleSmall)
-                OutlinedTextField(sourceUrl, { sourceUrl = it }, label = { Text("Publication URL (optional)") }, singleLine = true)
-                Button(
-                    onClick = {
-                        kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
-                            try {
-                                isFindingCover = true
-                                val found = CoverLookup.findOpenGraphImage(sourceUrl)
-                                withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                    isFindingCover = false
-                                    if (found != null) coverUrl = found
-                                    else validationError = "No cover image was found at that URL."
-                                }
-                            } catch (e: Exception) {
-                                withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                    isFindingCover = false
-                                    validationError = "Could not read the publication page."
-                                }
-                            }
-                        }
-                    },
-                    enabled = sourceUrl.isNotBlank() && !isFindingCover
-                ) { Text(if (isFindingCover) "Looking up cover…" else "Find cover from URL") }
-                if (coverUrl.isNotBlank()) {
-                    coil.compose.AsyncImage(
-                        model = coverUrl,
-                        contentDescription = "Cover preview",
-                        modifier = Modifier.fillMaxWidth().height(180.dp),
-                        contentScale = androidx.compose.ui.layout.ContentScale.Fit
-                    )
-                }
-                OutlinedTextField(coverUrl, { coverUrl = it }, label = { Text("Cover image URL") }, singleLine = true)
-                validationError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            }
-        },
-        confirmButton = {
-            Button(onClick = {
-                val finalSeries = if (createSeries) newSeries else ""
-                val finalAuthor = if (createAuthor) newAuthor else ""
-                if (title.isBlank() || (seriesId == null && finalSeries.isBlank()) || (authorId == null && finalAuthor.isBlank())) {
-                    validationError = "Title, series, and author are required."
-                } else {
-                    onSave(
-                        EntryFormData(
-                            title, type, seriesId, finalSeries, newSeriesStatus, newSeriesPublishing,
-                            newSeriesCurrent.toDoubleOrNull(), newSeriesTotal.toDoubleOrNull(),
-                            newSeriesRating.toIntOrNull(), authorId,
-                            if (createAuthor) AuthorFormData(newAuthor, newAuthorNative.ifBlank { null }, newAuthorImage.ifBlank { null }, newAuthorBio.ifBlank { null }) else null,
-                            coverUrl, sourceUrl, platform, userStatus, publishingStatus,
-                            sequenceNumber.toDoubleOrNull() ?: 1.0, currentUnit.toDoubleOrNull() ?: 0.0,
-                            unitName, isCanon
-                        )
-                    )
-                }
-            }) { Text("Save") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
-    )
-}
-
-@Composable
 private fun <T> Selector(
     label: String,
     selected: String,
@@ -810,25 +609,6 @@ private fun <T> Selector(
             }
         }
     }
-}
-
-@Composable
-private fun <T> EntitySelector(
-    label: String,
-    selected: String,
-    options: List<T>,
-    optionText: (T) -> String,
-    onSelected: (T) -> Unit,
-    onAdd: () -> Unit
-) {
-    Selector(
-        label = label,
-        selected = selected,
-        options = options,
-        text = optionText,
-        onAdd = onAdd,
-        onSelected = onSelected
-    )
 }
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)

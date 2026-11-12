@@ -292,7 +292,7 @@ fun MediaDetailSheet(
                     title = { Text("Delete entry permanently?") },
                     text = { Text("This removes the entry, its author links, progress, and history.") },
                     confirmButton = {
-                        HoldToDeleteButton {
+                        DeleteCountdownButton {
                             showDeleteWarning = false
                             onDelete()
                         }
@@ -328,32 +328,6 @@ fun MediaDetailSheet(
             }
         }
 
-    }
-}
-
-@Composable
-private fun HoldToDeleteButton(onConfirmed: () -> Unit) {
-    var secondsRemaining by remember { mutableStateOf(-1) }
-    androidx.compose.runtime.LaunchedEffect(secondsRemaining) {
-        if (secondsRemaining > 0) {
-            kotlinx.coroutines.delay(1000)
-            secondsRemaining--
-        }
-    }
-    Button(
-        onClick = {
-            if (secondsRemaining == 0) onConfirmed()
-            else if (secondsRemaining < 0) secondsRemaining = 2
-        },
-        enabled = secondsRemaining <= 0
-    ) {
-        Text(
-            when {
-                secondsRemaining < 0 -> "Start 2-second countdown"
-                secondsRemaining > 0 -> "Delete available in ${secondsRemaining}s"
-                else -> "Delete permanently"
-            }
-        )
     }
 }
 
