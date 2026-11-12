@@ -6,6 +6,14 @@ enum class MediaType(val value: String, val label: String) {
     ANIME("anime", "Anime"),
     MOVIE("movie", "Movies");
 
+    val singularLabel: String
+        get() = when (this) {
+            NOVEL -> "Novel"
+            COMIC -> "Comic"
+            ANIME -> "Anime"
+            MOVIE -> "Movie"
+        }
+
     companion object {
         fun fromValue(value: String): MediaType {
             return entries.find { it.value.equals(value, ignoreCase = true) } ?: NOVEL

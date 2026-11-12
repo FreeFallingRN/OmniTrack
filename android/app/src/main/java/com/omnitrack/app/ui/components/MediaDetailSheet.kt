@@ -49,12 +49,6 @@ import androidx.compose.ui.unit.dp
 import com.omnitrack.app.domain.model.MediaEntry
 import coil.compose.AsyncImage
 
-data class RelatedEntityDetail(
-    val title: String,
-    val type: String,
-    val works: List<MediaEntry> = emptyList()
-)
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MediaDetailSheet(
@@ -128,7 +122,7 @@ fun MediaDetailSheet(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "${entry.type.label.removeSuffix("s")} by",
+                            text = "${entry.type.singularLabel} by",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -231,40 +225,10 @@ fun MediaDetailSheet(
                     )
                 }
                 items(relatedEntries, key = { it.id }) { relatedEntry ->
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelectEntry(relatedEntry) },
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                        )
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = relatedEntry.title,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Text(
-                                    text = "${relatedEntry.type.label} • ${relatedEntry.userStatus.label}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Text(
-                                text = formatUnit(relatedEntry.currentUnit),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-
+                    MediaWorkRow(
+                        work = relatedEntry,
+                        onClick = { onSelectEntry(relatedEntry) }
+                    )
                 }
             }
 

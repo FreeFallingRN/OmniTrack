@@ -57,17 +57,13 @@ import com.omnitrack.app.data.model.UpdatePlatformRequest
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.model.UserStatus
+import com.omnitrack.app.domain.model.toDisplayLabel
 import com.omnitrack.app.ui.SeriesViewModel
 import com.omnitrack.app.ui.components.DeleteCountdownButton
 import com.omnitrack.app.utils.CoverLookup
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-private val publishingStatuses = listOf("announced", "releasing", "hiatus", "completed", "discontinued")
-
-private fun String.capitalizeStatus(): String =
-    replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
 
 private data class SeriesFormData(
     val title: String,
@@ -488,7 +484,7 @@ private fun seriesEntryCountLabel(entries: List<MediaEntry>): String =
         .entries
         .sortedBy { it.key.label }
         .joinToString(", ") { (type, count) ->
-            val label = if (count == 1) type.label.removeSuffix("s") else type.label
+            val label = if (count == 1) type.singularLabel else type.label
             "$count ${label.lowercase()}"
         }
         .ifBlank { "No works" }
@@ -780,7 +776,7 @@ private fun EntityDetailSheet(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 userStatus?.let { SeriesStatusPill(it) }
-                publishingStatus?.let { SeriesStatusPill(it.capitalizeStatus()) }
+                publishingStatus?.let { SeriesStatusPill(it.toDisplayLabel()) }
             }
 
             body?.takeIf { it.isNotBlank() }?.let {
@@ -802,7 +798,7 @@ private fun EntityDetailSheet(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(work.title, style = MaterialTheme.typography.bodyLarge)
                                 Text(
-                                    "${work.type.label.removeSuffix("s")} • ${work.userStatus.label}",
+                                    "${work.type.singularLabel} • ${work.userStatus.label}",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

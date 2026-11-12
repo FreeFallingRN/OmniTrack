@@ -1,16 +1,11 @@
 package com.omnitrack.app.ui.components
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -47,30 +42,11 @@ fun RelatedEntityDetailSheet(
                     )
                 }
                 items(detail.works.sortedBy { it.sequenceNumber }, key = { it.id }) { work ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth().clickable { onSelectWork(work) },
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                        )
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(work.title, fontWeight = FontWeight.Medium)
-                                Text(
-                                    "${work.type.label.removeSuffix("s")} • ${work.userStatus.label}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Text(
-                                "${work.unitName} ${formatUnit(work.currentUnit)}",
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
+                    MediaWorkRow(
+                        work = work,
+                        onClick = { onSelectWork(work) },
+                        includeUnitName = true
+                    )
                 }
             }
         }

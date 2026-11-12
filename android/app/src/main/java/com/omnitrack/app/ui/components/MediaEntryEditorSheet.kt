@@ -55,7 +55,9 @@ import com.omnitrack.app.data.model.SeriesDto
 import com.omnitrack.app.data.model.PlatformDto
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.MediaType
+import com.omnitrack.app.domain.model.PublishingStatus
 import com.omnitrack.app.domain.model.UserStatus
+import com.omnitrack.app.domain.model.toDisplayLabel
 import com.omnitrack.app.utils.CoverLookup
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -95,11 +97,6 @@ data class NewPlatformData(
     val websiteUrl: String?,
     val logoUrl: String?
 )
-
-private val publishingStatuses = listOf("announced", "releasing", "hiatus", "completed", "discontinued")
-
-private fun String.capitalizeStatus(): String =
-    replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -182,7 +179,7 @@ fun MediaEntryEditorSheet(
                 StatusButtonGroup(
                     label = "Type",
                     selected = type.value,
-                    options = MediaType.entries.map { it.value to it.label.removeSuffix("s") },
+                    options = MediaType.entries.map { it.value to it.singularLabel },
                     onSelected = { value ->
                         type = MediaType.fromValue(value)
                     }
@@ -222,8 +219,8 @@ fun MediaEntryEditorSheet(
                     Selector(
                         "Series publishing status",
                         newSeriesPublishingStatus,
-                        publishingStatuses,
-                        { it.capitalizeStatus() }
+                        PublishingStatus.values,
+                        { it.toDisplayLabel() }
                     ) {
                         newSeriesPublishingStatus = it
                     }
@@ -324,7 +321,7 @@ fun MediaEntryEditorSheet(
                     StatusButtonGroup(
                         label = "Publishing status",
                         selected = publishingStatus,
-                        options = publishingStatuses.map { it to it.capitalizeStatus() },
+                        options = PublishingStatus.values.map { it to it.toDisplayLabel() },
                         onSelected = { publishingStatus = it }
                     )
                 }
