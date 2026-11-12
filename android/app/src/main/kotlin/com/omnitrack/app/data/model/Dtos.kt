@@ -40,6 +40,7 @@ data class PlatformDto(
     val id: String,
     val name: String,
     @SerialName("website_url") val websiteUrl: String? = null,
+    @SerialName("logo_url") val logoUrl: String? = null,
 )
 
 @Serializable
@@ -104,12 +105,14 @@ data class UpdateEntryRequest(
 data class CreatePlatformRequest(
     val name: String,
     @SerialName("website_url") val websiteUrl: String? = null,
+    @SerialName("logo_url") val logoUrl: String? = null,
 )
 
 @Serializable
 data class UpdatePlatformRequest(
     val name: String,
     @SerialName("website_url") val websiteUrl: String? = null,
+    @SerialName("logo_url") val logoUrl: String? = null,
 )
 
 @Serializable

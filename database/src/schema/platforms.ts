@@ -7,6 +7,7 @@ export const platforms = pgTable(
     id: pkUuid(),
     name: text("name").notNull(),
     websiteUrl: text("website_url"),
+    logoUrl: text("logo_url"),
     ...timestamps,
   },
   (table) => [uniqueIndex("idx_platforms_name").on(table.name)]

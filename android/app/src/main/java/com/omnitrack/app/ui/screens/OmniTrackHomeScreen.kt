@@ -354,7 +354,8 @@ fun OmniTrackHomeScreen(
                     val platformId = form.platformId ?: SupabaseService.createPlatform(
                         CreatePlatformRequest(
                             name = form.newPlatform!!.name,
-                            websiteUrl = form.newPlatform.websiteUrl
+                            websiteUrl = form.newPlatform.websiteUrl,
+                            logoUrl = form.newPlatform.logoUrl
                         )
                     ).id
                     if (editorEntry == null) {

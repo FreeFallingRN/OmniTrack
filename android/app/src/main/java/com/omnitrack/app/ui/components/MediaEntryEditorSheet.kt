@@ -89,7 +89,8 @@ data class NewAuthorData(
 
 data class NewPlatformData(
     val name: String,
-    val websiteUrl: String?
+    val websiteUrl: String?,
+    val logoUrl: String?
 )
 
 private val publishingStatuses = listOf("announced", "releasing", "hiatus", "completed", "discontinued")
@@ -145,6 +146,8 @@ fun MediaEntryEditorSheet(
     var createPlatform by remember { mutableStateOf(false) }
     var newPlatformName by remember { mutableStateOf("") }
     var newPlatformWebsiteUrl by remember { mutableStateOf("") }
+    var newPlatformLogoUrl by remember { mutableStateOf("") }
+    var findingPlatformLogo by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -168,6 +171,33 @@ fun MediaEntryEditorSheet(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
+            }
+            item {
+                Button(
+                    onClick = {
+                        scope.launch(Dispatchers.IO) {
+                            findingPlatformLogo = true
+                            val found = CoverLookup.findOpenGraphImage(newPlatformWebsiteUrl)
+                            withContext(Dispatchers.Main) {
+                                findingPlatformLogo = false
+                                if (found != null) newPlatformLogoUrl = found
+                            }
+                        }
+                    },
+                    enabled = newPlatformWebsiteUrl.isNotBlank() && !findingPlatformLogo
+                ) {
+                    Text(if (findingPlatformLogo) "Finding logo…" else "Find logo from website")
+                }
+            }
+            if (newPlatformLogoUrl.isNotBlank()) {
+                item {
+                    AsyncImage(
+                        model = newPlatformLogoUrl,
+                        contentDescription = "Platform logo preview",
+                        modifier = Modifier.fillMaxWidth().height(96.dp),
+                        contentScale = ContentScale.Fit
+                    )
+                }
             }
             item {
                 Selector("Type", type.label, MediaType.entries, { it.label }) { type = it }
@@ -373,7 +403,8 @@ fun MediaEntryEditorSheet(
                                     newPlatform = if (createPlatform) {
                                         NewPlatformData(
                                             name = newPlatformName,
-                                            websiteUrl = newPlatformWebsiteUrl.ifBlank { null }
+                                            websiteUrl = newPlatformWebsiteUrl.ifBlank { null },
+                                            logoUrl = newPlatformLogoUrl.ifBlank { null }
                                         )
                                     } else null,
                                     userStatus = userStatus,

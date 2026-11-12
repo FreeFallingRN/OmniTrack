@@ -63,13 +63,13 @@ object SupabaseService {
 
     suspend fun getMediaEntries(seriesId: String): List<MediaEntryDto> {
         return client.get(
-            "$supabaseUrl/rest/v1/media_entries?series_id=eq.$seriesId&select=*,platform:platforms(id,name,website_url)&order=sequence_number.asc"
+            "$supabaseUrl/rest/v1/media_entries?series_id=eq.$seriesId&select=*,platform:platforms(id,name,website_url,logo_url)&order=sequence_number.asc"
         ).body()
     }
 
     suspend fun getAllMediaEntries(): List<MediaEntryDto> {
         return client.get(
-            "$supabaseUrl/rest/v1/media_entries?select=*,platform:platforms(id,name,website_url)&order=sequence_number.asc"
+            "$supabaseUrl/rest/v1/media_entries?select=*,platform:platforms(id,name,website_url,logo_url)&order=sequence_number.asc"
         ).body()
     }
 

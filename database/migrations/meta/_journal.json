@@ -71,6 +71,13 @@
       "when": 1794487020061,
       "tag": "0009_perpetual_ultimates",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794487695642,
+      "tag": "0010_misty_ma_gnuci",
+      "breakpoints": true
     }
   ]
 }

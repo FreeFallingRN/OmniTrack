@@ -44,6 +44,7 @@ erDiagram
         uuid id PK "gen_random_uuid()"
         text name "Platform name"
         text website_url "Platform website"
+        text logo_url "Platform logo image URL"
         timestamptz created_at "Audit timestamp"
         timestamptz updated_at "Audit timestamp"
     }

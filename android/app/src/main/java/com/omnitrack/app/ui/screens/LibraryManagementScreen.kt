@@ -30,6 +30,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -52,12 +53,16 @@ import com.omnitrack.app.data.SupabaseService
 import com.omnitrack.app.data.model.AuthorDto
 import com.omnitrack.app.data.model.CreateEntryRequest
 import com.omnitrack.app.data.model.CreateSeriesRequest
+import com.omnitrack.app.data.model.PlatformDto
+import com.omnitrack.app.data.model.UpdatePlatformRequest
 import com.omnitrack.app.data.model.SeriesDto
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.model.UserStatus
 import com.omnitrack.app.ui.SeriesViewModel
 import com.omnitrack.app.utils.CoverLookup
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -138,6 +143,7 @@ fun LibraryManagementScreen(viewModel: SeriesViewModel) {
     val entries by viewModel.mediaEntries.collectAsState()
     var series by remember { mutableStateOf<List<SeriesDto>>(emptyList()) }
     var authors by remember { mutableStateOf<List<AuthorDto>>(emptyList()) }
+    var platforms by remember { mutableStateOf<List<PlatformDto>>(emptyList()) }
     var selectedSection by remember { mutableIntStateOf(0) }
     var reloadToken by remember { mutableIntStateOf(0) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -148,6 +154,7 @@ fun LibraryManagementScreen(viewModel: SeriesViewModel) {
             try {
                 series = SupabaseService.getSeries()
                 authors = SupabaseService.getAuthors()
+                platforms = SupabaseService.getPlatforms()
                 viewModel.refreshData()
             } catch (e: Exception) {
                 error = e.message ?: "Could not load library management data"
@@ -159,6 +166,12 @@ fun LibraryManagementScreen(viewModel: SeriesViewModel) {
 
     var showSeriesEditor by remember { mutableStateOf(false) }
     var showAuthorEditor by remember { mutableStateOf(false) }
+    var showPlatformEditor by remember { mutableStateOf(false) }
+    var selectedPlatform by remember { mutableStateOf<PlatformDto?>(null) }
+    var detailTitle by remember { mutableStateOf<String?>(null) }
+    var detailSubtitle by remember { mutableStateOf<String?>(null) }
+    var detailBody by remember { mutableStateOf<String?>(null) }
+    var detailEdit by remember { mutableStateOf<(() -> Unit)?>(null) }
     var selectedSeries by remember { mutableStateOf<SeriesDto?>(null) }
     var selectedAuthor by remember { mutableStateOf<AuthorDto?>(null) }
     var selectedId by remember { mutableStateOf<String?>(null) }
@@ -177,14 +190,14 @@ fun LibraryManagementScreen(viewModel: SeriesViewModel) {
         ) {
             Text("Manage library", style = MaterialTheme.typography.headlineSmall)
             Text(
-                "Create and maintain series and authors.",
+                "Manage series, authors, and platforms.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center
             ) {
-                listOf("Serie", "Author").forEachIndexed { index, label ->
+                listOf("Serie", "Author", "Platform").forEachIndexed { index, label ->
                 if (selectedSection == index) {
                     FilledTonalButton(onClick = { selectedSection = index }) { Text(label) }
                 } else {
@@ -222,20 +235,64 @@ fun LibraryManagementScreen(viewModel: SeriesViewModel) {
                         title = item.title,
                         subtitle = "${entries.count { it.seriesId == item.id }} book(s)",
                         selected = selectedId == item.id,
-                        onClick = { selectedSeries = item; showSeriesEditor = true },
+                        onClick = {
+                            detailTitle = item.title
+                            detailSubtitle = "Series"
+                            detailBody = "${entries.count { it.seriesId == item.id }} media entries\n" +
+                                "User status: ${UserStatus.fromValue(derivedSeriesStatus(entries, item.id)).label}\n" +
+                                "Publishing status: ${derivedSeriesPublishingStatus(entries, item.id)}"
+                            detailEdit = {
+                                selectedSeries = item
+                                detailTitle = null
+                                showSeriesEditor = true
+                            }
+                        },
                         onLongClick = { selectedId = item.id; selectedKind = "series" }
                     )
                 }
             }
             else -> {
+                if (selectedSection == 1) {
                 authors.forEach { author ->
                     ManagementRow(
                         title = author.name,
                         subtitle = "Author",
                         selected = selectedId == author.id,
-                        onClick = { selectedAuthor = author; showAuthorEditor = true },
+                        onClick = {
+                            detailTitle = author.name
+                            detailSubtitle = "Author"
+                            detailBody = listOfNotNull(author.nativeName, author.imageUrl, author.bio)
+                                .joinToString("\n")
+                            detailEdit = {
+                                selectedAuthor = author
+                                detailTitle = null
+                                showAuthorEditor = true
+                            }
+                        },
                         onLongClick = { selectedId = author.id; selectedKind = "author" }
                     )
+                }
+                }
+                if (selectedSection == 2) {
+                    platforms.forEach { platform ->
+                        ManagementRow(
+                            title = platform.name,
+                            subtitle = "Platform",
+                            imageUrl = platform.logoUrl,
+                            selected = selectedId == platform.id,
+                            onClick = {
+                                detailTitle = platform.name
+                                detailSubtitle = "Platform"
+                                detailBody = null
+                                detailEdit = {
+                                    selectedPlatform = platform
+                                    detailTitle = null
+                                    showPlatformEditor = true
+                                }
+                            },
+                            onLongClick = { selectedId = platform.id; selectedKind = "platform" }
+                        )
+                    }
                 }
             }
             }
@@ -245,8 +302,10 @@ fun LibraryManagementScreen(viewModel: SeriesViewModel) {
     if (showDeleteWarning && selectedId != null) {
         val selectedSeriesItem = series.firstOrNull { it.id == selectedId }
         val selectedAuthorItem = authors.firstOrNull { it.id == selectedId }
+        val selectedPlatformItem = platforms.firstOrNull { it.id == selectedId }
         val warning = when (selectedKind) {
             "series" -> "This permanently deletes ${selectedSeriesItem?.title ?: "the series"}, every entry in it, their progress, and history."
+            "platform" -> "This permanently deletes ${selectedPlatformItem?.name ?: "the platform"} and clears it from linked entries."
             else -> "This permanently deletes ${selectedAuthorItem?.name ?: "the author"} and removes the author link from every entry."
         }
         AlertDialog(
@@ -260,6 +319,7 @@ fun LibraryManagementScreen(viewModel: SeriesViewModel) {
                             when (selectedKind) {
                                 "series" -> SupabaseService.deleteSeries(selectedId!!)
                                 "author" -> SupabaseService.deleteAuthor(selectedId!!)
+                                "platform" -> SupabaseService.deletePlatform(selectedId!!)
                             }
                             showDeleteWarning = false
                             selectedId = null
@@ -339,6 +399,43 @@ fun LibraryManagementScreen(viewModel: SeriesViewModel) {
         )
     }
 
+    if (showPlatformEditor) {
+        PlatformEditorSheet(
+            existing = selectedPlatform,
+            onDismiss = { showPlatformEditor = false },
+            onSave = { name, websiteUrl, logoUrl ->
+                scope.launch {
+                    try {
+                        selectedPlatform?.let {
+                            SupabaseService.updatePlatform(
+                                it.id,
+                                UpdatePlatformRequest(
+                                    name = name,
+                                    websiteUrl = websiteUrl,
+                                    logoUrl = logoUrl
+                                )
+                            )
+                        }
+                        showPlatformEditor = false
+                        reloadToken++
+                    } catch (e: Exception) {
+                        error = e.message ?: "Could not save platform"
+                    }
+                }
+            }
+        )
+    }
+
+    detailTitle?.let { title ->
+        EntityDetailSheet(
+            title = title,
+            subtitle = detailSubtitle,
+            body = detailBody,
+            onDismiss = { detailTitle = null },
+            onEdit = { detailEdit?.invoke() }
+        )
+    }
+
     error?.let { message ->
         AlertDialog(
             onDismissRequest = { error = null },
@@ -353,6 +450,7 @@ fun LibraryManagementScreen(viewModel: SeriesViewModel) {
 private fun ManagementRow(
     title: String,
     subtitle: String,
+    imageUrl: String? = null,
     selected: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit
@@ -370,9 +468,23 @@ private fun ManagementRow(
             }
         )
     ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (!imageUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = imageUrl,
+                    contentDescription = "$title logo",
+                    modifier = Modifier.size(40.dp),
+                    contentScale = ContentScale.Fit
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }
@@ -697,6 +809,7 @@ private fun <T> EntitySelector(
     )
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun EditorDialog(
     title: String,
@@ -704,18 +817,139 @@ private fun EditorDialog(
     onSave: () -> Unit,
     content: @Composable () -> Unit
 ) {
-    AlertDialog(
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(title, style = MaterialTheme.typography.headlineSmall)
+            content()
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                content()
+                TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                    Text("Cancel")
+                }
+                Button(onClick = onSave, modifier = Modifier.weight(1f)) {
+                    Text("Save")
+                }
             }
-        },
-        confirmButton = { Button(onClick = onSave) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
-    )
+        }
+    }
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun PlatformEditorSheet(
+    existing: PlatformDto?,
+    onDismiss: () -> Unit,
+    onSave: (String, String?, String?) -> Unit
+) {
+    var name by remember { mutableStateOf(existing?.name.orEmpty()) }
+    var websiteUrl by remember { mutableStateOf(existing?.websiteUrl.orEmpty()) }
+    var logoUrl by remember { mutableStateOf(existing?.logoUrl.orEmpty()) }
+    var findingLogo by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text("Edit platform", style = MaterialTheme.typography.headlineSmall)
+            OutlinedTextField(
+                name,
+                { name = it },
+                label = { Text("Platform name") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            OutlinedTextField(
+                websiteUrl,
+                { websiteUrl = it },
+                label = { Text("Website URL (optional)") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            Button(
+                onClick = {
+                    scope.launch(Dispatchers.IO) {
+                        findingLogo = true
+                        val found = CoverLookup.findOpenGraphImage(websiteUrl)
+                        withContext(Dispatchers.Main) {
+                            findingLogo = false
+                            if (found != null) logoUrl = found
+                        }
+                    }
+                },
+                enabled = websiteUrl.isNotBlank() && !findingLogo,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (findingLogo) "Finding logo…" else "Find logo from website")
+            }
+            if (logoUrl.isNotBlank()) {
+                AsyncImage(
+                    model = logoUrl,
+                    contentDescription = "Platform logo preview",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxWidth().height(96.dp)
+                )
+            }
+            OutlinedTextField(
+                logoUrl,
+                { logoUrl = it },
+                label = { Text("Logo image URL") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            Button(
+                onClick = {
+                    if (name.isNotBlank()) {
+                        onSave(name, websiteUrl.ifBlank { null }, logoUrl.ifBlank { null })
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Save")
+            }
+        }
+    }
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun EntityDetailSheet(
+    title: String,
+    subtitle: String?,
+    body: String?,
+    onDismiss: () -> Unit,
+    onEdit: () -> Unit
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(title, style = MaterialTheme.typography.headlineSmall)
+            subtitle?.let {
+                Text(it, color = MaterialTheme.colorScheme.primary)
+            }
+            body?.takeIf { it.isNotBlank() }?.let {
+                Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Button(onClick = onEdit, modifier = Modifier.fillMaxWidth()) {
+                Text("Edit")
+            }
+        }
+    }
 }
