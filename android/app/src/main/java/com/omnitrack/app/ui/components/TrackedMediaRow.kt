@@ -14,11 +14,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.omnitrack.app.domain.model.Series
+import com.omnitrack.app.domain.model.MediaEntry
 
 @Composable
 fun TrackedMediaRow(
-    series: Series,
+    entry: MediaEntry,
     onClick: () -> Unit,
     onToggleActiveTarget: () -> Unit,
     onIncrement: () -> Unit
@@ -42,7 +42,7 @@ fun TrackedMediaRow(
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = series.title.take(2).uppercase(),
+                text = entry.title.take(2).uppercase(),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
@@ -57,7 +57,7 @@ fun TrackedMediaRow(
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = series.title,
+                text = entry.title,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Bold,
                 maxLines = 2,
@@ -69,9 +69,9 @@ fun TrackedMediaRow(
 
             Text(
                 text = buildString {
-                    append("${series.unitName} ${series.currentCumulativeUnit.toInt()}")
-                    if (series.totalUnits != null && series.totalUnits > 0) {
-                        append(" / ${series.totalUnits.toInt()}")
+                    append("${entry.unitName} ${entry.currentUnit.toInt()}")
+                    if (entry.totalUnits != null && entry.totalUnits > 0) {
+                        append(" / ${entry.totalUnits.toInt()}")
                     }
                 },
                 style = MaterialTheme.typography.bodyMedium,
@@ -91,7 +91,7 @@ fun TrackedMediaRow(
                 Icon(
                     imageVector = Icons.Default.Notifications,
                     contentDescription = "Pin",
-                    tint = if (series.isActiveTarget) MaterialTheme.colorScheme.primary
+                    tint = if (entry.isActiveTarget) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
                     modifier = Modifier.size(20.dp)
                 )

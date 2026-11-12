@@ -59,6 +59,12 @@ object SupabaseService {
         ).body()
     }
 
+    suspend fun getAllMediaEntries(): List<MediaEntryDto> {
+        return client.get(
+            "$supabaseUrl/rest/v1/media_entries?select=*&order=sequence_number.asc"
+        ).body()
+    }
+
     suspend fun getExternalLinks(seriesId: String): List<ExternalLinkDto> {
         return client.get(
             "$supabaseUrl/rest/v1/external_links?series_id=eq.$seriesId&select=*"

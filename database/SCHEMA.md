@@ -34,6 +34,7 @@ erDiagram
         uuid id PK "gen_random_uuid()"
         uuid series_id FK "References series(id) ON DELETE CASCADE (Nullable for standalone works)"[cite: 10]
         text title "e.g. 'Book 1: Unsouled', 'Season 2 Part 2'"[cite: 10]
+        media_type type "novel | comic | anime | movie (required for standalone entries)"
         numeric sequence_number "Order: 1.00, 2.00, 2.50..."[cite: 10]
         publishing_status publishing_status "announced | releasing | hiatus | completed | discontinued"[cite: 8, 10]
         user_status user_status "planning | in_progress | completed | paused | dropped"[cite: 8, 10]

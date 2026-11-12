@@ -15,6 +15,13 @@
       "when": 1794437435582,
       "tag": "0001_organic_drax",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794473522960,
+      "tag": "0002_giant_pride",
+      "breakpoints": true
     }
   ]
 }

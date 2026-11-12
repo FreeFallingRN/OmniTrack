@@ -13,12 +13,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.omnitrack.app.domain.model.Series
+import com.omnitrack.app.domain.model.MediaEntry
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MediaDetailSheet(
-    series: Series,
+    entry: MediaEntry,
     onDismiss: () -> Unit,
     onUpdateProgress: (Double) -> Unit,
     onToggleActiveTarget: (Boolean) -> Unit,
@@ -27,7 +27,7 @@ fun MediaDetailSheet(
     // FIX: Initialize local state once per sheet opening using standard mutableStateOf.
     // This prevents Compose from wiping out your active edits during rapid button tapping.
     var progressText by remember {
-        mutableStateOf(series.currentCumulativeUnit.toString())
+        mutableStateOf(entry.currentUnit.toString())
     }
 
     ModalBottomSheet(
@@ -54,7 +54,7 @@ fun MediaDetailSheet(
                         .background(MaterialTheme.colorScheme.primaryContainer),
                     contentAlignment = Alignment.Center
                 ) {
-                    val initials = series.title.split(" ")
+                    val initials = entry.title.split(" ")
                         .take(2)
                         .mapNotNull { it.firstOrNull()?.uppercase() }
                         .joinToString("")
@@ -68,14 +68,18 @@ fun MediaDetailSheet(
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = series.title,
+                        text = entry.title,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "${series.type.label} • ${series.userStatus.label}",
+                        text = buildString {
+                            append(entry.type.label)
+                            entry.seriesTitle?.let { append(" • $it") }
+                            append(" • ${entry.userStatus.label}")
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -102,9 +106,9 @@ fun MediaDetailSheet(
                             .padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        DetailRow(label = "Current Progress", value = "Chapter $progressText")
-                        DetailRow(label = "Active Target", value = if (series.isActiveTarget) "Yes (Pinned Notification)" else "No")
-                        DetailRow(label = "Media ID", value = series.id)
+                        DetailRow(label = "Current Progress", value = "${entry.unitName} $progressText")
+                        DetailRow(label = "Active Target", value = if (entry.isActiveTarget) "Yes (Pinned Notification)" else "No")
+                        DetailRow(label = "Media ID", value = entry.id)
                     }
                 }
             }
@@ -137,7 +141,7 @@ fun MediaDetailSheet(
                     // Quick decrement button (-1)
                     FilledTonalIconButton(
                         onClick = {
-                            val currentVal = progressText.toDoubleOrNull() ?: series.currentCumulativeUnit
+                            val currentVal = progressText.toDoubleOrNull() ?: entry.currentUnit
                             val next = (currentVal - 1.0).coerceAtLeast(0.0)
                             progressText = next.toString()
                             onUpdateProgress(next)
@@ -149,7 +153,7 @@ fun MediaDetailSheet(
                     // Quick increment button (+1)
                     FilledIconButton(
                         onClick = {
-                            val currentVal = progressText.toDoubleOrNull() ?: series.currentCumulativeUnit
+                            val currentVal = progressText.toDoubleOrNull() ?: entry.currentUnit
                             val next = currentVal + 1.0
                             progressText = next.toString()
                             onUpdateProgress(next)
@@ -174,7 +178,7 @@ fun MediaDetailSheet(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Switch(
-                    checked = series.isActiveTarget,
+                    checked = entry.isActiveTarget,
                     onCheckedChange = { onToggleActiveTrust -> onToggleActiveTarget(onToggleActiveTrust) }
                 )
             }

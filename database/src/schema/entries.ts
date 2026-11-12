@@ -1,7 +1,7 @@
 import { pgTable, uuid, text, boolean, numeric, index } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { series } from "./series";
-import { userStatusEnum, publishingStatusEnum } from "./enums";
+import { mediaTypeEnum, userStatusEnum, publishingStatusEnum } from "./enums";
 import { pkUuid, unitNumber, optionalUnitNumber, timestamps } from "./helpers";
 
 /**
@@ -20,6 +20,7 @@ export const mediaEntries = pgTable(
     seriesId: uuid("series_id").references(() => series.id, { onDelete: "cascade" }),
 
     title: text("title").notNull(), // e.g. "Book 1: Unsouled", "Season 2 Part 2"
+    type: mediaTypeEnum("type").notNull().default("novel"),
     sequenceNumber: numeric("sequence_number", { precision: 5, scale: 2 })
       .notNull()
       .default("1.00"),

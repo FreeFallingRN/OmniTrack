@@ -24,7 +24,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.omnitrack.app.domain.model.MediaType
-import com.omnitrack.app.domain.model.Series
+import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.UserStatus
 import com.omnitrack.app.ui.SeriesViewModel
 import com.omnitrack.app.ui.components.MediaDetailSheet
@@ -34,14 +34,14 @@ import com.omnitrack.app.ui.components.TrackedMediaRow
 @Composable
 fun OmniTrackHomeScreen(
     viewModel: SeriesViewModel,
-    onTogglePinNotification: (Series) -> Unit
+    onTogglePinNotification: (MediaEntry) -> Unit
 ) {
-    val seriesList by viewModel.seriesList.collectAsState()
+    val mediaEntries by viewModel.mediaEntries.collectAsState()
 
     var selectedTabMediaType by remember { mutableStateOf(MediaType.NOVEL) }
     var selectedUserStatus by remember { mutableStateOf(UserStatus.IN_PROGRESS) }
     var searchQuery by remember { mutableStateOf("") }
-    var selectedSeriesForDetail by remember { mutableStateOf<Series?>(null) }
+    var selectedEntryForDetail by remember { mutableStateOf<MediaEntry?>(null) }
     var bottomNavIndex by remember { mutableIntStateOf(0) }
 
     Scaffold(
@@ -213,10 +213,12 @@ fun OmniTrackHomeScreen(
                         Spacer(modifier = Modifier.height(12.dp))
 
                         // Filtered Media List
-                        val filteredList = seriesList.filter { series ->
-                            val matchesType = series.type == selectedTabMediaType
-                            val matchesStatus = series.userStatus == selectedUserStatus
-                            val matchesSearch = searchQuery.isBlank() || series.title.contains(searchQuery, ignoreCase = true)
+                        val filteredList = mediaEntries.filter { entry ->
+                            val matchesType = entry.type == selectedTabMediaType
+                            val matchesStatus = entry.userStatus == selectedUserStatus
+                            val matchesSearch = searchQuery.isBlank() ||
+                                entry.title.contains(searchQuery, ignoreCase = true) ||
+                                entry.seriesTitle?.contains(searchQuery, ignoreCase = true) == true
                             matchesType && matchesStatus && matchesSearch
                         }
 
@@ -240,16 +242,16 @@ fun OmniTrackHomeScreen(
                                     .weight(1f),
                                 verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                items(filteredList, key = { it.id }) { series ->
+                                items(filteredList, key = { it.id }) { entry ->
                                     TrackedMediaRow(
-                                        series = series,
-                                        onClick = { selectedSeriesForDetail = series },
+                                        entry = entry,
+                                        onClick = { selectedEntryForDetail = entry },
                                         onToggleActiveTarget = {
-                                            viewModel.toggleActiveTarget(series.id, !series.isActiveTarget)
-                                            onTogglePinNotification(series)
+                                            viewModel.toggleActiveTarget(entry.id, !entry.isActiveTarget)
+                                            onTogglePinNotification(entry)
                                         },
                                         onIncrement = {
-                                            viewModel.updateProgress(series.id, series.currentCumulativeUnit + 1.0)
+                                            viewModel.updateProgress(entry.id, entry.currentUnit + 1.0)
                                         }
                                     )
                                 }
@@ -277,15 +279,15 @@ fun OmniTrackHomeScreen(
         }
     }
 
-    selectedSeriesForDetail?.let { series ->
+    selectedEntryForDetail?.let { entry ->
         MediaDetailSheet(
-            series = series,
-            onDismiss = { selectedSeriesForDetail = null },
-            onUpdateProgress = { newProgress -> viewModel.updateProgress(series.id, newProgress) },
-            onToggleActiveTarget = { isActive -> viewModel.toggleActiveTarget(series.id, isActive) },
+            entry = entry,
+            onDismiss = { selectedEntryForDetail = null },
+            onUpdateProgress = { newProgress -> viewModel.updateProgress(entry.id, newProgress) },
+            onToggleActiveTarget = { isActive -> viewModel.toggleActiveTarget(entry.id, isActive) },
             onDelete = {
-                viewModel.deleteSeries(series.id)
-                selectedSeriesForDetail = null
+                viewModel.deleteMediaEntry(entry.id)
+                selectedEntryForDetail = null
             }
         )
     }

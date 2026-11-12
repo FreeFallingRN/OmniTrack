@@ -21,7 +21,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.omnitrack.app.BuildConfig
 import com.omnitrack.app.data.local.AppDatabase
 import com.omnitrack.app.data.repository.SeriesRepositoryImpl
-import com.omnitrack.app.domain.model.Series
+import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.repository.SeriesRepository
 import com.omnitrack.app.service.ActionNotificationService
 import com.omnitrack.app.ui.screens.OmniTrackHomeScreen
@@ -58,7 +58,7 @@ class MainActivity : ComponentActivity() {
         // 2. Initialize Room Database & Series Repository
         val database = AppDatabase.getInstance(applicationContext)
         val repository: SeriesRepository = SeriesRepositoryImpl(
-            seriesDao = database.seriesDao(),
+            mediaEntryDao = database.mediaEntryDao(),
             httpClient = httpClient,
             supabaseUrl = BuildConfig.SUPABASE_URL,
             supabaseKey = BuildConfig.SUPABASE_ANON_KEY
@@ -109,8 +109,8 @@ class MainActivity : ComponentActivity() {
 
                 OmniTrackHomeScreen(
                     viewModel = seriesViewModel,
-                    onTogglePinNotification = { series ->
-                        updatePinnedNotification(series)
+                    onTogglePinNotification = { entry ->
+                        updatePinnedNotification(entry)
                     }
                 )
 
@@ -153,11 +153,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun updatePinnedNotification(series: Series) {
+    private fun updatePinnedNotification(entry: MediaEntry) {
         val intent = Intent(this, ActionNotificationService::class.java).apply {
-            putExtra("SERIES_ID", series.id)
-            putExtra("TITLE", series.title)
-            putExtra("CURRENT_UNIT", series.currentCumulativeUnit)
+            putExtra("SERIES_ID", entry.id)
+            putExtra("TITLE", entry.title)
+            putExtra("CURRENT_UNIT", entry.currentUnit)
         }
         startForegroundService(intent)
     }

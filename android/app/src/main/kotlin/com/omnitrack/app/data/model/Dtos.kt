@@ -24,8 +24,9 @@ data class SeriesDto(
 @Serializable
 data class MediaEntryDto(
     val id: String,
-    @SerialName("series_id") val seriesId: String,
+    @SerialName("series_id") val seriesId: String? = null,
     val title: String,
+    val type: String = "novel",
     @SerialName("sequence_number") val sequenceNumber: Double,
     @SerialName("user_status") val userStatus: String,
     @SerialName("publishing_status") val publishingStatus: String,
@@ -66,8 +67,9 @@ data class CreateSeriesRequest(
 
 @Serializable
 data class CreateEntryRequest(
-    @SerialName("series_id") val seriesId: String,
+    @SerialName("series_id") val seriesId: String? = null,
     val title: String,
+    val type: String,
     @SerialName("sequence_number") val sequenceNumber: Double,
     @SerialName("user_status") val userStatus: String,
     @SerialName("publishing_status") val publishingStatus: String,

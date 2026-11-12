@@ -2,7 +2,7 @@ package com.omnitrack.app.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.omnitrack.app.domain.model.Series
+import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.repository.SeriesRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -13,8 +13,7 @@ class SeriesViewModel(
     private val repository: SeriesRepository
 ) : ViewModel() {
 
-    // Expose a reactive state flow of all series items from the local Room cache
-    val seriesList: StateFlow<List<Series>> = repository.getSeriesStream()
+    val mediaEntries: StateFlow<List<MediaEntry>> = repository.getMediaEntriesStream()
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -48,9 +47,9 @@ class SeriesViewModel(
         }
     }
 
-    fun deleteSeries(id: String) {
+    fun deleteMediaEntry(id: String) {
         viewModelScope.launch {
-            repository.deleteSeries(id)
+            repository.deleteMediaEntry(id)
         }
     }
 }

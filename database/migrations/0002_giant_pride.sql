@@ -1,0 +1,1 @@
+ALTER TABLE "media_entries" ADD COLUMN "type" "media_type" DEFAULT 'novel' NOT NULL;

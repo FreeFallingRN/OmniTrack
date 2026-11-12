@@ -1,9 +1,10 @@
 package com.omnitrack.app.data.repository
 
 import android.util.Log
-import com.omnitrack.app.data.local.SeriesDao
-import com.omnitrack.app.data.remote.SeriesDto
-import com.omnitrack.app.domain.model.Series
+import com.omnitrack.app.data.local.MediaEntryDao
+import com.omnitrack.app.data.remote.MediaEntryDto
+import com.omnitrack.app.data.remote.SeriesTitleDto
+import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.repository.SeriesRepository
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -17,14 +18,14 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 class SeriesRepositoryImpl(
-    private val seriesDao: SeriesDao,
+    private val mediaEntryDao: MediaEntryDao,
     private val httpClient: HttpClient,
     private val supabaseUrl: String,
     private val supabaseKey: String
 ) : SeriesRepository {
 
-    override fun getSeriesStream(): Flow<List<Series>> {
-        return seriesDao.getAllSeries().map { entities ->
+    override fun getMediaEntriesStream(): Flow<List<MediaEntry>> {
+        return mediaEntryDao.getAllEntries().map { entities ->
             entities.map { it.toDomain() }
         }
     }
@@ -32,27 +33,32 @@ class SeriesRepositoryImpl(
     override suspend fun fetchFromSupabase() {
         if (supabaseUrl.isBlank() || supabaseKey.isBlank()) return
         try {
-            val response = httpClient.get("$supabaseUrl/rest/v1/series?select=*") {
+            val seriesResponse = httpClient.get("$supabaseUrl/rest/v1/series?select=id,title") {
                 header("apikey", supabaseKey)
                 header("Authorization", "Bearer $supabaseKey")
             }
-            val dtos: List<SeriesDto> = response.body()
-            val entities = dtos.map { it.toDomain().toEntity() }
-            seriesDao.insertAll(entities)
+            val series: List<SeriesTitleDto> = seriesResponse.body()
+            val entriesResponse = httpClient.get("$supabaseUrl/rest/v1/media_entries?select=*") {
+                header("apikey", supabaseKey)
+                header("Authorization", "Bearer $supabaseKey")
+            }
+            val entries: List<MediaEntryDto> = entriesResponse.body()
+            val seriesTitles = series.associate { it.id to it.title }
+            mediaEntryDao.insertAll(entries.map { it.toEntity(seriesTitles[it.seriesId]) })
         } catch (e: Exception) {
             Log.e("SeriesRepository", "Failed to sync from Supabase", e)
         }
     }
 
     override suspend fun updateProgress(id: String, newProgress: Double) {
-        seriesDao.updateProgress(id, newProgress)
+        mediaEntryDao.updateProgress(id, newProgress)
         if (supabaseUrl.isBlank()) return
         try {
-            httpClient.patch("$supabaseUrl/rest/v1/series?id=eq.$id") {
+            httpClient.patch("$supabaseUrl/rest/v1/media_entries?id=eq.$id") {
                 header("apikey", supabaseKey)
                 header("Authorization", "Bearer $supabaseKey")
                 contentType(ContentType.Application.Json)
-                setBody(mapOf("current_cumulative_unit" to newProgress))
+                setBody(mapOf("current_unit" to newProgress))
             }
         } catch (e: Exception) {
             Log.e("SeriesRepository", "Failed to update progress on Supabase", e)
@@ -60,10 +66,10 @@ class SeriesRepositoryImpl(
     }
 
     override suspend fun setActiveTarget(id: String, isActive: Boolean) {
-        seriesDao.updateActiveTargetState(id, isActive)
+        mediaEntryDao.updateActiveTargetState(id, isActive)
         if (supabaseUrl.isBlank()) return
         try {
-            httpClient.patch("$supabaseUrl/rest/v1/series?id=eq.$id") {
+            httpClient.patch("$supabaseUrl/rest/v1/media_entries?id=eq.$id") {
                 header("apikey", supabaseKey)
                 header("Authorization", "Bearer $supabaseKey")
                 contentType(ContentType.Application.Json)
@@ -74,7 +80,7 @@ class SeriesRepositoryImpl(
         }
     }
 
-    override suspend fun deleteSeries(id: String) {
-        seriesDao.deleteSeriesById(id)
+    override suspend fun deleteMediaEntry(id: String) {
+        mediaEntryDao.deleteEntryById(id)
     }
 }

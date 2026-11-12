@@ -6,13 +6,14 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [SeriesEntity::class],
-    version = 4,
+    entities = [SeriesEntity::class, MediaEntryEntity::class],
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun seriesDao(): SeriesDao
+    abstract fun mediaEntryDao(): MediaEntryDao
 
     companion object {
         @Volatile
@@ -25,7 +26,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "omnitrack_database"
                 )
-                    .fallbackToDestructiveMigration(false)
+                    .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance
                 instance
