@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -86,7 +87,8 @@ fun MediaDetailSheet(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(64.dp)
+                            .width(64.dp)
+                            .height(96.dp)
                             .clip(RoundedCornerShape(12.dp))
                             .background(MaterialTheme.colorScheme.primaryContainer),
                         contentAlignment = Alignment.Center
@@ -104,7 +106,7 @@ fun MediaDetailSheet(
                             AsyncImage(
                                 model = entry.coverUrl,
                                 contentDescription = "${entry.title} cover",
-                                contentScale = ContentScale.Crop,
+                                contentScale = ContentScale.Fit,
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .clickable { showCover = true }
@@ -121,20 +123,29 @@ fun MediaDetailSheet(
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
-                        Text(
-                            text = "${entry.type.singularLabel} by",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        entry.authors.forEach { author ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = author,
+                                text = "${entry.type.singularLabel} by ",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.clickable {
-                                    onOpenRelatedEntity(RelatedEntityDetail(author, "Author"))
-                                }
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            entry.authors.forEachIndexed { index, author ->
+                                if (index > 0) {
+                                    Text(
+                                        text = ", ",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Text(
+                                    text = author,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.clickable {
+                                        onOpenRelatedEntity(RelatedEntityDetail(author, "Author"))
+                                    }
+                                )
+                            }
                         }
                         entry.seriesTitle?.let {
                             Text(
@@ -146,7 +157,10 @@ fun MediaDetailSheet(
                                         RelatedEntityDetail(
                                             title = it,
                                             type = "Series",
-                                            works = relatedEntries + entry
+                                            works = relatedEntries + entry,
+                                            imageUrl = entry.coverUrl,
+                                            userStatus = entry.userStatus.label,
+                                            publishingStatus = entry.publishingStatus
                                         )
                                     )
                                 }

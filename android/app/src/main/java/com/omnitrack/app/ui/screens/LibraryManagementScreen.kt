@@ -60,6 +60,7 @@ import com.omnitrack.app.domain.model.UserStatus
 import com.omnitrack.app.domain.model.toDisplayLabel
 import com.omnitrack.app.ui.SeriesViewModel
 import com.omnitrack.app.ui.components.DeleteCountdownButton
+import com.omnitrack.app.ui.components.EntityDetailSheet
 import com.omnitrack.app.utils.CoverLookup
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -90,7 +91,6 @@ private fun derivedSeriesStatus(entries: List<MediaEntry>, seriesId: String): St
         ?.value
         ?: UserStatus.PLANNING.value
 }
-
 private fun derivedSeriesPublishingStatus(entries: List<MediaEntry>, seriesId: String): String {
     return entries
         .asSequence()
@@ -718,114 +718,6 @@ private fun PlatformEditorSheet(
             ) {
                 Text("Save")
             }
-        }
-    }
-}
-
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-@Composable
-private fun SeriesStatusPill(status: String) {
-    Surface(
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-        shape = RoundedCornerShape(50)
-    ) {
-        Text(
-            status,
-            style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-        )
-    }
-}
-
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-@Composable
-private fun EntityDetailSheet(
-    title: String,
-    subtitle: String?,
-    body: String?,
-    imageUrl: String?,
-    works: List<MediaEntry>,
-    userStatus: String?,
-    publishingStatus: String?,
-    onDismiss: () -> Unit,
-    onEdit: () -> Unit,
-    onSelectWork: (MediaEntry) -> Unit,
-    onDelete: (() -> Unit)?
-) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            if (!imageUrl.isNullOrBlank()) {
-                AsyncImage(
-                    model = imageUrl,
-                    contentDescription = "$title cover",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(180.dp)
-                )
-            }
-            Text(title, style = MaterialTheme.typography.headlineSmall)
-            subtitle?.let {
-                Text(it, color = MaterialTheme.colorScheme.primary)
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                userStatus?.let { SeriesStatusPill(it) }
-                publishingStatus?.let { SeriesStatusPill(it.toDisplayLabel()) }
-            }
-
-            body?.takeIf { it.isNotBlank() }?.let {
-                Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            if (works.isNotEmpty()) {
-                Text("Works", style = MaterialTheme.typography.titleMedium)
-                works.sortedBy { it.sequenceNumber }.forEach { work ->
-                    Card(
-                        modifier = Modifier.clickable { onSelectWork(work) },
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                        )
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(work.title, style = MaterialTheme.typography.bodyLarge)
-                                Text(
-                                    "${work.type.singularLabel} • ${work.userStatus.label}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Text(
-                                "${work.unitName} ${work.currentUnit.toString().removeSuffix(".0")}",
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-
-                }
-            }
-
-            Button(onClick = onEdit, modifier = Modifier.fillMaxWidth()) {
-                Text("Edit")
-            }
-
-            onDelete?.let {
-                androidx.compose.material3.OutlinedButton(
-                    onClick = it,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Delete")
-                }
-            }
-
         }
     }
 }
