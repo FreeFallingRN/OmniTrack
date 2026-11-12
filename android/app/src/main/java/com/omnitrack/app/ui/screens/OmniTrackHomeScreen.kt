@@ -1,12 +1,19 @@
 package com.omnitrack.app.ui.screens
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -24,6 +31,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.omnitrack.app.domain.model.MediaType
@@ -85,76 +93,99 @@ fun OmniTrackHomeScreen(
             ) {
                 // Status filter pills: only render at the bottom when on the Library screen (index 0)
                 if (bottomNavIndex == 0) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = 16.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        UserStatus.entries.forEach { status ->
-                            val isSelected = selectedUserStatus == status
-                            Surface(
-                                shape = CircleShape,
-                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer
-                                else androidx.compose.ui.graphics.Color.Transparent,
-                                tonalElevation = 0.dp,
-                                shadowElevation = 0.dp,
-                                onClick = { selectedUserStatus = status }
-                            ) {
+                        ScrollableTabRow(
+                            selectedTabIndex = selectedUserStatus.ordinal,
+                            edgePadding = 0.dp,
+                            containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                            indicator = { tabPositions ->
+                                if (selectedUserStatus.ordinal < tabPositions.size) {
+                                    Box(
+                                        modifier = Modifier
+                                            .tabIndicatorOffset(tabPositions[selectedUserStatus.ordinal])
+                                            .padding(horizontal = 4.dp, vertical = 4.dp)
+                                            .fillMaxHeight()
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.primaryContainer)
+                                            .zIndex(-1f)
+                                    )
+                                }
+                            },
+                            divider = {}
+                        ) {
+                            UserStatus.entries.forEach { status ->
                                 Box(
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                                    modifier = Modifier
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null,
+                                            onClick = { selectedUserStatus = status }
+                                        )
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
                                         text = status.label,
                                         style = MaterialTheme.typography.labelMedium,
-                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
-                                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        color = if (selectedUserStatus == status) {
+                                            MaterialTheme.colorScheme.onPrimaryContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                        },
+                                        fontWeight = if (selectedUserStatus == status) {
+                                            FontWeight.Bold
+                                        } else {
+                                            FontWeight.Normal
+                                        }
                                     )
                                 }
                             }
                         }
-                    }
                 }
 
                 // Main bottom navigation bar row
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp)
-                        .padding(horizontal = 24.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                TabRow(
+                    selectedTabIndex = bottomNavIndex,
+                    modifier = Modifier.height(56.dp),
+                    containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                    indicator = { tabPositions ->
+                        if (bottomNavIndex < tabPositions.size) {
+                            Box(
+                                modifier = Modifier
+                                    .tabIndicatorOffset(tabPositions[bottomNavIndex])
+                                    .padding(horizontal = 24.dp, vertical = 12.dp)
+                                    .fillMaxHeight()
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primaryContainer)
+                                    .zIndex(-1f)
+                            )
+                        }
+                    },
+                    divider = {}
                 ) {
-                    val navItems = listOf(
-                        Triple(0, Icons.Default.LocalLibrary, "Library"),
-                        Triple(1, Icons.Default.AccountTree, "Manage library"),
-                        Triple(2, Icons.Default.DateRange, "History"),
-                        Triple(3, Icons.Default.Settings, "Settings")
-                    )
-
-                    navItems.forEach { (index, icon, label) ->
-                        val isSelected = bottomNavIndex == index
+                    listOf(
+                        Triple(Icons.Default.LocalLibrary, "Library", 0),
+                        Triple(Icons.Default.AccountTree, "Manage library", 1),
+                        Triple(Icons.Default.DateRange, "History", 2),
+                        Triple(Icons.Default.Settings, "Settings", 3)
+                    ).forEach { (icon, label, index) ->
                         Box(
                             modifier = Modifier
-                                .height(32.dp)
-                                .width(56.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    if (isSelected) MaterialTheme.colorScheme.primaryContainer
-                                    else androidx.compose.ui.graphics.Color.Transparent
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    onClick = { bottomNavIndex = index }
                                 )
-                                .clickable { bottomNavIndex = index },
+                                .padding(horizontal = 32.dp, vertical = 16.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = icon,
                                 contentDescription = label,
-                                tint = if (isSelected) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                tint = if (bottomNavIndex == index) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                },
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -169,7 +200,15 @@ fun OmniTrackHomeScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            when (bottomNavIndex) {
+            AnimatedContent(
+                targetState = bottomNavIndex,
+                transitionSpec = {
+                    (scaleIn(initialScale = 0.9f) + fadeIn()) togetherWith
+                        (scaleOut() + fadeOut())
+                },
+                label = "bottom navigation page transition"
+            ) { page ->
+            when (page) {
                 0 -> {
                     // 0: Library View (Search bar, media tabs, and list)
                     Column(
@@ -253,10 +292,23 @@ fun OmniTrackHomeScreen(
                                 .fillMaxSize()
                                 .weight(1f)
                         ) {
+                            AnimatedContent(
+                                targetState = selectedUserStatus,
+                                transitionSpec = {
+                                    if (targetState.ordinal > initialState.ordinal) {
+                                        slideInHorizontally { it } + fadeIn() togetherWith
+                                            (slideOutHorizontally { -it } + fadeOut())
+                                    } else {
+                                        slideInHorizontally { -it } + fadeIn() togetherWith
+                                            (slideOutHorizontally { it } + fadeOut())
+                                    }
+                                },
+                                label = "library status filter transition"
+                            ) { status ->
                             // Filtered Media List
                             val filteredList = mediaEntries.filter { entry ->
                                 val matchesType = entry.type == selectedTabMediaType
-                                val matchesStatus = entry.userStatus == selectedUserStatus
+                                val matchesStatus = entry.userStatus == status
                                 val matchesSearch = searchQuery.isBlank() ||
                                     entry.title.contains(searchQuery, ignoreCase = true) ||
                                     entry.seriesTitle?.contains(searchQuery, ignoreCase = true) == true
@@ -289,6 +341,7 @@ fun OmniTrackHomeScreen(
                             }
                         }
                     }
+                }
                 }
                 1 -> {
                     LibraryManagementScreen(
@@ -418,4 +471,5 @@ fun OmniTrackHomeScreen(
             }
         )
     }
+}
 }

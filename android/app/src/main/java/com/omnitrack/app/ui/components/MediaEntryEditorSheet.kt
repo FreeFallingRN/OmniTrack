@@ -1,5 +1,11 @@
 package com.omnitrack.app.ui.components
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -502,16 +508,25 @@ private fun StatusButtonGroup(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(label, style = MaterialTheme.typography.labelMedium)
-        Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        AnimatedContent(
+            targetState = selected,
+            transitionSpec = {
+                slideInHorizontally { it } + fadeIn() togetherWith
+                    (slideOutHorizontally { -it } + fadeOut())
+            },
+            label = "$label selection transition"
         ) {
-            options.forEach { (value, text) ->
-                FilterChip(
-                    selected = selected == value,
-                    onClick = { onSelected(value) },
-                    label = { Text(text) }
-                )
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                options.forEach { (value, text) ->
+                    FilterChip(
+                        selected = selected == value,
+                        onClick = { onSelected(value) },
+                        label = { Text(text) }
+                    )
+                }
             }
         }
     }

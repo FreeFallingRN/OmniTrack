@@ -2,17 +2,21 @@ package com.omnitrack.app.ui.screens
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -23,7 +27,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -31,8 +34,17 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -44,8 +56,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.omnitrack.app.data.SupabaseService
@@ -173,26 +187,68 @@ fun LibraryManagementScreen(
                 "Manage series, authors, and platforms.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center
+            TabRow(
+                selectedTabIndex = selectedSection,
+                containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                indicator = { tabPositions ->
+                    if (selectedSection < tabPositions.size) {
+                        Box(
+                            modifier = Modifier
+                                .tabIndicatorOffset(tabPositions[selectedSection])
+                                .padding(horizontal = 4.dp, vertical = 4.dp)
+                                .fillMaxHeight()
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primaryContainer)
+                                .zIndex(-1f)
+                        )
+                    }
+                },
+                divider = {}
             ) {
                 listOf("Serie", "Author", "Platform").forEachIndexed { index, label ->
-                if (selectedSection == index) {
-                    FilledTonalButton(onClick = { selectedSection = index }) { Text(label) }
-                } else {
-                    TextButton(onClick = {
-                        selectedSection = index
-                        selectedId = null
-                        selectedKind = null
-                    }) { Text(label) }
+                    Box(
+                        modifier = Modifier
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = {
+                                    selectedSection = index
+                                    selectedId = null
+                                    selectedKind = null
+                                }
+                            )
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                            Text(
+                                text = label,
+                                color = if (selectedSection == index) {
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            )
+                    }
                 }
-            }
             }
 
             HorizontalDivider()
 
-            when (selectedSection) {
+            AnimatedContent(
+                targetState = selectedSection,
+                transitionSpec = {
+                    if (targetState > initialState) {
+                        (slideInHorizontally { it } + fadeIn()) togetherWith
+                            (slideOutHorizontally { -it } + fadeOut())
+                    } else {
+                        (slideInHorizontally { -it } + fadeIn()) togetherWith
+                            (slideOutHorizontally { it } + fadeOut())
+                    }
+                },
+                label = "management section transition"
+            ) { section ->
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            when (section) {
             0 -> {
                 series.forEach { item ->
                     ManagementRow(
@@ -275,6 +331,8 @@ fun LibraryManagementScreen(
                     }
                 }
             }
+                }
+                }
             }
         }
     }
