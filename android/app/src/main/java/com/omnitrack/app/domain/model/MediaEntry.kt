@@ -7,6 +7,7 @@ data class MediaEntry(
     val title: String,
     val type: MediaType,
     val userStatus: UserStatus,
+    val isCanon: Boolean = true,
     val currentUnit: Double,
     val totalUnits: Double? = null,
     val unitName: String = "Chapter",

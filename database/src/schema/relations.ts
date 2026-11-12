@@ -3,7 +3,6 @@ import { series } from "./series";
 import { mediaEntries } from "./entries";
 import { alternateTitles } from "./titles";
 import { authors, entryAuthors } from "./authors";
-import { mediaRelations } from "./relations_model";
 import { progressHistory } from "./history";
 import { externalLinks } from "./links";
 
@@ -12,8 +11,6 @@ export const seriesRelations = relations(series, ({ many }) => ({
   alternateTitles: many(alternateTitles),
   history: many(progressHistory),
   links: many(externalLinks),
-  adaptations: many(mediaRelations, { relationName: "sourceSeries" }),
-  adaptedFrom: many(mediaRelations, { relationName: "targetSeries" }),
 }));
 
 export const mediaEntriesRelations = relations(mediaEntries, ({ one, many }) => ({
@@ -50,19 +47,6 @@ export const entryAuthorsRelations = relations(entryAuthors, ({ one }) => ({
   author: one(authors, {
     fields: [entryAuthors.authorId],
     references: [authors.id],
-  }),
-}));
-
-export const mediaRelationsRelations = relations(mediaRelations, ({ one }) => ({
-  sourceSeries: one(series, {
-    fields: [mediaRelations.sourceSeriesId],
-    references: [series.id],
-    relationName: "sourceSeries",
-  }),
-  targetSeries: one(series, {
-    fields: [mediaRelations.targetSeriesId],
-    references: [series.id],
-    relationName: "targetSeries",
   }),
 }));
 

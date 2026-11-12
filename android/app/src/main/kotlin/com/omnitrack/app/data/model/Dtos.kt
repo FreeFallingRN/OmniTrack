@@ -22,7 +22,7 @@ data class SeriesDto(
 @Serializable
 data class MediaEntryDto(
     val id: String,
-    @SerialName("series_id") val seriesId: String? = null,
+    @SerialName("series_id") val seriesId: String,
     val title: String,
     val type: String = "novel",
     @SerialName("sequence_number") val sequenceNumber: Double,
@@ -30,6 +30,7 @@ data class MediaEntryDto(
     @SerialName("publishing_status") val publishingStatus: String,
     @SerialName("current_unit") val currentUnit: Double,
     @SerialName("total_units") val totalUnits: Double? = null,
+    @SerialName("is_canon") val isCanon: Boolean = true,
     @SerialName("unit_name") val unitName: String,
     @SerialName("source_url") val sourceUrl: String? = null,
     val platform: String? = null,
@@ -63,13 +64,14 @@ data class CreateSeriesRequest(
 
 @Serializable
 data class CreateEntryRequest(
-    @SerialName("series_id") val seriesId: String? = null,
+    @SerialName("series_id") val seriesId: String,
     val title: String,
     val type: String,
     @SerialName("sequence_number") val sequenceNumber: Double,
     @SerialName("user_status") val userStatus: String,
     @SerialName("publishing_status") val publishingStatus: String,
     @SerialName("current_unit") val currentUnit: Double = 0.0,
+    @SerialName("is_canon") val isCanon: Boolean = true,
     @SerialName("unit_name") val unitName: String,
     @SerialName("source_url") val sourceUrl: String? = null,
     val platform: String? = null,

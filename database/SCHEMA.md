@@ -2,14 +2,13 @@
 
 ```mermaid
 erDiagram
-    SERIES |o--o{ MEDIA_ENTRIES : "contains books or seasons (optional)"
+    SERIES ||--o{ MEDIA_ENTRIES : "contains all entries"
     SERIES ||--o{ ALTERNATE_TITLES : "has alternate/translated titles"
     MEDIA_ENTRIES ||--o{ ALTERNATE_TITLES : "entry-specific titles"
     SERIES ||--o{ EXTERNAL_LINKS : "platform/store reading URLs"
     MEDIA_ENTRIES ||--o{ EXTERNAL_LINKS : "entry-specific store URLs"
     MEDIA_ENTRIES ||--o{ ENTRY_AUTHORS : "credited to"
-    AUTHORS ||--o{ SERIES_AUTHORS : "created"
-    SERIES ||--o{ MEDIA_RELATIONS : "source / adaptation"
+    AUTHORS ||--o{ ENTRY_AUTHORS : "created"
     SERIES ||--o{ PROGRESS_HISTORY : "series progress"
     MEDIA_ENTRIES ||--o{ PROGRESS_HISTORY : "entry progress"
 
@@ -30,12 +29,13 @@ erDiagram
 
     MEDIA_ENTRIES {
         uuid id PK "gen_random_uuid()"
-        uuid series_id FK "References series(id) ON DELETE CASCADE (Nullable for standalone works)"[cite: 10]
+        uuid series_id FK "References series(id) ON DELETE CASCADE"[cite: 10]
         text title "e.g. 'Book 1: Unsouled', 'Season 2 Part 2'"[cite: 10]
-        media_type type "novel | comic | anime | movie (required for standalone entries)"
+        media_type type "novel | comic | anime | movie"
         numeric sequence_number "Order: 1.00, 2.00, 2.50..."[cite: 10]
         publishing_status publishing_status "announced | releasing | hiatus | completed | discontinued"[cite: 8, 10]
         user_status user_status "planning | in_progress | completed | paused | dropped"[cite: 8, 10]
+        boolean is_canon "Canon entry within the brand"
         numeric current_unit "Chapter/Ep inside this book/season"[cite: 10]
         numeric total_units "Total units in this book/season"[cite: 10]
         text unit_name "Chapter | Episode"[cite: 10]
@@ -85,15 +85,6 @@ erDiagram
         text role "author | illustrator | studio | director"
     }
 
-    MEDIA_RELATIONS {
-        bigint id PK "Auto-incrementing identity"
-        uuid source_series_id FK "References series(id)"
-        uuid target_series_id FK "References series(id)"
-        relation_type relation_type "adaptation | source_material | sequel | prequel | spin_off"[cite: 8]
-        text notes "e.g. 'Anime covers Webnovel Books 1 through 3'"
-        timestamptz created_at "Audit timestamp"
-    }
-
     PROGRESS_HISTORY {
         bigint id PK "Auto-incrementing identity"
         uuid series_id FK "References series(id) ON DELETE CASCADE"
@@ -115,7 +106,6 @@ erDiagram
 - [`external_links`](file:///c:/Users/benjv/Dev/OmniTrack/database/src/schema/links.ts)
 - [`alternate_titles`](file:///c:/Users/benjv/Dev/OmniTrack/database/src/schema/titles.ts)
 - [`authors`](file:///c:/Users/benjv/Dev/OmniTrack/database/src/schema/authors.ts)
-- [`media_relations`](file:///c:/Users/benjv/Dev/OmniTrack/database/src/schema/relations_model.ts)
 - [`progress_history`](file:///c:/Users/benjv/Dev/OmniTrack/database/src/schema/history.ts)
 - [`enums`](file:///c:/Users/benjv/Dev/OmniTrack/database/src/schema/enums.ts)
 - [`helpers`](file:///c:/Users/benjv/Dev/OmniTrack/database/src/schema/helpers.ts)

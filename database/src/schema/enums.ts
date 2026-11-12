@@ -13,7 +13,6 @@ export const mediaTypeEnum = pgEnum("media_type", [
   "anime",
   "movie",
 ]);
-
 /**
  * User personal tracking status
  */
@@ -34,17 +33,4 @@ export const publishingStatusEnum = pgEnum("publishing_status", [
   "hiatus",       // On hiatus
   "completed",    // Fully published / aired
   "discontinued", // Cancelled or dropped by publisher/author
-]);
-
-/**
- * Cross-media connections (e.g. Manga adapted from Novel)
- */
-export const relationTypeEnum = pgEnum("relation_type", [
-  "adaptation",       // e.g. Anime adapted from Novel/Manga
-  "source_material",  // e.g. Original Webnovel for an Anime
-  "sequel",           // Direct sequel series
-  "prequel",          // Direct prequel series
-  "spin_off",         // Spin-off series
-  "side_story",       // Side story or gaiden
-  "alternate_version",// Remake or alternate setting
 ]);

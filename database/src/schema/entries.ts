@@ -5,9 +5,8 @@ import { mediaTypeEnum, userStatusEnum, publishingStatusEnum } from "./enums";
 import { pkUuid, unitNumber, optionalUnitNumber, timestamps } from "./helpers";
 
 /**
- * Media Entries Table (Books, Seasons, Volumes, Parts, Standalone Works)
- * Represents individual trackable releases under a Series, or standalone entries.
- * - Standalone work: seriesId is null
+ * Media Entries Table (Books, Seasons, Volumes, and Parts)
+ * Represents individual trackable releases under a Series.
  * - Continuous webnovel: Single entry ("Main Story")
  * - Multi-book novel: Multiple entries ("Book 1", "Book 2"), with individual chapter counters
  * - Anime: "Season 1", "Season 2 Part 2", "Final Season"
@@ -16,8 +15,9 @@ export const mediaEntries = pgTable(
   "media_entries",
   {
     id: pkUuid(),
-    // Optional / Nullable foreign key: allows standalone works without a parent series container
-    seriesId: uuid("series_id").references(() => series.id, { onDelete: "cascade" }),
+    seriesId: uuid("series_id")
+      .notNull()
+      .references(() => series.id, { onDelete: "cascade" }),
 
     title: text("title").notNull(), // e.g. "Book 1: Unsouled", "Season 2 Part 2"
     type: mediaTypeEnum("type").notNull().default("novel"),
@@ -29,6 +29,7 @@ export const mediaEntries = pgTable(
       .notNull()
       .default("releasing"),
     userStatus: userStatusEnum("user_status").notNull().default("planning"),
+    isCanon: boolean("is_canon").notNull().default(true),
 
     // Progress within THIS specific book/season (resets per book)
     currentUnit: unitNumber("current_unit").default("0.00"),
@@ -51,8 +52,6 @@ export const mediaEntries = pgTable(
     index("idx_media_entries_is_active")
       .on(table.isActiveTarget)
       .where(sql`is_active_target = TRUE`),
-    index("idx_media_entries_standalone").on(table.id)
-      .where(sql`series_id IS NULL`)
   ]
 );
 

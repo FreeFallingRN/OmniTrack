@@ -100,7 +100,6 @@ async function runMigrations() {
               'alternate_titles',
               'authors',
               'entry_authors',
-              'media_relations',
               'progress_history',
               'external_links'
           ];
