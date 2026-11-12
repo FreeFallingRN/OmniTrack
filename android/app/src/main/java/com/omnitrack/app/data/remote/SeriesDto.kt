@@ -32,7 +32,6 @@ data class MediaEntryDto(
     @SerialName("user_status") val userStatus: String,
     @SerialName("current_unit") val currentUnit: Double = 0.0,
     @SerialName("total_units") val totalUnits: Double? = null,
-    @SerialName("start_cumulative_unit") val startCumulativeUnit: Double = 0.0,
     @SerialName("unit_name") val unitName: String = "Chapter",
     @SerialName("is_active_target") val isActiveTarget: Boolean = false
 )

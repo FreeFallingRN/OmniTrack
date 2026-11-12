@@ -20,7 +20,6 @@ export interface MatchedSeries {
   entryId?: string;
   entryTitle?: string;
   entryCurrentUnit?: number;
-  startCumulativeUnit?: number;
 }
 
 export interface SyncResult {

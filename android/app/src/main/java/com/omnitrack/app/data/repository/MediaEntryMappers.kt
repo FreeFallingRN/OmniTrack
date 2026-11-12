@@ -15,7 +15,6 @@ fun MediaEntryEntity.toDomain(): MediaEntry = MediaEntry(
     userStatus = UserStatus.fromValue(userStatus),
     currentUnit = currentUnit,
     totalUnits = totalUnits,
-    startCumulativeUnit = startCumulativeUnit,
     unitName = unitName,
     isActiveTarget = isActiveTarget
 )
@@ -29,7 +28,6 @@ fun MediaEntryDto.toEntity(seriesTitle: String?): MediaEntryEntity = MediaEntryE
     userStatus = userStatus,
     currentUnit = currentUnit,
     totalUnits = totalUnits,
-    startCumulativeUnit = startCumulativeUnit,
     unitName = unitName,
     isActiveTarget = isActiveTarget
 )

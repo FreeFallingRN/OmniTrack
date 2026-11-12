@@ -13,7 +13,6 @@ data class MediaEntryEntity(
     val userStatus: String,
     val currentUnit: Double,
     val totalUnits: Double?,
-    val startCumulativeUnit: Double,
     val unitName: String,
     val isActiveTarget: Boolean
 )

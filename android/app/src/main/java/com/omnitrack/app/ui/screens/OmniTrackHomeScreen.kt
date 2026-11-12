@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,6 +30,7 @@ import com.omnitrack.app.domain.model.UserStatus
 import com.omnitrack.app.ui.SeriesViewModel
 import com.omnitrack.app.ui.components.MediaDetailSheet
 import com.omnitrack.app.ui.components.TrackedMediaRow
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -43,6 +45,8 @@ fun OmniTrackHomeScreen(
     var searchQuery by remember { mutableStateOf("") }
     var selectedEntryForDetail by remember { mutableStateOf<MediaEntry?>(null) }
     var bottomNavIndex by remember { mutableIntStateOf(0) }
+    var isRefreshing by remember { mutableStateOf(false) }
+    val refreshScope = rememberCoroutineScope()
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -212,48 +216,58 @@ fun OmniTrackHomeScreen(
 
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        // Filtered Media List
-                        val filteredList = mediaEntries.filter { entry ->
-                            val matchesType = entry.type == selectedTabMediaType
-                            val matchesStatus = entry.userStatus == selectedUserStatus
-                            val matchesSearch = searchQuery.isBlank() ||
-                                entry.title.contains(searchQuery, ignoreCase = true) ||
-                                entry.seriesTitle?.contains(searchQuery, ignoreCase = true) == true
-                            matchesType && matchesStatus && matchesSearch
-                        }
-
-                        if (filteredList.isEmpty()) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .weight(1f),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "No entries found",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                )
+                        PullToRefreshBox(
+                            isRefreshing = isRefreshing,
+                            onRefresh = {
+                                refreshScope.launch {
+                                    isRefreshing = true
+                                    viewModel.refreshData()
+                                    isRefreshing = false
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .weight(1f)
+                        ) {
+                            // Filtered Media List
+                            val filteredList = mediaEntries.filter { entry ->
+                                val matchesType = entry.type == selectedTabMediaType
+                                val matchesStatus = entry.userStatus == selectedUserStatus
+                                val matchesSearch = searchQuery.isBlank() ||
+                                    entry.title.contains(searchQuery, ignoreCase = true) ||
+                                    entry.seriesTitle?.contains(searchQuery, ignoreCase = true) == true
+                                matchesType && matchesStatus && matchesSearch
                             }
-                        } else {
-                            LazyColumn(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                items(filteredList, key = { it.id }) { entry ->
-                                    TrackedMediaRow(
-                                        entry = entry,
-                                        onClick = { selectedEntryForDetail = entry },
-                                        onToggleActiveTarget = {
-                                            viewModel.toggleActiveTarget(entry.id, !entry.isActiveTarget)
-                                            onTogglePinNotification(entry)
-                                        },
-                                        onIncrement = {
-                                            viewModel.updateProgress(entry.id, entry.currentUnit + 1.0)
-                                        }
+
+                            if (filteredList.isEmpty()) {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "No entries found",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                                     )
+                                }
+                            } else {
+                                LazyColumn(
+                                    modifier = Modifier.fillMaxSize(),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    items(filteredList, key = { it.id }) { entry ->
+                                        TrackedMediaRow(
+                                            entry = entry,
+                                            onClick = { selectedEntryForDetail = entry },
+                                            onToggleActiveTarget = {
+                                                viewModel.toggleActiveTarget(entry.id, !entry.isActiveTarget)
+                                                onTogglePinNotification(entry)
+                                            },
+                                            onIncrement = {
+                                                viewModel.updateProgress(entry.id, entry.currentUnit + 1.0)
+                                            }
+                                        )
+                                    }
                                 }
                             }
                         }

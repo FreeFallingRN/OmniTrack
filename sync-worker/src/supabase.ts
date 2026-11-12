@@ -100,7 +100,6 @@ export class SupabaseClient {
           entryId: entry.id,
           entryTitle: entry.title,
           entryCurrentUnit: parseFloat(entry.current_unit || "0"),
-          startCumulativeUnit: parseFloat(entry.start_cumulative_unit || "0"),
         };
       }
     } catch (err) {
@@ -122,9 +121,6 @@ export class SupabaseClient {
     let newCumulative = newChapter;
 
     if (match.entryId) {
-      const startOffset = match.startCumulativeUnit || 0;
-      newCumulative = startOffset + newChapter;
-
       // Update specific book/entry
       this.request(`/rest/v1/media_entries?id=eq.${match.entryId}`, "patch", {
         current_unit: newChapter,

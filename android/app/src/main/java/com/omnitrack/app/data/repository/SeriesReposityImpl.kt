@@ -44,7 +44,7 @@ class SeriesRepositoryImpl(
             }
             val entries: List<MediaEntryDto> = entriesResponse.body()
             val seriesTitles = series.associate { it.id to it.title }
-            mediaEntryDao.insertAll(entries.map { it.toEntity(seriesTitles[it.seriesId]) })
+            mediaEntryDao.replaceAll(entries.map { it.toEntity(seriesTitles[it.seriesId]) })
         } catch (e: Exception) {
             Log.e("SeriesRepository", "Failed to sync from Supabase", e)
         }
@@ -59,6 +59,18 @@ class SeriesRepositoryImpl(
                 header("Authorization", "Bearer $supabaseKey")
                 contentType(ContentType.Application.Json)
                 setBody(mapOf("current_unit" to newProgress))
+            }
+
+            val seriesId = mediaEntryDao.getEntryById(id)?.seriesId
+            if (seriesId != null) {
+                val cumulativeTotal = mediaEntryDao.getEntriesForSeries(seriesId)
+                    .sumOf { if (it.id == id) newProgress else it.currentUnit }
+                httpClient.patch("$supabaseUrl/rest/v1/series?id=eq.$seriesId") {
+                    header("apikey", supabaseKey)
+                    header("Authorization", "Bearer $supabaseKey")
+                    contentType(ContentType.Application.Json)
+                    setBody(mapOf("current_cumulative_unit" to cumulativeTotal))
+                }
             }
         } catch (e: Exception) {
             Log.e("SeriesRepository", "Failed to update progress on Supabase", e)

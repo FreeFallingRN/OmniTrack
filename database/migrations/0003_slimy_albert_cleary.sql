@@ -1,0 +1,1 @@
+ALTER TABLE "media_entries" DROP COLUMN "start_cumulative_unit";

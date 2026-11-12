@@ -9,7 +9,6 @@ data class MediaEntry(
     val userStatus: UserStatus,
     val currentUnit: Double,
     val totalUnits: Double? = null,
-    val startCumulativeUnit: Double = 0.0,
     val unitName: String = "Chapter",
     val isActiveTarget: Boolean = false
 )

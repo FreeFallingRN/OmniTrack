@@ -40,7 +40,6 @@ erDiagram
         user_status user_status "planning | in_progress | completed | paused | dropped"[cite: 8, 10]
         numeric current_unit "Chapter/Ep inside this book/season"[cite: 10]
         numeric total_units "Total units in this book/season"[cite: 10]
-        numeric start_cumulative_unit "Offset for series cumulative total"[cite: 10]
         text unit_name "Chapter | Episode"[cite: 10]
         text source_url "Legacy/direct reading URL"[cite: 10]
         text platform "Moon+ Reader | Royal Road | Crunchyroll"[cite: 10]

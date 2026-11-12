@@ -21,17 +21,16 @@ class SeriesViewModel(
         )
 
     init {
-        // Trigger background sync on ViewModel creation if needed
-        refreshData()
+        viewModelScope.launch {
+            refreshData()
+        }
     }
 
-    fun refreshData() {
-        viewModelScope.launch {
-            try {
-                repository.fetchFromSupabase()
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+    suspend fun refreshData() {
+        try {
+            repository.fetchFromSupabase()
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 

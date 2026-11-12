@@ -8,7 +8,7 @@ import { pkUuid, unitNumber, optionalUnitNumber, timestamps } from "./helpers";
  * Media Entries Table (Books, Seasons, Volumes, Parts, Standalone Works)
  * Represents individual trackable releases under a Series, or standalone entries.
  * - Standalone work: seriesId is null
- * - Continuous webnovel: Single entry ("Main Story", startCumulativeUnit = 0)
+ * - Continuous webnovel: Single entry ("Main Story")
  * - Multi-book novel: Multiple entries ("Book 1", "Book 2"), with individual chapter counters
  * - Anime: "Season 1", "Season 2 Part 2", "Final Season"
  */
@@ -34,8 +34,6 @@ export const mediaEntries = pgTable(
     currentUnit: unitNumber("current_unit").default("0.00"),
     totalUnits: optionalUnitNumber("total_units"),
 
-    // Cumulative offset: (series cumulative chapter = startCumulativeUnit + currentUnit)
-    startCumulativeUnit: unitNumber("start_cumulative_unit").default("0.00"),
     unitName: text("unit_name").notNull().default("Chapter"),
 
     // Source Metadata
