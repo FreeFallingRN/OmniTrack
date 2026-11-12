@@ -58,8 +58,10 @@ import kotlinx.coroutines.withContext
 data class MediaEntryEditorData(
     val title: String,
     val type: MediaType,
-    val seriesId: String,
-    val authorId: String,
+    val seriesId: String?,
+    val newSeries: NewSeriesData?,
+    val authorId: String?,
+    val newAuthor: NewAuthorData?,
     val userStatus: String,
     val publishingStatus: String,
     val sequenceNumber: Double,
@@ -70,6 +72,17 @@ data class MediaEntryEditorData(
     val sourceUrl: String?,
     val coverUrl: String?,
     val isCanon: Boolean
+)
+
+data class NewSeriesData(
+    val title: String,
+    val userStatus: String,
+    val publishingStatus: String,
+    val unitName: String
+)
+
+data class NewAuthorData(
+    val name: String
 )
 
 private val publishingStatuses = listOf("announced", "releasing", "hiatus", "completed", "discontinued")
@@ -113,6 +126,13 @@ fun MediaEntryEditorSheet(
     var coverUrl by remember { mutableStateOf(existing?.coverUrl.orEmpty()) }
     var isCanon by remember { mutableStateOf(existing?.isCanon ?: true) }
     var findingCover by remember { mutableStateOf(false) }
+    var createSeries by remember { mutableStateOf(false) }
+    var createAuthor by remember { mutableStateOf(false) }
+    var newSeriesTitle by remember { mutableStateOf("") }
+    var newSeriesStatus by remember { mutableStateOf("planning") }
+    var newSeriesPublishingStatus by remember { mutableStateOf("releasing") }
+    var newSeriesUnitName by remember { mutableStateOf("Chapter") }
+    var newAuthorName by remember { mutableStateOf("") }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -145,16 +165,62 @@ fun MediaEntryEditorSheet(
                     "Series",
                     series.firstOrNull { it.id == seriesId }?.title ?: "Choose series",
                     series,
-                    { it.title }
-                ) { seriesId = it.id }
+                    { it.title },
+                    onAdd = {
+                        createSeries = true
+                        seriesId = null
+                        if (newSeriesTitle.isBlank()) newSeriesTitle = title
+                    }
+                ) { seriesId = it.id; createSeries = false }
+            }
+            if (createSeries) {
+                item { HorizontalDivider() }
+                item { Text("New series details", style = MaterialTheme.typography.titleMedium) }
+                item {
+                    OutlinedTextField(
+                        newSeriesTitle,
+                        { newSeriesTitle = it },
+                        label = { Text("Series name") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                }
+                item {
+                    Selector("Series status", newSeriesStatus, UserStatus.entries, { it.label }) {
+                        newSeriesStatus = it.value
+                    }
+                }
+                item {
+                    Selector("Series publishing status", newSeriesPublishingStatus, publishingStatuses, { it }) {
+                        newSeriesPublishingStatus = it
+                    }
+                }
+                item { EntryField("Series unit name", newSeriesUnitName) { newSeriesUnitName = it } }
             }
             item {
                 Selector(
                     "Author",
                     authors.firstOrNull { it.id == authorId }?.name ?: "Choose author",
                     authors,
-                    { it.name }
-                ) { authorId = it.id }
+                    { it.name },
+                    onAdd = {
+                        createAuthor = true
+                        authorId = null
+                    }
+                ) { authorId = it.id; createAuthor = false }
+            }
+            if (createAuthor) {
+                item { HorizontalDivider() }
+                item { Text("New author details", style = MaterialTheme.typography.titleMedium) }
+                item {
+                    OutlinedTextField(
+                        newAuthorName,
+                        { newAuthorName = it },
+                        label = { Text("Author name") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                }
             }
             item { HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp)) }
             item { Text("Media details", style = MaterialTheme.typography.titleMedium) }
@@ -239,7 +305,10 @@ fun MediaEntryEditorSheet(
                     onClick = {
                         val selectedSeries = seriesId
                         val selectedAuthor = authorId
-                        if (title.isBlank() || selectedSeries == null || selectedAuthor == null) {
+                        if (title.isBlank() ||
+                            (selectedSeries == null && (!createSeries || newSeriesTitle.isBlank())) ||
+                            (selectedAuthor == null && (!createAuthor || newAuthorName.isBlank()))
+                        ) {
                             error = "Title, series, and author are required."
                         } else {
                             onSave(
@@ -247,7 +316,16 @@ fun MediaEntryEditorSheet(
                                     title = title,
                                     type = type,
                                     seriesId = selectedSeries,
+                                    newSeries = if (createSeries) {
+                                        NewSeriesData(
+                                            title = newSeriesTitle,
+                                            userStatus = newSeriesStatus,
+                                            publishingStatus = newSeriesPublishingStatus,
+                                            unitName = newSeriesUnitName
+                                        )
+                                    } else null,
                                     authorId = selectedAuthor,
+                                    newAuthor = if (createAuthor) NewAuthorData(newAuthorName) else null,
                                     userStatus = userStatus,
                                     publishingStatus = publishingStatus,
                                     sequenceNumber = sequence.toDoubleOrNull() ?: 1.0,
@@ -298,6 +376,7 @@ private fun <T> Selector(
     selected: String,
     options: List<T>,
     text: (T) -> String,
+    onAdd: (() -> Unit)? = null,
     onSelected: (T) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -320,6 +399,14 @@ private fun <T> Selector(
                 DropdownMenuItem(
                     text = { Text(text(option)) },
                     onClick = { expanded = false; onSelected(option) }
+                )
+            }
+            if (onAdd != null) {
+                HorizontalDivider()
+                DropdownMenuItem(
+                    text = { Text("Create new $label") },
+                    leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) },
+                    onClick = { expanded = false; onAdd() }
                 )
             }
         }

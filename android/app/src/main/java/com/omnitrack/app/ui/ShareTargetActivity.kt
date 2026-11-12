@@ -63,10 +63,7 @@ fun ShareSheetUI(sharedUrl: String, onDismiss: () -> Unit) {
                     scope.launch(Dispatchers.IO) {
                         val series = SupabaseService.createSeries(
                             CreateSeriesRequest(
-                                title = title,
-                                userStatus = "in_progress",
-                                publishingStatus = "releasing",
-                                unitName = unitName
+                                title = title
                             )
                         )
                         SupabaseService.createEntry(

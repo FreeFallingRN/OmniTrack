@@ -30,6 +30,7 @@ import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.UserStatus
 import com.omnitrack.app.data.SupabaseService
+import com.omnitrack.app.data.model.CreateSeriesRequest
 import com.omnitrack.app.ui.SeriesViewModel
 import com.omnitrack.app.ui.components.MediaDetailSheet
 import com.omnitrack.app.ui.components.MediaEntryEditorData
@@ -338,10 +339,21 @@ fun OmniTrackHomeScreen(
             onDismiss = { showEntryEditor = false },
             onSave = { form: MediaEntryEditorData ->
                 refreshScope.launch {
+                    val seriesId = form.seriesId ?: SupabaseService.createSeries(
+                        CreateSeriesRequest(
+                            title = form.newSeries!!.title
+                        )
+                    ).id
+                    val authorId = form.authorId ?: SupabaseService.createAuthor(
+                        form.newAuthor!!.name,
+                        null,
+                        null,
+                        null
+                    ).id
                     if (editorEntry == null) {
                         SupabaseService.createEntry(
                             com.omnitrack.app.data.model.CreateEntryRequest(
-                                seriesId = form.seriesId,
+                                seriesId = seriesId,
                                 title = form.title,
                                 type = form.type.value,
                                 sequenceNumber = form.sequenceNumber,
@@ -356,15 +368,15 @@ fun OmniTrackHomeScreen(
                                 isCanon = form.isCanon
                             )
                         ).also { created ->
-                            SupabaseService.replaceEntryAuthor(created.id, form.authorId)
+                            SupabaseService.replaceEntryAuthor(created.id, authorId)
                         }
                     } else {
                         SupabaseService.updateEntry(
                             id = editorEntry!!.id,
                             title = form.title,
                             type = form.type.value,
-                            seriesId = form.seriesId,
-                            authorId = form.authorId,
+                            seriesId = seriesId,
+                            authorId = authorId,
                             coverUrl = form.coverUrl,
                             sourceUrl = form.sourceUrl,
                             platform = form.platform,

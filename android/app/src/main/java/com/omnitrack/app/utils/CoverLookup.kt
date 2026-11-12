@@ -43,11 +43,20 @@ object CoverLookup {
     }
 
     private fun normalizeImageUrl(url: String): String {
-        return url
+        val normalized = url
             .replace("\\/", "/")
             .replace("\\u0026", "&", ignoreCase = true)
             .replace("&amp;", "&")
             .replace("\\\"", "\"")
+
+        val webnovelMatch = Regex(
+            """https?://book-pic\.webnovel\.com/bookcover/(\d+)/(?:\d+/)?\d+\.jpg\?updateTime=(\d+)""",
+            RegexOption.IGNORE_CASE
+        ).find(normalized)
+        return webnovelMatch?.let {
+            "https://book-pic.webnovel.com/bookcover/${it.groupValues[1]}" +
+                "?imageMogr2/thumbnail/600x&imageId=${it.groupValues[2]}"
+        } ?: normalized
     }
 
     private fun amazonCoverFallback(sourceUrl: String): String? {

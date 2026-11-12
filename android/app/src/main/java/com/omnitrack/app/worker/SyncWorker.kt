@@ -22,10 +22,7 @@ class SyncWorker(
         if (newUnit < 0.0) return Result.failure()
 
         return try {
-            // 1. Update main cumulative unit on series
-            SupabaseService.updateSeriesProgress(seriesId, newUnit)
-
-            // 2. Insert progress history log
+            // Insert progress history log
             SupabaseService.logProgress(
                 entryId = entryId,
                 activityDate = LocalDate.now().toString(),

@@ -8,11 +8,6 @@ data class SeriesDto(
     val id: String,
     val title: String,
     @SerialName("clean_title") val cleanTitle: String? = null,
-    @SerialName("user_status") val userStatus: String,
-    @SerialName("publishing_status") val publishingStatus: String,
-    @SerialName("current_cumulative_unit") val currentCumulativeUnit: Double,
-    @SerialName("total_units") val totalUnits: Double? = null,
-    @SerialName("unit_name") val unitName: String,
     val rating: Int? = null,
     val notes: String? = null,
     @SerialName("created_at") val createdAt: String,
@@ -55,11 +50,13 @@ data class ExternalLinkDto(
 @Serializable
 data class CreateSeriesRequest(
     val title: String,
-    @SerialName("user_status") val userStatus: String,
-    @SerialName("publishing_status") val publishingStatus: String,
-    @SerialName("unit_name") val unitName: String,
-    @SerialName("current_cumulative_unit") val currentCumulativeUnit: Double = 0.0,
-    @SerialName("total_units") val totalUnits: Double? = null,
+    val notes: String? = null,
+    val rating: Int? = null,
+)
+
+@Serializable
+data class UpdateSeriesRequest(
+    val title: String,
     val notes: String? = null,
     val rating: Int? = null,
 )
@@ -79,6 +76,23 @@ data class CreateEntryRequest(
     @SerialName("source_url") val sourceUrl: String? = null,
     val platform: String? = null,
     @SerialName("cover_url") val coverUrl: String? = null,
+)
+
+@Serializable
+data class UpdateEntryRequest(
+    val title: String,
+    val type: String,
+    @SerialName("series_id") val seriesId: String,
+    @SerialName("cover_url") val coverUrl: String? = null,
+    @SerialName("source_url") val sourceUrl: String? = null,
+    val platform: String? = null,
+    @SerialName("user_status") val userStatus: String,
+    @SerialName("publishing_status") val publishingStatus: String,
+    @SerialName("sequence_number") val sequenceNumber: Double,
+    @SerialName("current_unit") val currentUnit: Double,
+    @SerialName("total_units") val totalUnits: Double? = null,
+    @SerialName("unit_name") val unitName: String,
+    @SerialName("is_canon") val isCanon: Boolean,
 )
 
 @Serializable

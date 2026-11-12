@@ -84,18 +84,6 @@ class SeriesRepositoryImpl(
                 setBody(mapOf("current_unit" to newProgress))
             }
 
-            val seriesId = mediaEntryDao.getEntryById(id)?.seriesId
-            if (seriesId != null) {
-                val cumulativeTotal = mediaEntryDao.getEntriesForSeries(seriesId)
-                    .sumOf { if (it.id == id) newProgress else it.currentUnit }
-                httpClient.patch("$supabaseUrl/rest/v1/series?id=eq.$seriesId") {
-                    header("apikey", supabaseKey)
-                    header("Authorization", "Bearer $supabaseKey")
-                    contentType(ContentType.Application.Json)
-                    setBody(mapOf("current_cumulative_unit" to cumulativeTotal))
-                }
-            }
-
             httpClient.post(
                 "$supabaseUrl/rest/v1/progress_history?on_conflict=entry_id,activity_date"
             ) {

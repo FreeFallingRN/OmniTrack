@@ -2,6 +2,8 @@ package com.omnitrack.app.data
 
 import com.omnitrack.app.BuildConfig
 import com.omnitrack.app.data.model.CreateEntryRequest
+import com.omnitrack.app.data.model.UpdateSeriesRequest
+import com.omnitrack.app.data.model.UpdateEntryRequest
 import com.omnitrack.app.data.model.CreateSeriesRequest
 import com.omnitrack.app.data.model.AuthorDto
 import com.omnitrack.app.data.model.EntryAuthorDto
@@ -45,7 +47,7 @@ object SupabaseService {
 
     suspend fun getSeries(): List<SeriesDto> {
         return client.get(
-            "$supabaseUrl/rest/v1/series?select=id,title,clean_title,user_status,publishing_status,current_cumulative_unit,total_units,unit_name,rating,notes,created_at,updated_at&order=updated_at.desc"
+            "$supabaseUrl/rest/v1/series?select=id,title,clean_title,rating,notes,created_at,updated_at&order=updated_at.desc"
         ).body()
     }
 
@@ -72,17 +74,6 @@ object SupabaseService {
         return client.get(
             "$supabaseUrl/rest/v1/external_links?series_id=eq.$seriesId&select=*"
         ).body()
-    }
-
-    suspend fun updateSeriesProgress(seriesId: String, cumulativeUnit: Double): SeriesDto {
-        val list: List<SeriesDto> = client.patch(
-            "$supabaseUrl/rest/v1/series?id=eq.$seriesId"
-        ) {
-            contentType(ContentType.Application.Json)
-            header("Prefer", "return=representation")
-            setBody(mapOf("current_cumulative_unit" to cumulativeUnit))
-        }.body()
-        return list.first()
     }
 
     suspend fun updateEntryProgress(entryId: String, currentUnit: Double): MediaEntryDto {
@@ -192,26 +183,16 @@ object SupabaseService {
     suspend fun updateSeries(
         id: String,
         title: String,
-        userStatus: String,
-        publishingStatus: String,
-        currentCumulativeUnit: Double?,
-        totalUnits: Double?,
-        unitName: String,
         rating: Int?,
         notes: String?
     ) {
         client.patch("$supabaseUrl/rest/v1/series?id=eq.$id") {
             contentType(ContentType.Application.Json)
             setBody(
-                mapOf(
-                    "title" to title.trim(),
-                    "user_status" to userStatus,
-                    "publishing_status" to publishingStatus,
-                    "current_cumulative_unit" to currentCumulativeUnit,
-                    "total_units" to totalUnits,
-                    "unit_name" to unitName.trim(),
-                    "rating" to rating,
-                    "notes" to notes?.trim()?.ifBlank { null }
+                UpdateSeriesRequest(
+                    title = title.trim(),
+                    rating = rating,
+                    notes = notes?.trim()?.ifBlank { null }
                 )
             )
         }
@@ -241,20 +222,20 @@ object SupabaseService {
         client.patch("$supabaseUrl/rest/v1/media_entries?id=eq.$id") {
             contentType(ContentType.Application.Json)
             setBody(
-                mapOf(
-                    "title" to title.trim(),
-                    "type" to type,
-                    "series_id" to seriesId,
-                    "cover_url" to coverUrl?.trim()?.ifBlank { null },
-                    "source_url" to sourceUrl?.trim()?.ifBlank { null },
-                    "platform" to platform?.trim()?.ifBlank { null },
-                    "user_status" to userStatus,
-                    "publishing_status" to publishingStatus,
-                    "sequence_number" to sequenceNumber,
-                    "current_unit" to currentUnit,
-                    "total_units" to totalUnits,
-                    "unit_name" to unitName.trim(),
-                    "is_canon" to isCanon
+                UpdateEntryRequest(
+                    title = title.trim(),
+                    type = type,
+                    seriesId = seriesId,
+                    coverUrl = coverUrl?.trim()?.ifBlank { null },
+                    sourceUrl = sourceUrl?.trim()?.ifBlank { null },
+                    platform = platform?.trim()?.ifBlank { null },
+                    userStatus = userStatus,
+                    publishingStatus = publishingStatus,
+                    sequenceNumber = sequenceNumber,
+                    currentUnit = currentUnit,
+                    totalUnits = totalUnits,
+                    unitName = unitName.trim(),
+                    isCanon = isCanon
                 )
             )
         }

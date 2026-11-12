@@ -9,18 +9,12 @@ erDiagram
     MEDIA_ENTRIES ||--o{ EXTERNAL_LINKS : "entry-specific store URLs"
     MEDIA_ENTRIES ||--o{ ENTRY_AUTHORS : "credited to"
     AUTHORS ||--o{ ENTRY_AUTHORS : "created"
-    SERIES ||--o{ PROGRESS_HISTORY : "series progress"
     MEDIA_ENTRIES ||--o{ PROGRESS_HISTORY : "entry progress"
 
     SERIES {
         uuid id PK "gen_random_uuid()"
         text title "Primary title"
         text clean_title "Generated lowercase alphanumeric"
-        publishing_status publishing_status "announced | releasing | hiatus | completed | discontinued"[cite: 8]
-        user_status user_status "planning | in_progress | completed | paused | dropped"[cite: 8]
-        numeric current_cumulative_unit "Total cumulative units logged"
-        numeric total_units "Overall series chapters/episodes"
-        text unit_name "Chapter | Episode | Volume"
         smallint rating "1 - 10"
         text notes "User notes & commentary"
         timestamptz created_at "Audit timestamp"

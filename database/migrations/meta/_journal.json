@@ -57,6 +57,13 @@
       "when": 1794480220732,
       "tag": "0007_light_sabretooth",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794486132831,
+      "tag": "0008_soft_lockjaw",
+      "breakpoints": true
     }
   ]
 }
