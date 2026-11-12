@@ -87,14 +87,12 @@ erDiagram
 
     PROGRESS_HISTORY {
         bigint id PK "Auto-incrementing identity"
-        uuid series_id FK "References series(id) ON DELETE CASCADE"
-        uuid entry_id FK "Optional: references media_entries(id)"
-        numeric previous_unit "Prior progress inside entry"
-        numeric new_unit "New progress inside entry"
-        numeric previous_cumulative_unit "Prior series-wide total"
-        numeric new_cumulative_unit "New series-wide total"
+        uuid entry_id FK "References media_entries(id) ON DELETE CASCADE"
+        date activity_date "User-local calendar day"
+        numeric previous_unit "First progress for the day"
+        numeric new_unit "Latest progress for the day"
         text source "android_notification | moon_reader_sync | extension"
-        timestamptz logged_at "Event timestamp"
+        timestamptz logged_at "Last event timestamp"
     }
 ```
 

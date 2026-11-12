@@ -11,11 +11,13 @@ import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.patch
+import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import java.time.LocalDate
 
 class SeriesRepositoryImpl(
     private val mediaEntryDao: MediaEntryDao,
@@ -51,6 +53,7 @@ class SeriesRepositoryImpl(
     }
 
     override suspend fun updateProgress(id: String, newProgress: Double) {
+        val previousEntry = mediaEntryDao.getEntryById(id)
         mediaEntryDao.updateProgress(id, newProgress)
         if (supabaseUrl.isBlank()) return
         try {
@@ -71,6 +74,24 @@ class SeriesRepositoryImpl(
                     contentType(ContentType.Application.Json)
                     setBody(mapOf("current_cumulative_unit" to cumulativeTotal))
                 }
+            }
+
+            httpClient.post(
+                "$supabaseUrl/rest/v1/progress_history?on_conflict=entry_id,activity_date"
+            ) {
+                header("apikey", supabaseKey)
+                header("Authorization", "Bearer $supabaseKey")
+                header("Prefer", "resolution=merge-duplicates,return=minimal")
+                contentType(ContentType.Application.Json)
+                setBody(
+                    mapOf(
+                        "entry_id" to id,
+                        "activity_date" to LocalDate.now().toString(),
+                        "previous_unit" to (previousEntry?.currentUnit ?: newProgress),
+                        "new_unit" to newProgress,
+                        "source" to "android_app"
+                    )
+                )
             }
         } catch (e: Exception) {
             Log.e("SeriesRepository", "Failed to update progress on Supabase", e)

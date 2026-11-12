@@ -94,26 +94,24 @@ object SupabaseService {
     }
 
     suspend fun logProgress(
-        seriesId: String,
-        entryId: String?,
+        entryId: String,
+        activityDate: String,
         prevUnit: Double,
         newUnit: Double,
-        prevCumulative: Double?,
-        newCumulative: Double?,
         source: String,
     ): Boolean {
         val request = ProgressHistoryRequest(
-            seriesId = seriesId,
             entryId = entryId,
+            activityDate = activityDate,
             previousUnit = prevUnit,
             newUnit = newUnit,
-            previousCumulativeUnit = prevCumulative,
-            newCumulativeUnit = newCumulative,
             source = source
         )
-        val response = client.post("$supabaseUrl/rest/v1/progress_history") {
+        val response = client.post(
+            "$supabaseUrl/rest/v1/progress_history?on_conflict=entry_id,activity_date"
+        ) {
             contentType(ContentType.Application.Json)
-            header("Prefer", "return=minimal")
+            header("Prefer", "resolution=merge-duplicates,return=minimal")
             setBody(request)
         }
         return response.status.value in 200..299

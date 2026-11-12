@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.work.*
 import com.omnitrack.app.data.SupabaseService
+import java.time.LocalDate
 import java.util.concurrent.TimeUnit
 
 class SyncWorker(
@@ -13,6 +14,7 @@ class SyncWorker(
 
     override suspend fun doWork(): Result {
         val seriesId = inputData.getString("SERIES_ID") ?: return Result.failure()
+        val entryId = inputData.getString("ENTRY_ID") ?: return Result.failure()
         val prevUnit = inputData.getDouble("PREV_UNIT", 0.0)
         val newUnit = inputData.getDouble("NEW_UNIT", -1.0)
         val source = inputData.getString("SOURCE") ?: "android_app"
@@ -25,12 +27,10 @@ class SyncWorker(
 
             // 2. Insert progress history log
             SupabaseService.logProgress(
-                seriesId = seriesId,
-                entryId = null,
+                entryId = entryId,
+                activityDate = LocalDate.now().toString(),
                 prevUnit = prevUnit,
                 newUnit = newUnit,
-                prevCumulative = prevUnit,
-                newCumulative = newUnit,
                 source = source
             )
 
@@ -45,12 +45,14 @@ class SyncWorker(
         fun enqueue(
             context: Context,
             seriesId: String,
+            entryId: String,
             prevUnit: Double,
             newUnit: Double,
             source: String = "android_app"
         ) {
             val data = workDataOf(
                 "SERIES_ID" to seriesId,
+                "ENTRY_ID" to entryId,
                 "PREV_UNIT" to prevUnit,
                 "NEW_UNIT" to newUnit,
                 "SOURCE" to source

@@ -17,11 +17,16 @@ export class SupabaseClient {
     };
   }
 
-  private request(path: string, method: "get" | "post" | "patch" = "get", payload?: any): any {
+  private request(
+    path: string,
+    method: "get" | "post" | "patch" = "get",
+    payload?: any,
+    prefer: string = this.headers.Prefer
+  ): any {
     const url = `${this.baseUrl}${path}`;
     const options: GoogleAppsScript.URL_Fetch.URLFetchRequestOptions = {
       method,
-      headers: this.headers,
+      headers: { ...this.headers, Prefer: prefer },
       muteHttpExceptions: true,
     };
 
@@ -132,29 +137,19 @@ export class SupabaseClient {
       });
 
       // Log progress history
-      this.request(`/rest/v1/progress_history`, "post", {
-        series_id: match.seriesId,
+      this.request(`/rest/v1/progress_history?on_conflict=entry_id,activity_date`, "post", {
         entry_id: match.entryId,
+        activity_date: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd"),
         previous_unit: match.entryCurrentUnit || 0,
         new_unit: newChapter,
-        previous_cumulative_unit: previousCumulative,
-        new_cumulative_unit: newCumulative,
         source: "moon_reader_sync",
-      });
+      }, "resolution=merge-duplicates,return=minimal");
     } else {
       // Continuous series update
       this.request(`/rest/v1/series?id=eq.${match.seriesId}`, "patch", {
         current_cumulative_unit: newChapter,
       });
 
-      this.request(`/rest/v1/progress_history`, "post", {
-        series_id: match.seriesId,
-        previous_unit: previousCumulative,
-        new_unit: newChapter,
-        previous_cumulative_unit: previousCumulative,
-        new_cumulative_unit: newChapter,
-        source: "moon_reader_sync",
-      });
     }
 
     console.log(

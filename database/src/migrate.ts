@@ -88,6 +88,20 @@ async function runMigrations() {
           END IF;
       END $$;
 
+      CREATE OR REPLACE FUNCTION preserve_progress_history_start()
+      RETURNS TRIGGER AS $$
+      BEGIN
+          NEW.previous_unit = OLD.previous_unit;
+          RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+
+      DROP TRIGGER IF EXISTS trigger_preserve_progress_history_start ON progress_history;
+      CREATE TRIGGER trigger_preserve_progress_history_start
+      BEFORE UPDATE ON progress_history
+      FOR EACH ROW
+      EXECUTE FUNCTION preserve_progress_history_start();
+
       -- 2. Row Level Security (RLS) for all tables
       DROP TRIGGER IF EXISTS trigger_ensure_single_active_series ON series;
 

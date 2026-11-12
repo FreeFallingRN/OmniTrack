@@ -79,11 +79,9 @@ data class CreateEntryRequest(
 
 @Serializable
 data class ProgressHistoryRequest(
-    @SerialName("series_id") val seriesId: String,
-    @SerialName("entry_id") val entryId: String? = null,
+    @SerialName("entry_id") val entryId: String,
+    @SerialName("activity_date") val activityDate: String,
     @SerialName("previous_unit") val previousUnit: Double,
     @SerialName("new_unit") val newUnit: Double,
-    @SerialName("previous_cumulative_unit") val previousCumulativeUnit: Double? = null,
-    @SerialName("new_cumulative_unit") val newCumulativeUnit: Double? = null,
     val source: String
 )

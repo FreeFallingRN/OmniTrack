@@ -51,10 +51,6 @@ export const entryAuthorsRelations = relations(entryAuthors, ({ one }) => ({
 }));
 
 export const progressHistoryRelations = relations(progressHistory, ({ one }) => ({
-  series: one(series, {
-    fields: [progressHistory.seriesId],
-    references: [series.id],
-  }),
   entry: one(mediaEntries, {
     fields: [progressHistory.entryId],
     references: [mediaEntries.id],
