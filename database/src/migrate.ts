@@ -89,6 +89,8 @@ async function runMigrations() {
       END $$;
 
       -- 2. Row Level Security (RLS) for all tables
+      DROP TRIGGER IF EXISTS trigger_ensure_single_active_series ON series;
+
       DO $$
       DECLARE
           tbl text;
