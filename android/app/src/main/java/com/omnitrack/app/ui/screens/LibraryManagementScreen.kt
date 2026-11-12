@@ -2,8 +2,6 @@ package com.omnitrack.app.ui.screens
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,60 +12,61 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.omnitrack.app.data.SupabaseService
 import com.omnitrack.app.data.model.AuthorDto
-import com.omnitrack.app.data.model.CreateEntryRequest
 import com.omnitrack.app.data.model.CreateSeriesRequest
 import com.omnitrack.app.data.model.PlatformDto
-import com.omnitrack.app.data.model.UpdatePlatformRequest
 import com.omnitrack.app.data.model.SeriesDto
+import com.omnitrack.app.data.model.UpdatePlatformRequest
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.model.UserStatus
 import com.omnitrack.app.ui.SeriesViewModel
 import com.omnitrack.app.utils.CoverLookup
-import coil.compose.AsyncImage
-import androidx.compose.ui.layout.ContentScale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private val publishingStatuses = listOf("announced", "releasing", "hiatus", "completed", "discontinued")
+
+private fun String.capitalizeStatus(): String =
+    replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
 
 private data class SeriesFormData(
     val title: String,
@@ -122,7 +121,6 @@ private data class EntryFormData(
     val newSeriesPublishingStatus: String,
     val newSeriesCurrent: Double?,
     val newSeriesTotal: Double?,
-    val newSeriesUnitName: String,
     val newSeriesRating: Int?,
     val authorId: String?,
     val newAuthor: AuthorFormData?,
@@ -138,12 +136,17 @@ private data class EntryFormData(
 )
 
 @Composable
-fun LibraryManagementScreen(viewModel: SeriesViewModel) {
+fun LibraryManagementScreen(
+    viewModel: SeriesViewModel,
+    onSelectEntry: (MediaEntry) -> Unit = {},
+    section: Int = 0
+) {
     val entries by viewModel.mediaEntries.collectAsState()
     var series by remember { mutableStateOf<List<SeriesDto>>(emptyList()) }
     var authors by remember { mutableStateOf<List<AuthorDto>>(emptyList()) }
     var platforms by remember { mutableStateOf<List<PlatformDto>>(emptyList()) }
     var selectedSection by remember { mutableIntStateOf(0) }
+    LaunchedEffect(section) { selectedSection = section }
     var reloadToken by remember { mutableIntStateOf(0) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -170,6 +173,10 @@ fun LibraryManagementScreen(viewModel: SeriesViewModel) {
     var detailTitle by remember { mutableStateOf<String?>(null) }
     var detailSubtitle by remember { mutableStateOf<String?>(null) }
     var detailBody by remember { mutableStateOf<String?>(null) }
+    var detailImageUrl by remember { mutableStateOf<String?>(null) }
+    var detailWorks by remember { mutableStateOf<List<MediaEntry>>(emptyList()) }
+    var detailUserStatus by remember { mutableStateOf<String?>(null) }
+    var detailPublishingStatus by remember { mutableStateOf<String?>(null) }
     var detailEdit by remember { mutableStateOf<(() -> Unit)?>(null) }
     var selectedSeries by remember { mutableStateOf<SeriesDto?>(null) }
     var selectedAuthor by remember { mutableStateOf<AuthorDto?>(null) }
@@ -209,22 +216,6 @@ fun LibraryManagementScreen(viewModel: SeriesViewModel) {
             }
             }
 
-            if (selectedId != null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    Text(
-                        text = "Selected for deletion",
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                    IconButton(onClick = { showDeleteWarning = true }) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete selected")
-                    }
-                }
-            }
             HorizontalDivider()
 
             when (selectedSection) {
@@ -232,21 +223,33 @@ fun LibraryManagementScreen(viewModel: SeriesViewModel) {
                 series.forEach { item ->
                     ManagementRow(
                         title = item.title,
-                        subtitle = "${entries.count { it.seriesId == item.id }} book(s)",
-                        selected = selectedId == item.id,
+                        subtitle = seriesEntryCountLabel(entries.filter { it.seriesId == item.id }),
+                        imageUrl = entries
+                            .filter { it.seriesId == item.id && !it.coverUrl.isNullOrBlank() }
+                            .maxByOrNull { it.sequenceNumber }
+                            ?.coverUrl,
+                        selected = false,
                         onClick = {
+                            val seriesEntries = entries.filter { it.seriesId == item.id }
                             detailTitle = item.title
-                            detailSubtitle = "Series"
-                            detailBody = "${entries.count { it.seriesId == item.id }} media entries\n" +
-                                "User status: ${UserStatus.fromValue(derivedSeriesStatus(entries, item.id)).label}\n" +
-                                "Publishing status: ${derivedSeriesPublishingStatus(entries, item.id)}"
+                            detailSubtitle = null
+                            detailBody = null
+                            detailImageUrl = seriesEntries
+                                .filter { !it.coverUrl.isNullOrBlank() }
+                                .maxByOrNull { it.sequenceNumber }
+                                ?.coverUrl
+                            detailWorks = seriesEntries
+                            detailUserStatus = UserStatus.fromValue(derivedSeriesStatus(entries, item.id)).label
+                            detailPublishingStatus = derivedSeriesPublishingStatus(entries, item.id)
+                            selectedId = item.id
+                            selectedKind = "series"
                             detailEdit = {
                                 selectedSeries = item
                                 detailTitle = null
                                 showSeriesEditor = true
                             }
                         },
-                        onLongClick = { selectedId = item.id; selectedKind = "series" }
+                        onLongClick = { }
                     )
                 }
             }
@@ -256,8 +259,10 @@ fun LibraryManagementScreen(viewModel: SeriesViewModel) {
                     ManagementRow(
                         title = author.name,
                         subtitle = "Author",
-                        selected = selectedId == author.id,
+                        selected = false,
                         onClick = {
+                            selectedId = author.id
+                            selectedKind = "author"
                             detailTitle = author.name
                             detailSubtitle = "Author"
                             detailBody = listOfNotNull(author.nativeName, author.imageUrl, author.bio)
@@ -268,7 +273,7 @@ fun LibraryManagementScreen(viewModel: SeriesViewModel) {
                                 showAuthorEditor = true
                             }
                         },
-                        onLongClick = { selectedId = author.id; selectedKind = "author" }
+                        onLongClick = { }
                     )
                 }
                 }
@@ -278,8 +283,10 @@ fun LibraryManagementScreen(viewModel: SeriesViewModel) {
                             title = platform.name,
                             subtitle = "Platform",
                             imageUrl = platform.logoUrl,
-                            selected = selectedId == platform.id,
+                            selected = false,
                             onClick = {
+                                selectedId = platform.id
+                                selectedKind = "platform"
                                 detailTitle = platform.name
                                 detailSubtitle = "Platform"
                                 detailBody = null
@@ -289,7 +296,7 @@ fun LibraryManagementScreen(viewModel: SeriesViewModel) {
                                     showPlatformEditor = true
                                 }
                             },
-                            onLongClick = { selectedId = platform.id; selectedKind = "platform" }
+                            onLongClick = { }
                         )
                     }
                 }
@@ -430,8 +437,16 @@ fun LibraryManagementScreen(viewModel: SeriesViewModel) {
             title = title,
             subtitle = detailSubtitle,
             body = detailBody,
+            imageUrl = detailImageUrl,
+            works = detailWorks,
+            userStatus = detailUserStatus,
+            publishingStatus = detailPublishingStatus,
             onDismiss = { detailTitle = null },
-            onEdit = { detailEdit?.invoke() }
+            onEdit = { detailEdit?.invoke() },
+            onSelectWork = onSelectEntry,
+            onDelete = if (selectedKind != null) {
+                { detailTitle = null; showDeleteWarning = true }
+            } else null
         )
     }
 
@@ -488,29 +503,41 @@ private fun ManagementRow(
     }
 }
 
+private fun seriesEntryCountLabel(entries: List<MediaEntry>): String =
+    entries
+        .groupingBy { it.type }
+        .eachCount()
+        .entries
+        .sortedBy { it.key.label }
+        .joinToString(", ") { (type, count) ->
+            val label = if (count == 1) type.label.removeSuffix("s") else type.label
+            "$count ${label.lowercase()}"
+        }
+        .ifBlank { "No works" }
+
 @Composable
 private fun HoldToDeleteButton(onConfirmed: () -> Unit) {
-    var held by remember { mutableStateOf(false) }
-    LaunchedEffect(held) {
-        if (held) {
-            kotlinx.coroutines.delay(2000)
-            held = false
-            onConfirmed()
+    var secondsRemaining by remember { mutableIntStateOf(-1) }
+    LaunchedEffect(secondsRemaining) {
+        if (secondsRemaining > 0) {
+            kotlinx.coroutines.delay(1000)
+            secondsRemaining--
         }
     }
     Button(
-        onClick = {},
-        modifier = Modifier.pointerInput(Unit) {
-            awaitEachGesture {
-                val down = awaitFirstDown()
-                held = true
-                val event = awaitPointerEvent()
-                if (event.changes.any { it.changedToUp() }) held = false
-                down.consume()
-            }
-        }
+        onClick = {
+            if (secondsRemaining == 0) onConfirmed()
+            else if (secondsRemaining < 0) secondsRemaining = 2
+        },
+        enabled = secondsRemaining <= 0
     ) {
-        Text(if (held) "Keep holding…" else "Hold 2 seconds")
+        Text(
+            when {
+                secondsRemaining < 0 -> "Start 2-second countdown"
+                secondsRemaining > 0 -> "Delete available in ${secondsRemaining}s"
+                else -> "Delete permanently"
+            }
+        )
     }
 }
 
@@ -606,7 +633,6 @@ private fun EntryEditorDialog(
     var newSeriesPublishing by remember { mutableStateOf("releasing") }
     var newSeriesCurrent by remember { mutableStateOf("") }
     var newSeriesTotal by remember { mutableStateOf("") }
-    var newSeriesUnit by remember { mutableStateOf("Chapter") }
     var newSeriesRating by remember { mutableStateOf("") }
     var newAuthor by remember { mutableStateOf("") }
     var newAuthorNative by remember { mutableStateOf("") }
@@ -647,7 +673,6 @@ private fun EntryEditorDialog(
                     Selector("Publishing status", newSeriesPublishing, publishingStatuses, { it }) { newSeriesPublishing = it }
                     OutlinedTextField(newSeriesCurrent, { newSeriesCurrent = it }, label = { Text("Cumulative progress") }, singleLine = true)
                     OutlinedTextField(newSeriesTotal, { newSeriesTotal = it }, label = { Text("Total units") }, singleLine = true)
-                    OutlinedTextField(newSeriesUnit, { newSeriesUnit = it }, label = { Text("Unit name") }, singleLine = true)
                     OutlinedTextField(newSeriesRating, { newSeriesRating = it }, label = { Text("Rating") }, singleLine = true)
                 }
                 EntitySelector(
@@ -724,7 +749,7 @@ private fun EntryEditorDialog(
                     onSave(
                         EntryFormData(
                             title, type, seriesId, finalSeries, newSeriesStatus, newSeriesPublishing,
-                            newSeriesCurrent.toDoubleOrNull(), newSeriesTotal.toDoubleOrNull(), newSeriesUnit,
+                            newSeriesCurrent.toDoubleOrNull(), newSeriesTotal.toDoubleOrNull(),
                             newSeriesRating.toIntOrNull(), authorId,
                             if (createAuthor) AuthorFormData(newAuthor, newAuthorNative.ifBlank { null }, newAuthorImage.ifBlank { null }, newAuthorBio.ifBlank { null }) else null,
                             coverUrl, sourceUrl, platform, userStatus, publishingStatus,
@@ -923,12 +948,34 @@ private fun PlatformEditorSheet(
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
+private fun SeriesStatusPill(status: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        shape = RoundedCornerShape(50)
+    ) {
+        Text(
+            status,
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+        )
+    }
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
 private fun EntityDetailSheet(
     title: String,
     subtitle: String?,
     body: String?,
+    imageUrl: String?,
+    works: List<MediaEntry>,
+    userStatus: String?,
+    publishingStatus: String?,
     onDismiss: () -> Unit,
-    onEdit: () -> Unit
+    onEdit: () -> Unit,
+    onSelectWork: (MediaEntry) -> Unit,
+    onDelete: (() -> Unit)?
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -937,16 +984,72 @@ private fun EntityDetailSheet(
                 .padding(horizontal = 24.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            if (!imageUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = imageUrl,
+                    contentDescription = "$title cover",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp)
+                )
+            }
             Text(title, style = MaterialTheme.typography.headlineSmall)
             subtitle?.let {
                 Text(it, color = MaterialTheme.colorScheme.primary)
             }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                userStatus?.let { SeriesStatusPill(it) }
+                publishingStatus?.let { SeriesStatusPill(it.capitalizeStatus()) }
+            }
+
             body?.takeIf { it.isNotBlank() }?.let {
                 Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            if (works.isNotEmpty()) {
+                Text("Works", style = MaterialTheme.typography.titleMedium)
+                works.sortedBy { it.sequenceNumber }.forEach { work ->
+                    Card(
+                        modifier = Modifier.clickable { onSelectWork(work) },
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(work.title, style = MaterialTheme.typography.bodyLarge)
+                                Text(
+                                    "${work.type.label.removeSuffix("s")} • ${work.userStatus.label}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Text(
+                                "${work.unitName} ${work.currentUnit.toString().removeSuffix(".0")}",
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+
+                }
+            }
+
             Button(onClick = onEdit, modifier = Modifier.fillMaxWidth()) {
                 Text("Edit")
             }
+
+            onDelete?.let {
+                androidx.compose.material3.OutlinedButton(
+                    onClick = it,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Delete")
+                }
+            }
+
         }
     }
 }

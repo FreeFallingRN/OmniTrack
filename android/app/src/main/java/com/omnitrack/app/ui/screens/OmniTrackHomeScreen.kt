@@ -34,6 +34,8 @@ import com.omnitrack.app.data.model.CreateSeriesRequest
 import com.omnitrack.app.data.model.CreatePlatformRequest
 import com.omnitrack.app.ui.SeriesViewModel
 import com.omnitrack.app.ui.components.MediaDetailSheet
+import com.omnitrack.app.ui.components.RelatedEntityDetail
+import com.omnitrack.app.ui.components.RelatedEntityDetailSheet
 import com.omnitrack.app.ui.components.MediaEntryEditorData
 import com.omnitrack.app.ui.components.MediaEntryEditorSheet
 import com.omnitrack.app.ui.components.TrackedMediaRow
@@ -50,7 +52,9 @@ fun OmniTrackHomeScreen(
     var selectedUserStatus by remember { mutableStateOf(UserStatus.IN_PROGRESS) }
     var searchQuery by remember { mutableStateOf("") }
     var selectedEntryForDetail by remember { mutableStateOf<MediaEntry?>(null) }
+    var selectedRelatedEntity by remember { mutableStateOf<RelatedEntityDetail?>(null) }
     var bottomNavIndex by remember { mutableIntStateOf(0) }
+    var managementSection by remember { mutableIntStateOf(0) }
     var isRefreshing by remember { mutableStateOf(false) }
     var showEntryEditor by remember { mutableStateOf(false) }
     var editorEntry by remember { mutableStateOf<MediaEntry?>(null) }
@@ -287,7 +291,11 @@ fun OmniTrackHomeScreen(
                     }
                 }
                 1 -> {
-                    LibraryManagementScreen(viewModel = viewModel)
+                    LibraryManagementScreen(
+                        viewModel = viewModel,
+                        onSelectEntry = { selectedEntryForDetail = it },
+                        section = managementSection
+                    )
                 }
                 2 -> {
                     // 2: History View
@@ -312,6 +320,10 @@ fun OmniTrackHomeScreen(
             onDismiss = { selectedEntryForDetail = null },
             onUpdateProgress = { newProgress -> viewModel.updateProgress(entry.id, newProgress) },
             onSelectEntry = { selectedEntryForDetail = it },
+            onOpenRelatedEntity = {
+                selectedRelatedEntity = it
+                selectedEntryForDetail = null
+            },
             onEdit = {
                 editorEntry = entry
                 selectedEntryForDetail = null
@@ -323,6 +335,17 @@ fun OmniTrackHomeScreen(
                     selectedEntryForDetail = null
                     viewModel.refreshData()
                 }
+            }
+        )
+    }
+
+    selectedRelatedEntity?.let { detail ->
+        RelatedEntityDetailSheet(
+            detail = detail,
+            onDismiss = { selectedRelatedEntity = null },
+            onSelectWork = {
+                selectedRelatedEntity = null
+                selectedEntryForDetail = it
             }
         )
     }

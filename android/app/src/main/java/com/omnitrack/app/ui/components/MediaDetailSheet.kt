@@ -49,6 +49,12 @@ import androidx.compose.ui.unit.dp
 import com.omnitrack.app.domain.model.MediaEntry
 import coil.compose.AsyncImage
 
+data class RelatedEntityDetail(
+    val title: String,
+    val type: String,
+    val works: List<MediaEntry> = emptyList()
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MediaDetailSheet(
@@ -57,6 +63,7 @@ fun MediaDetailSheet(
     onDismiss: () -> Unit,
     onUpdateProgress: (Double) -> Unit,
     onSelectEntry: (MediaEntry) -> Unit,
+    onOpenRelatedEntity: (RelatedEntityDetail) -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -121,18 +128,37 @@ fun MediaDetailSheet(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "${entry.type.label.removeSuffix("s")} by " +
-                                entry.authors.joinToString(", ").ifBlank { "Unknown author" },
+                            text = "${entry.type.label.removeSuffix("s")} by",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        entry.seriesTitle?.let {
+                        entry.authors.forEach { author ->
                             Text(
-                                text = "$it (series)",
+                                text = author,
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.clickable {
+                                    onOpenRelatedEntity(RelatedEntityDetail(author, "Author"))
+                                }
                             )
                         }
+                        entry.seriesTitle?.let {
+                            Text(
+                                text = it,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.clickable {
+                                    onOpenRelatedEntity(
+                                        RelatedEntityDetail(
+                                            title = it,
+                                            type = "Series",
+                                            works = relatedEntries + entry
+                                        )
+                                    )
+                                }
+                            )
+                        }
+
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -307,27 +333,27 @@ fun MediaDetailSheet(
 
 @Composable
 private fun HoldToDeleteButton(onConfirmed: () -> Unit) {
-    var held by remember { mutableStateOf(false) }
-    androidx.compose.runtime.LaunchedEffect(held) {
-        if (held) {
-            kotlinx.coroutines.delay(2000)
-            held = false
-            onConfirmed()
+    var secondsRemaining by remember { mutableStateOf(-1) }
+    androidx.compose.runtime.LaunchedEffect(secondsRemaining) {
+        if (secondsRemaining > 0) {
+            kotlinx.coroutines.delay(1000)
+            secondsRemaining--
         }
     }
     Button(
-        onClick = {},
-        modifier = Modifier.pointerInput(Unit) {
-            awaitEachGesture {
-                val down = awaitFirstDown()
-                held = true
-                val event = awaitPointerEvent()
-                if (event.changes.any { it.changedToUp() }) held = false
-                down.consume()
-            }
-        }
+        onClick = {
+            if (secondsRemaining == 0) onConfirmed()
+            else if (secondsRemaining < 0) secondsRemaining = 2
+        },
+        enabled = secondsRemaining <= 0
     ) {
-        Text(if (held) "Keep holding…" else "Hold 2 seconds")
+        Text(
+            when {
+                secondsRemaining < 0 -> "Start 2-second countdown"
+                secondsRemaining > 0 -> "Delete available in ${secondsRemaining}s"
+                else -> "Delete permanently"
+            }
+        )
     }
 }
 

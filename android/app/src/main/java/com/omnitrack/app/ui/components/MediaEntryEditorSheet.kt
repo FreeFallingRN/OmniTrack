@@ -83,8 +83,7 @@ data class MediaEntryEditorData(
 data class NewSeriesData(
     val title: String,
     val userStatus: String,
-    val publishingStatus: String,
-    val unitName: String
+    val publishingStatus: String
 )
 
 data class NewAuthorData(
@@ -148,7 +147,6 @@ fun MediaEntryEditorSheet(
     var newSeriesTitle by remember { mutableStateOf("") }
     var newSeriesStatus by remember { mutableStateOf("planning") }
     var newSeriesPublishingStatus by remember { mutableStateOf("releasing") }
-    var newSeriesUnitName by remember { mutableStateOf("Chapter") }
     var newAuthorName by remember { mutableStateOf("") }
     var createPlatform by remember { mutableStateOf(false) }
     var newPlatformName by remember { mutableStateOf("") }
@@ -229,13 +227,6 @@ fun MediaEntryEditorSheet(
                     ) {
                         newSeriesPublishingStatus = it
                     }
-                }
-                item {
-                    EntryField(
-                        "Series unit name",
-                        newSeriesUnitName,
-                        onValueChange = { newSeriesUnitName = it }
-                    )
                 }
             }
             item {
@@ -444,8 +435,7 @@ fun MediaEntryEditorSheet(
                                         NewSeriesData(
                                             title = newSeriesTitle,
                                             userStatus = newSeriesStatus,
-                                            publishingStatus = newSeriesPublishingStatus,
-                                            unitName = newSeriesUnitName
+                                            publishingStatus = newSeriesPublishingStatus
                                         )
                                     } else null,
                                     authorId = selectedAuthor,
