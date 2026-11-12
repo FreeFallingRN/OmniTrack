@@ -144,19 +144,44 @@ object SupabaseService {
     suspend fun getEntryAuthors(entryId: String): List<EntryAuthorDto> =
         client.get("$supabaseUrl/rest/v1/entry_authors?entry_id=eq.$entryId&select=*").body()
 
-    suspend fun createAuthor(name: String): AuthorDto {
+    suspend fun createAuthor(
+        name: String,
+        nativeName: String? = null,
+        imageUrl: String? = null,
+        bio: String? = null
+    ): AuthorDto {
         val list: List<AuthorDto> = client.post("$supabaseUrl/rest/v1/authors") {
             contentType(ContentType.Application.Json)
             header("Prefer", "return=representation")
-            setBody(mapOf("name" to name.trim()))
+            setBody(
+                mapOf(
+                    "name" to name.trim(),
+                    "native_name" to nativeName?.trim()?.ifBlank { null },
+                    "image_url" to imageUrl?.trim()?.ifBlank { null },
+                    "bio" to bio?.trim()?.ifBlank { null }
+                )
+            )
         }.body()
         return list.first()
     }
 
-    suspend fun updateAuthor(id: String, name: String) {
+    suspend fun updateAuthor(
+        id: String,
+        name: String,
+        nativeName: String? = null,
+        imageUrl: String? = null,
+        bio: String? = null
+    ) {
         client.patch("$supabaseUrl/rest/v1/authors?id=eq.$id") {
             contentType(ContentType.Application.Json)
-            setBody(mapOf("name" to name.trim()))
+            setBody(
+                mapOf(
+                    "name" to name.trim(),
+                    "native_name" to nativeName?.trim()?.ifBlank { null },
+                    "image_url" to imageUrl?.trim()?.ifBlank { null },
+                    "bio" to bio?.trim()?.ifBlank { null }
+                )
+            )
         }
     }
 
@@ -164,10 +189,31 @@ object SupabaseService {
         client.delete("$supabaseUrl/rest/v1/authors?id=eq.$id")
     }
 
-    suspend fun updateSeries(id: String, title: String) {
+    suspend fun updateSeries(
+        id: String,
+        title: String,
+        userStatus: String,
+        publishingStatus: String,
+        currentCumulativeUnit: Double?,
+        totalUnits: Double?,
+        unitName: String,
+        rating: Int?,
+        notes: String?
+    ) {
         client.patch("$supabaseUrl/rest/v1/series?id=eq.$id") {
             contentType(ContentType.Application.Json)
-            setBody(mapOf("title" to title.trim()))
+            setBody(
+                mapOf(
+                    "title" to title.trim(),
+                    "user_status" to userStatus,
+                    "publishing_status" to publishingStatus,
+                    "current_cumulative_unit" to currentCumulativeUnit,
+                    "total_units" to totalUnits,
+                    "unit_name" to unitName.trim(),
+                    "rating" to rating,
+                    "notes" to notes?.trim()?.ifBlank { null }
+                )
+            )
         }
     }
 
@@ -181,7 +227,16 @@ object SupabaseService {
         type: String,
         seriesId: String,
         authorId: String,
-        coverUrl: String?
+        coverUrl: String?,
+        sourceUrl: String?,
+        platform: String?,
+        userStatus: String,
+        publishingStatus: String,
+        sequenceNumber: Double,
+        currentUnit: Double,
+        totalUnits: Double?,
+        unitName: String,
+        isCanon: Boolean
     ) {
         client.patch("$supabaseUrl/rest/v1/media_entries?id=eq.$id") {
             contentType(ContentType.Application.Json)
@@ -190,7 +245,16 @@ object SupabaseService {
                     "title" to title.trim(),
                     "type" to type,
                     "series_id" to seriesId,
-                    "cover_url" to coverUrl?.trim()?.ifBlank { null }
+                    "cover_url" to coverUrl?.trim()?.ifBlank { null },
+                    "source_url" to sourceUrl?.trim()?.ifBlank { null },
+                    "platform" to platform?.trim()?.ifBlank { null },
+                    "user_status" to userStatus,
+                    "publishing_status" to publishingStatus,
+                    "sequence_number" to sequenceNumber,
+                    "current_unit" to currentUnit,
+                    "total_units" to totalUnits,
+                    "unit_name" to unitName.trim(),
+                    "is_canon" to isCanon
                 )
             )
         }

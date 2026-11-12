@@ -17,11 +17,14 @@ data class MediaEntryDto(
     @SerialName("type") val type: String = "novel",
     @SerialName("sequence_number") val sequenceNumber: Double = 1.0,
     @SerialName("user_status") val userStatus: String,
+    @SerialName("publishing_status") val publishingStatus: String = "releasing",
     @SerialName("is_canon") val isCanon: Boolean = true,
     @SerialName("current_unit") val currentUnit: Double = 0.0,
     @SerialName("total_units") val totalUnits: Double? = null,
     @SerialName("unit_name") val unitName: String = "Chapter",
     @SerialName("cover_url") val coverUrl: String? = null,
+    @SerialName("source_url") val sourceUrl: String? = null,
+    @SerialName("platform") val platform: String? = null,
     @SerialName("is_active_target") val isActiveTarget: Boolean = false
 )
 

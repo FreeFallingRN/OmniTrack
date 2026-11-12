@@ -27,13 +27,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -56,11 +56,58 @@ import com.omnitrack.app.data.model.CreateSeriesRequest
 import com.omnitrack.app.data.model.SeriesDto
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.MediaType
+import com.omnitrack.app.domain.model.UserStatus
 import com.omnitrack.app.ui.SeriesViewModel
 import com.omnitrack.app.utils.CoverLookup
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+private val publishingStatuses = listOf("announced", "releasing", "hiatus", "completed", "discontinued")
+
+private data class SeriesFormData(
+    val title: String,
+    val userStatus: String,
+    val publishingStatus: String,
+    val currentCumulativeUnit: Double?,
+    val totalUnits: Double?,
+    val unitName: String,
+    val rating: Int?,
+    val notes: String?
+)
+
+private data class AuthorFormData(
+    val name: String,
+    val nativeName: String?,
+    val imageUrl: String?,
+    val bio: String?
+)
+
+private data class EntryFormData(
+    val title: String,
+    val type: MediaType,
+    val seriesId: String?,
+    val newSeriesName: String,
+    val newSeriesUserStatus: String,
+    val newSeriesPublishingStatus: String,
+    val newSeriesCurrent: Double?,
+    val newSeriesTotal: Double?,
+    val newSeriesUnitName: String,
+    val newSeriesRating: Int?,
+    val newSeriesNotes: String?,
+    val authorId: String?,
+    val newAuthor: AuthorFormData?,
+    val coverUrl: String,
+    val sourceUrl: String,
+    val platform: String,
+    val userStatus: String,
+    val publishingStatus: String,
+    val sequenceNumber: Double,
+    val currentUnit: Double,
+    val totalUnits: Double?,
+    val unitName: String,
+    val isCanon: Boolean
+)
 
 @Composable
 fun LibraryManagementScreen(viewModel: SeriesViewModel) {
@@ -238,20 +285,34 @@ fun LibraryManagementScreen(viewModel: SeriesViewModel) {
         SeriesEditorDialog(
             existing = selectedSeries,
             onDismiss = { showSeriesEditor = false },
-            onSave = { title ->
+            onSave = { form ->
                 scope.launch {
                     try {
                         if (selectedSeries == null) {
                             SupabaseService.createSeries(
                                 CreateSeriesRequest(
-                                    title = title,
-                                    userStatus = "planning",
-                                    publishingStatus = "releasing",
-                                    unitName = "Chapter"
+                                    title = form.title,
+                                    userStatus = form.userStatus,
+                                    publishingStatus = form.publishingStatus,
+                                    currentCumulativeUnit = form.currentCumulativeUnit ?: 0.0,
+                                    totalUnits = form.totalUnits,
+                                    unitName = form.unitName,
+                                    rating = form.rating,
+                                    notes = form.notes
                                 )
                             )
                         } else {
-                            SupabaseService.updateSeries(selectedSeries!!.id, title)
+                            SupabaseService.updateSeries(
+                                selectedSeries!!.id,
+                                form.title,
+                                form.userStatus,
+                                form.publishingStatus,
+                                form.currentCumulativeUnit,
+                                form.totalUnits,
+                                form.unitName,
+                                form.rating,
+                                form.notes
+                            )
                         }
                         showSeriesEditor = false
                         reloadToken++
@@ -267,11 +328,20 @@ fun LibraryManagementScreen(viewModel: SeriesViewModel) {
         AuthorEditorDialog(
             existing = selectedAuthor,
             onDismiss = { showAuthorEditor = false },
-            onSave = { name ->
+            onSave = { form ->
                 scope.launch {
                     try {
-                        if (selectedAuthor == null) SupabaseService.createAuthor(name)
-                        else SupabaseService.updateAuthor(selectedAuthor!!.id, name)
+                        if (selectedAuthor == null) {
+                            SupabaseService.createAuthor(form.name, form.nativeName, form.imageUrl, form.bio)
+                        } else {
+                            SupabaseService.updateAuthor(
+                                selectedAuthor!!.id,
+                                form.name,
+                                form.nativeName,
+                                form.imageUrl,
+                                form.bio
+                            )
+                        }
                         showAuthorEditor = false
                         reloadToken++
                     } catch (e: Exception) {
@@ -289,22 +359,31 @@ fun LibraryManagementScreen(viewModel: SeriesViewModel) {
             series = series,
             authors = authors,
             onDismiss = { showEntryEditor = false },
-            onSave = { title, type, seriesId, newSeriesName, authorId, newAuthorName, coverUrl, sourceUrl ->
+            onSave = { form ->
                 scope.launch {
                     try {
-                        val finalSeriesId = if (newSeriesName.isNotBlank()) {
+                        val finalSeriesId = if (form.newSeriesName.isNotBlank()) {
                             SupabaseService.createSeries(
                                 CreateSeriesRequest(
-                                    title = newSeriesName,
-                                    userStatus = "planning",
-                                    publishingStatus = "releasing",
-                                    unitName = "Chapter"
+                                    title = form.newSeriesName,
+                                    userStatus = form.newSeriesUserStatus,
+                                    publishingStatus = form.newSeriesPublishingStatus,
+                                    currentCumulativeUnit = form.newSeriesCurrent ?: 0.0,
+                                    totalUnits = form.newSeriesTotal,
+                                    unitName = form.newSeriesUnitName,
+                                    rating = form.newSeriesRating,
+                                    notes = form.newSeriesNotes
                                 )
                             ).id
-                        } else seriesId
-                        val finalAuthorId = if (newAuthorName.isNotBlank()) {
-                            SupabaseService.createAuthor(newAuthorName).id
-                        } else authorId
+                        } else form.seriesId
+                        val finalAuthorId = if (form.newAuthor != null) {
+                            SupabaseService.createAuthor(
+                                form.newAuthor.name,
+                                form.newAuthor.nativeName,
+                                form.newAuthor.imageUrl,
+                                form.newAuthor.bio
+                            ).id
+                        } else form.authorId
                         if (finalSeriesId == null || finalAuthorId == null) {
                             error = "A book must have both a series and an author."
                             return@launch
@@ -313,14 +392,18 @@ fun LibraryManagementScreen(viewModel: SeriesViewModel) {
                             SupabaseService.createEntry(
                                 CreateEntryRequest(
                                     seriesId = finalSeriesId,
-                                    title = title,
-                                    type = type.value,
+                                    title = form.title,
+                                    type = form.type.value,
                                     sequenceNumber = (entries.count { it.seriesId == finalSeriesId } + 1).toDouble(),
-                                    userStatus = "planning",
-                                    publishingStatus = "releasing",
-                                    unitName = "Chapter",
-                                    sourceUrl = sourceUrl.ifBlank { null },
-                                    coverUrl = coverUrl.ifBlank { null }
+                                    userStatus = form.userStatus,
+                                    publishingStatus = form.publishingStatus,
+                                    currentUnit = form.currentUnit,
+                                    totalUnits = form.totalUnits,
+                                    unitName = form.unitName,
+                                    isCanon = form.isCanon,
+                                    sourceUrl = form.sourceUrl.ifBlank { null },
+                                    platform = form.platform.ifBlank { null },
+                                    coverUrl = form.coverUrl.ifBlank { null }
                                 )
                             ).also { created ->
                                 SupabaseService.replaceEntryAuthor(created.id, finalAuthorId)
@@ -328,11 +411,20 @@ fun LibraryManagementScreen(viewModel: SeriesViewModel) {
                         } else {
                             SupabaseService.updateEntry(
                                 id = editorEntry!!.id,
-                                title = title,
-                                type = type.value,
+                                title = form.title,
+                                type = form.type.value,
                                 seriesId = finalSeriesId,
                                 authorId = finalAuthorId,
-                                coverUrl = coverUrl.ifBlank { null }
+                                coverUrl = form.coverUrl.ifBlank { null },
+                                sourceUrl = form.sourceUrl.ifBlank { null },
+                                platform = form.platform.ifBlank { null },
+                                userStatus = form.userStatus,
+                                publishingStatus = form.publishingStatus,
+                                sequenceNumber = form.sequenceNumber,
+                                currentUnit = form.currentUnit,
+                                totalUnits = form.totalUnits,
+                                unitName = form.unitName,
+                                isCanon = form.isCanon
                             )
                         }
                         showEntryEditor = false
@@ -410,22 +502,69 @@ private fun HoldToDeleteButton(onConfirmed: () -> Unit) {
 }
 
 @Composable
-private fun SeriesEditorDialog(existing: SeriesDto?, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+private fun SeriesEditorDialog(
+    existing: SeriesDto?,
+    onDismiss: () -> Unit,
+    onSave: (SeriesFormData) -> Unit
+) {
     var title by remember { mutableStateOf(existing?.title.orEmpty()) }
-    EditorDialog(title = if (existing == null) "Add series" else "Edit series", onDismiss = onDismiss, onSave = {
-        if (title.isNotBlank()) onSave(title)
-    }) {
+    var userStatus by remember { mutableStateOf(existing?.userStatus ?: "planning") }
+    var publishingStatus by remember { mutableStateOf(existing?.publishingStatus ?: "releasing") }
+    var current by remember { mutableStateOf(existing?.currentCumulativeUnit?.toString().orEmpty()) }
+    var total by remember { mutableStateOf(existing?.totalUnits?.toString().orEmpty()) }
+    var unitName by remember { mutableStateOf(existing?.unitName ?: "Chapter") }
+    var rating by remember { mutableStateOf(existing?.rating?.toString().orEmpty()) }
+    var notes by remember { mutableStateOf(existing?.notes.orEmpty()) }
+
+    EditorDialog(
+        title = if (existing == null) "Add series" else "Edit series",
+        onDismiss = onDismiss,
+        onSave = {
+            if (title.isNotBlank()) {
+                onSave(
+                    SeriesFormData(
+                        title, userStatus, publishingStatus, current.toDoubleOrNull(),
+                        total.toDoubleOrNull(), unitName, rating.toIntOrNull(), notes.ifBlank { null }
+                    )
+                )
+            }
+        }
+    ) {
         OutlinedTextField(title, { title = it }, label = { Text("Series name") }, singleLine = true)
+        Selector("User status", userStatus, UserStatus.entries, { it.label }) { userStatus = it.value }
+        Selector("Publishing status", publishingStatus, publishingStatuses, { it }) { publishingStatus = it }
+        OutlinedTextField(current, { current = it }, label = { Text("Cumulative progress") }, singleLine = true)
+        OutlinedTextField(total, { total = it }, label = { Text("Total units") }, singleLine = true)
+        OutlinedTextField(unitName, { unitName = it }, label = { Text("Unit name") }, singleLine = true)
+        OutlinedTextField(rating, { rating = it }, label = { Text("Rating") }, singleLine = true)
+        OutlinedTextField(notes, { notes = it }, label = { Text("Notes") }, minLines = 2)
     }
 }
 
 @Composable
-private fun AuthorEditorDialog(existing: AuthorDto?, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+private fun AuthorEditorDialog(
+    existing: AuthorDto?,
+    onDismiss: () -> Unit,
+    onSave: (AuthorFormData) -> Unit
+) {
     var name by remember { mutableStateOf(existing?.name.orEmpty()) }
-    EditorDialog(title = if (existing == null) "Add author" else "Edit author", onDismiss = onDismiss, onSave = {
-        if (name.isNotBlank()) onSave(name)
-    }) {
+    var nativeName by remember { mutableStateOf(existing?.nativeName.orEmpty()) }
+    var imageUrl by remember { mutableStateOf(existing?.imageUrl.orEmpty()) }
+    var bio by remember { mutableStateOf(existing?.bio.orEmpty()) }
+
+    EditorDialog(
+        title = if (existing == null) "Add author" else "Edit author",
+        onDismiss = onDismiss,
+        onSave = {
+            if (name.isNotBlank()) {
+                onSave(AuthorFormData(name, nativeName.ifBlank { null }, imageUrl.ifBlank { null }, bio.ifBlank { null }))
+            }
+        }
+    ) {
         OutlinedTextField(name, { name = it }, label = { Text("Author name") }, singleLine = true)
+        OutlinedTextField(nativeName, { nativeName = it }, label = { Text("Native name (optional)") }, singleLine = true)
+        OutlinedTextField(imageUrl, { imageUrl = it }, label = { Text("Image URL (optional)") }, singleLine = true)
+        OutlinedTextField(bio, { bio = it }, label = { Text("Biography (optional)") }, minLines = 3)
     }
 }
 
@@ -436,7 +575,7 @@ private fun EntryEditorDialog(
     series: List<SeriesDto>,
     authors: List<AuthorDto>,
     onDismiss: () -> Unit,
-    onSave: (String, MediaType, String?, String, String?, String, String, String) -> Unit
+    onSave: (EntryFormData) -> Unit
 ) {
     var title by remember { mutableStateOf(existing?.title.orEmpty()) }
     var type by remember { mutableStateOf(existing?.type ?: MediaType.NOVEL) }
@@ -444,52 +583,143 @@ private fun EntryEditorDialog(
     var authorId by remember(existing?.id, authors) {
         mutableStateOf(authors.firstOrNull { existing?.authors?.contains(it.name) == true }?.id)
     }
+    var createSeries by remember { mutableStateOf(false) }
+    var createAuthor by remember { mutableStateOf(false) }
     var newSeries by remember { mutableStateOf("") }
+    var newSeriesStatus by remember { mutableStateOf("planning") }
+    var newSeriesPublishing by remember { mutableStateOf("releasing") }
+    var newSeriesCurrent by remember { mutableStateOf("") }
+    var newSeriesTotal by remember { mutableStateOf("") }
+    var newSeriesUnit by remember { mutableStateOf("Chapter") }
+    var newSeriesRating by remember { mutableStateOf("") }
+    var newSeriesNotes by remember { mutableStateOf("") }
     var newAuthor by remember { mutableStateOf("") }
+    var newAuthorNative by remember { mutableStateOf("") }
+    var newAuthorImage by remember { mutableStateOf("") }
+    var newAuthorBio by remember { mutableStateOf("") }
     var coverUrl by remember { mutableStateOf(existing?.coverUrl.orEmpty()) }
-    var sourceUrl by remember { mutableStateOf("") }
+    var sourceUrl by remember(existing?.id) { mutableStateOf(existing?.sourceUrl.orEmpty()) }
+    var platform by remember { mutableStateOf(existing?.platform.orEmpty()) }
+    var userStatus by remember { mutableStateOf(existing?.userStatus?.value ?: "planning") }
+    var publishingStatus by remember { mutableStateOf(existing?.publishingStatus ?: "releasing") }
+    var sequenceNumber by remember { mutableStateOf(existing?.sequenceNumber?.toString() ?: "1") }
+    var currentUnit by remember { mutableStateOf(existing?.currentUnit?.toString() ?: "0") }
+    var totalUnits by remember { mutableStateOf(existing?.totalUnits?.toString().orEmpty()) }
+    var unitName by remember { mutableStateOf(existing?.unitName ?: "Chapter") }
+    var isCanon by remember { mutableStateOf(existing?.isCanon ?: true) }
     var validationError by remember { mutableStateOf<String?>(null) }
+    var isFindingCover by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (existing == null) "New entry" else "Edit entry") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(title, { title = it }, label = { Text("Book title") }, singleLine = true)
+                OutlinedTextField(title, { title = it }, label = { Text("Entry title") }, singleLine = true)
                 Selector("Type", type.label, MediaType.entries, { it.label }) { type = it }
-                Selector("Series", series.firstOrNull { it.id == seriesId }?.title ?: "Choose series", series, { it.title }) { seriesId = it.id }
-                OutlinedTextField(newSeries, { newSeries = it }, label = { Text("Or create a new series") }, singleLine = true)
-                Selector("Author", authors.firstOrNull { it.id == authorId }?.name ?: "Choose author", authors, { it.name }) { authorId = it.id }
-                OutlinedTextField(newAuthor, { newAuthor = it }, label = { Text("Or create a new author") }, singleLine = true)
+                EntitySelector(
+                    label = "Series",
+                    selected = series.firstOrNull { it.id == seriesId }?.title ?: "Choose series",
+                    options = series,
+                    optionText = { it.title },
+                    onSelected = { seriesId = it.id; createSeries = false },
+                    onAdd = { createSeries = !createSeries }
+                )
+                if (createSeries) {
+                    HorizontalDivider()
+                    Text("New series details", style = MaterialTheme.typography.titleSmall)
+                    OutlinedTextField(newSeries, { newSeries = it }, label = { Text("Series name") }, singleLine = true)
+                    Selector("User status", newSeriesStatus, UserStatus.entries, { it.label }) { newSeriesStatus = it.value }
+                    Selector("Publishing status", newSeriesPublishing, publishingStatuses, { it }) { newSeriesPublishing = it }
+                    OutlinedTextField(newSeriesCurrent, { newSeriesCurrent = it }, label = { Text("Cumulative progress") }, singleLine = true)
+                    OutlinedTextField(newSeriesTotal, { newSeriesTotal = it }, label = { Text("Total units") }, singleLine = true)
+                    OutlinedTextField(newSeriesUnit, { newSeriesUnit = it }, label = { Text("Unit name") }, singleLine = true)
+                    OutlinedTextField(newSeriesRating, { newSeriesRating = it }, label = { Text("Rating") }, singleLine = true)
+                    OutlinedTextField(newSeriesNotes, { newSeriesNotes = it }, label = { Text("Notes") }, minLines = 2)
+                }
+                EntitySelector(
+                    label = "Author",
+                    selected = authors.firstOrNull { it.id == authorId }?.name ?: "Choose author",
+                    options = authors,
+                    optionText = { it.name },
+                    onSelected = { authorId = it.id; createAuthor = false },
+                    onAdd = { createAuthor = !createAuthor }
+                )
+                if (createAuthor) {
+                    HorizontalDivider()
+                    Text("New author details", style = MaterialTheme.typography.titleSmall)
+                    OutlinedTextField(newAuthor, { newAuthor = it }, label = { Text("Author name") }, singleLine = true)
+                    OutlinedTextField(newAuthorNative, { newAuthorNative = it }, label = { Text("Native name") }, singleLine = true)
+                    OutlinedTextField(newAuthorImage, { newAuthorImage = it }, label = { Text("Image URL") }, singleLine = true)
+                    OutlinedTextField(newAuthorBio, { newAuthorBio = it }, label = { Text("Biography") }, minLines = 2)
+                }
+                HorizontalDivider()
+                Text("Media details", style = MaterialTheme.typography.titleSmall)
+                Selector("User status", userStatus, UserStatus.entries, { it.label }) { userStatus = it.value }
+                Selector("Publishing status", publishingStatus, publishingStatuses, { it }) { publishingStatus = it }
+                OutlinedTextField(sequenceNumber, { sequenceNumber = it }, label = { Text("Sequence number") }, singleLine = true)
+                OutlinedTextField(currentUnit, { currentUnit = it }, label = { Text("Current progress") }, singleLine = true)
+                OutlinedTextField(totalUnits, { totalUnits = it }, label = { Text("Total units") }, singleLine = true)
+                OutlinedTextField(unitName, { unitName = it }, label = { Text("Unit name") }, singleLine = true)
+                OutlinedTextField(platform, { platform = it }, label = { Text("Platform") }, singleLine = true)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.Checkbox(checked = isCanon, onCheckedChange = { isCanon = it })
+                    Text("Canon entry")
+                }
+                HorizontalDivider()
+                Text("Publication and cover", style = MaterialTheme.typography.titleSmall)
                 OutlinedTextField(sourceUrl, { sourceUrl = it }, label = { Text("Publication URL (optional)") }, singleLine = true)
                 Button(
                     onClick = {
                         kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
                             try {
+                                isFindingCover = true
                                 val found = CoverLookup.findOpenGraphImage(sourceUrl)
                                 withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                    isFindingCover = false
                                     if (found != null) coverUrl = found
                                     else validationError = "No cover image was found at that URL."
                                 }
                             } catch (e: Exception) {
                                 withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                    isFindingCover = false
                                     validationError = "Could not read the publication page."
                                 }
                             }
                         }
                     },
-                    enabled = sourceUrl.isNotBlank()
-                ) { Text("Find cover from URL") }
+                    enabled = sourceUrl.isNotBlank() && !isFindingCover
+                ) { Text(if (isFindingCover) "Looking up cover…" else "Find cover from URL") }
+                if (coverUrl.isNotBlank()) {
+                    coil.compose.AsyncImage(
+                        model = coverUrl,
+                        contentDescription = "Cover preview",
+                        modifier = Modifier.fillMaxWidth().height(180.dp),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                    )
+                }
                 OutlinedTextField(coverUrl, { coverUrl = it }, label = { Text("Cover image URL") }, singleLine = true)
                 validationError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         },
         confirmButton = {
             Button(onClick = {
-                if (title.isBlank() || (seriesId == null && newSeries.isBlank()) || (authorId == null && newAuthor.isBlank())) {
+                val finalSeries = if (createSeries) newSeries else ""
+                val finalAuthor = if (createAuthor) newAuthor else ""
+                if (title.isBlank() || (seriesId == null && finalSeries.isBlank()) || (authorId == null && finalAuthor.isBlank())) {
                     validationError = "Title, series, and author are required."
                 } else {
-                    onSave(title, type, seriesId, newSeries, authorId, newAuthor, coverUrl, sourceUrl)
+                    onSave(
+                        EntryFormData(
+                            title, type, seriesId, finalSeries, newSeriesStatus, newSeriesPublishing,
+                            newSeriesCurrent.toDoubleOrNull(), newSeriesTotal.toDoubleOrNull(), newSeriesUnit,
+                            newSeriesRating.toIntOrNull(), newSeriesNotes.ifBlank { null }, authorId,
+                            if (createAuthor) AuthorFormData(newAuthor, newAuthorNative.ifBlank { null }, newAuthorImage.ifBlank { null }, newAuthorBio.ifBlank { null }) else null,
+                            coverUrl, sourceUrl, platform, userStatus, publishingStatus,
+                            sequenceNumber.toDoubleOrNull() ?: 1.0, currentUnit.toDoubleOrNull() ?: 0.0,
+                            totalUnits.toDoubleOrNull(), unitName, isCanon
+                        )
+                    )
                 }
             }) { Text("Save") }
         },
@@ -506,18 +736,43 @@ private fun <T> Selector(
     onSelected: (T) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    Column {
-        Text(label, style = MaterialTheme.typography.labelMedium)
-        Box {
-            OutlinedButton(onClick = { expanded = true }) { Text(selected) }
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                options.forEach { option ->
-                    DropdownMenuItem(
-                        text = { Text(text(option)) },
-                        onClick = { expanded = false; onSelected(option) }
-                    )
-                }
+    Box {
+        OutlinedTextField(
+            value = selected,
+            onValueChange = {},
+            label = { Text(label) },
+            readOnly = true,
+            trailingIcon = {
+                Icon(Icons.Default.ArrowDropDown, contentDescription = "Open $label dropdown")
+            },
+            modifier = Modifier.fillMaxWidth().clickable { expanded = true }
+        )
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(text(option)) },
+                    onClick = { expanded = false; onSelected(option) }
+                )
             }
+        }
+    }
+}
+
+@Composable
+private fun <T> EntitySelector(
+    label: String,
+    selected: String,
+    options: List<T>,
+    optionText: (T) -> String,
+    onSelected: (T) -> Unit,
+    onAdd: () -> Unit
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(modifier = Modifier.weight(1f)) {
+            Selector(label, selected, options, optionText, onSelected)
+        }
+        IconButton(onClick = onAdd) {
+            Icon(Icons.Default.Add, contentDescription = "Create new $label")
         }
     }
 }

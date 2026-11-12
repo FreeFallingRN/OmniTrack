@@ -59,6 +59,7 @@ data class CreateSeriesRequest(
     @SerialName("publishing_status") val publishingStatus: String,
     @SerialName("unit_name") val unitName: String,
     @SerialName("current_cumulative_unit") val currentCumulativeUnit: Double = 0.0,
+    @SerialName("total_units") val totalUnits: Double? = null,
     val notes: String? = null,
     val rating: Int? = null,
 )
@@ -72,6 +73,7 @@ data class CreateEntryRequest(
     @SerialName("user_status") val userStatus: String,
     @SerialName("publishing_status") val publishingStatus: String,
     @SerialName("current_unit") val currentUnit: Double = 0.0,
+    @SerialName("total_units") val totalUnits: Double? = null,
     @SerialName("is_canon") val isCanon: Boolean = true,
     @SerialName("unit_name") val unitName: String,
     @SerialName("source_url") val sourceUrl: String? = null,
