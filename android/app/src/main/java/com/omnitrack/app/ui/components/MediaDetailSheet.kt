@@ -23,12 +23,18 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,12 +56,15 @@ fun MediaDetailSheet(
     relatedEntries: List<MediaEntry>,
     onDismiss: () -> Unit,
     onUpdateProgress: (Double) -> Unit,
-    onSelectEntry: (MediaEntry) -> Unit
+    onSelectEntry: (MediaEntry) -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
 ) {
     var progressText by remember(entry.id) {
         mutableStateOf(entry.currentUnit.toString())
     }
     var showCover by remember(entry.id) { mutableStateOf(false) }
+    var showDeleteWarning by remember(entry.id) { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -230,9 +239,47 @@ fun MediaDetailSheet(
                             )
                         }
                     }
+
+                }
+            }
+
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Button(onClick = onEdit, modifier = Modifier.weight(1f)) {
+                        Text("Edit")
+                    }
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = { showDeleteWarning = true },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Delete")
+                    }
                 }
             }
         }
+
+            if (showDeleteWarning) {
+                AlertDialog(
+                    onDismissRequest = { showDeleteWarning = false },
+                    title = { Text("Delete entry permanently?") },
+                    text = { Text("This removes the entry, its author links, progress, and history.") },
+                    confirmButton = {
+                        HoldToDeleteButton {
+                            showDeleteWarning = false
+                            onDelete()
+                        }
+                    },
+                    dismissButton = {
+                        androidx.compose.material3.TextButton(onClick = { showDeleteWarning = false }) {
+                            Text("Cancel")
+                        }
+                    }
+                )
+            }
+
     }
 
     if (showCover && !entry.coverUrl.isNullOrBlank()) {
@@ -255,6 +302,33 @@ fun MediaDetailSheet(
                 )
             }
         }
+
+    }
+}
+
+@Composable
+private fun HoldToDeleteButton(onConfirmed: () -> Unit) {
+    var held by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(held) {
+        if (held) {
+            kotlinx.coroutines.delay(2000)
+            held = false
+            onConfirmed()
+        }
+    }
+    Button(
+        onClick = {},
+        modifier = Modifier.pointerInput(Unit) {
+            awaitEachGesture {
+                val down = awaitFirstDown()
+                held = true
+                val event = awaitPointerEvent()
+                if (event.changes.any { it.changedToUp() }) held = false
+                down.consume()
+            }
+        }
+    ) {
+        Text(if (held) "Keep holding…" else "Hold 2 seconds")
     }
 }
 

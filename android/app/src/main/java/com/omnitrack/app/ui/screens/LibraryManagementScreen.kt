@@ -733,6 +733,7 @@ private fun <T> Selector(
     selected: String,
     options: List<T>,
     text: (T) -> String,
+    onAdd: (() -> Unit)? = null,
     onSelected: (T) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -745,13 +746,29 @@ private fun <T> Selector(
             trailingIcon = {
                 Icon(Icons.Default.ArrowDropDown, contentDescription = "Open $label dropdown")
             },
-            modifier = Modifier.fillMaxWidth().clickable { expanded = true }
+            modifier = Modifier.fillMaxWidth()
+        )
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .clickable { expanded = true }
         )
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             options.forEach { option ->
                 DropdownMenuItem(
                     text = { Text(text(option)) },
                     onClick = { expanded = false; onSelected(option) }
+                )
+            }
+            if (onAdd != null) {
+                HorizontalDivider()
+                DropdownMenuItem(
+                    text = { Text("Create new $label") },
+                    leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) },
+                    onClick = {
+                        expanded = false
+                        onAdd()
+                    }
                 )
             }
         }
@@ -767,14 +784,14 @@ private fun <T> EntitySelector(
     onSelected: (T) -> Unit,
     onAdd: () -> Unit
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(modifier = Modifier.weight(1f)) {
-            Selector(label, selected, options, optionText, onSelected)
-        }
-        IconButton(onClick = onAdd) {
-            Icon(Icons.Default.Add, contentDescription = "Create new $label")
-        }
-    }
+    Selector(
+        label = label,
+        selected = selected,
+        options = options,
+        text = optionText,
+        onAdd = onAdd,
+        onSelected = onSelected
+    )
 }
 
 @Composable
@@ -787,7 +804,14 @@ private fun EditorDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
-        text = { content() },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                content()
+            }
+        },
         confirmButton = { Button(onClick = onSave) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )

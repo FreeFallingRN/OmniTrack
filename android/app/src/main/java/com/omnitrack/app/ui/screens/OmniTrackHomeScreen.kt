@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryAdd
@@ -28,8 +29,11 @@ import androidx.compose.ui.unit.dp
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.UserStatus
+import com.omnitrack.app.data.SupabaseService
 import com.omnitrack.app.ui.SeriesViewModel
 import com.omnitrack.app.ui.components.MediaDetailSheet
+import com.omnitrack.app.ui.components.MediaEntryEditorData
+import com.omnitrack.app.ui.components.MediaEntryEditorSheet
 import com.omnitrack.app.ui.components.TrackedMediaRow
 import kotlinx.coroutines.launch
 
@@ -46,10 +50,24 @@ fun OmniTrackHomeScreen(
     var selectedEntryForDetail by remember { mutableStateOf<MediaEntry?>(null) }
     var bottomNavIndex by remember { mutableIntStateOf(0) }
     var isRefreshing by remember { mutableStateOf(false) }
+    var showEntryEditor by remember { mutableStateOf(false) }
+    var editorEntry by remember { mutableStateOf<MediaEntry?>(null) }
     val refreshScope = rememberCoroutineScope()
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        floatingActionButton = {
+            if (bottomNavIndex == 0) {
+                FloatingActionButton(
+                    onClick = {
+                        editorEntry = null
+                        showEntryEditor = true
+                    }
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Add media")
+                }
+            }
+        },
         bottomBar = {
             Column(
                 modifier = Modifier
@@ -297,7 +315,72 @@ fun OmniTrackHomeScreen(
                 .sortedBy { it.sequenceNumber },
             onDismiss = { selectedEntryForDetail = null },
             onUpdateProgress = { newProgress -> viewModel.updateProgress(entry.id, newProgress) },
-            onSelectEntry = { selectedEntryForDetail = it }
+            onSelectEntry = { selectedEntryForDetail = it },
+            onEdit = {
+                editorEntry = entry
+                selectedEntryForDetail = null
+                showEntryEditor = true
+            },
+            onDelete = {
+                refreshScope.launch {
+                    SupabaseService.deleteEntry(entry.id)
+                    selectedEntryForDetail = null
+                    viewModel.refreshData()
+                }
+            }
+        )
+    }
+
+    if (showEntryEditor) {
+        MediaEntryEditorSheet(
+            existing = editorEntry,
+            entries = mediaEntries,
+            onDismiss = { showEntryEditor = false },
+            onSave = { form: MediaEntryEditorData ->
+                refreshScope.launch {
+                    if (editorEntry == null) {
+                        SupabaseService.createEntry(
+                            com.omnitrack.app.data.model.CreateEntryRequest(
+                                seriesId = form.seriesId,
+                                title = form.title,
+                                type = form.type.value,
+                                sequenceNumber = form.sequenceNumber,
+                                userStatus = form.userStatus,
+                                publishingStatus = form.publishingStatus,
+                                currentUnit = form.currentUnit,
+                                totalUnits = form.totalUnits,
+                                unitName = form.unitName,
+                                sourceUrl = form.sourceUrl,
+                                platform = form.platform,
+                                coverUrl = form.coverUrl,
+                                isCanon = form.isCanon
+                            )
+                        ).also { created ->
+                            SupabaseService.replaceEntryAuthor(created.id, form.authorId)
+                        }
+                    } else {
+                        SupabaseService.updateEntry(
+                            id = editorEntry!!.id,
+                            title = form.title,
+                            type = form.type.value,
+                            seriesId = form.seriesId,
+                            authorId = form.authorId,
+                            coverUrl = form.coverUrl,
+                            sourceUrl = form.sourceUrl,
+                            platform = form.platform,
+                            userStatus = form.userStatus,
+                            publishingStatus = form.publishingStatus,
+                            sequenceNumber = form.sequenceNumber,
+                            currentUnit = form.currentUnit,
+                            totalUnits = form.totalUnits,
+                            unitName = form.unitName,
+                            isCanon = form.isCanon
+                        )
+                    }
+                    showEntryEditor = false
+                    viewModel.refreshData()
+                }
+            }
         )
     }
 }
