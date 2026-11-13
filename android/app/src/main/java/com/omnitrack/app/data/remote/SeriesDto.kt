@@ -25,6 +25,7 @@ data class MediaEntryDto(
     @SerialName("source_url") val sourceUrl: String? = null,
     @SerialName("platform_id") val platformId: String? = null,
     val platform: PlatformRefDto? = null,
+    @SerialName("updated_at") val updatedAt: String,
 )
 
 @Serializable

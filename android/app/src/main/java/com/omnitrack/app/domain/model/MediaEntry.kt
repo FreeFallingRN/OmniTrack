@@ -17,4 +17,5 @@ data class MediaEntry(
     val platform: String? = null,
     val currentUnit: Double,
     val unitName: String = "Chapter",
+    val updatedAt: String,
 )

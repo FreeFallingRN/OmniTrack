@@ -23,6 +23,7 @@ fun MediaEntryEntity.toDomain(): MediaEntry = MediaEntry(
     platform = platform,
     currentUnit = currentUnit,
     unitName = unitName,
+    updatedAt = updatedAt,
 )
 
 fun MediaEntryDto.toEntity(
@@ -45,4 +46,5 @@ fun MediaEntryDto.toEntity(
     platform = platform?.name,
     currentUnit = currentUnit,
     unitName = unitName,
+    updatedAt = updatedAt,
 )

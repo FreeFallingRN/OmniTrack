@@ -1,5 +1,6 @@
 package com.omnitrack.app.ui.screens
 
+import android.content.Context
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -31,6 +32,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -48,6 +50,7 @@ import com.omnitrack.app.ui.components.MediaEntryEditorData
 import com.omnitrack.app.ui.components.MediaEntryEditorSheet
 import com.omnitrack.app.ui.components.TrackedMediaRow
 import kotlinx.coroutines.launch
+import com.omnitrack.app.utils.LibrarySortOption
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,6 +70,15 @@ fun OmniTrackHomeScreen(
     var showEntryEditor by remember { mutableStateOf(false) }
     var editorEntry by remember { mutableStateOf<MediaEntry?>(null) }
     val refreshScope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("omnitrack_prefs", Context.MODE_PRIVATE) }
+    var sortOption by remember {
+        mutableStateOf(LibrarySortOption.fromKey(prefs.getString("sort_option", "last_updated")))
+    }
+
+    LaunchedEffect(bottomNavIndex) {
+        sortOption = LibrarySortOption.fromKey(prefs.getString("sort_option", "last_update"))
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -313,6 +325,12 @@ fun OmniTrackHomeScreen(
                                     entry.title.contains(searchQuery, ignoreCase = true) ||
                                     entry.seriesTitle?.contains(searchQuery, ignoreCase = true) == true
                                 matchesType && matchesStatus && matchesSearch
+                            }.let { list ->
+                                when (sortOption) {
+                                    LibrarySortOption.LAST_UPDATED -> list.sortedByDescending { it.updatedAt }
+                                    LibrarySortOption.ALPHABETICAL -> list.sortedBy { it.title.lowercase() }
+                                    LibrarySortOption.READ_CHAPTERS -> list.sortedByDescending { it.currentUnit }
+                                }
                             }
 
                             if (filteredList.isEmpty()) {
