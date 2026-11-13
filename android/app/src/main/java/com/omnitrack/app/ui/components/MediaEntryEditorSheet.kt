@@ -16,6 +16,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
@@ -26,6 +27,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -113,7 +115,6 @@ fun MediaEntryEditorSheet(
         } catch (e: Exception) {
             error = e.message ?: "Could not load series and authors"
         }
-
     }
 
     var title by remember { mutableStateOf(existing?.title.orEmpty()) }
@@ -124,7 +125,7 @@ fun MediaEntryEditorSheet(
     }
     var userStatus by remember { mutableStateOf(existing?.userStatus?.value ?: "planning") }
     var publishingStatus by remember { mutableStateOf(existing?.publishingStatus ?: "releasing") }
-    var sequence by remember { mutableStateOf(existing?.sequenceNumber?.toInt()?.toString()) }
+    var sequence by remember { mutableStateOf(existing?.sequenceNumber?.toInt()?.toString().orEmpty()) }
     var currentUnit by remember { mutableStateOf(existing?.currentUnit?.toString() ?: "0") }
     var unitName by remember { mutableStateOf(existing?.unitName ?: "Chapter") }
     var platformId by remember { mutableStateOf(existing?.platformId) }
@@ -140,7 +141,9 @@ fun MediaEntryEditorSheet(
     var newPlatformName by remember { mutableStateOf("") }
     var newPlatformWebsiteUrl by remember { mutableStateOf("") }
     var newPlatformLogoUrl by remember { mutableStateOf("") }
-    var findingPlatformLogo by remember { mutableStateOf(false) }
+
+    // Collapsible sections: Series defaults closed for new standalone entries, open if editing an entry already in a series
+    var showSeriesDetails by remember { mutableStateOf(existing?.seriesId != null) }
     var showMediaDetails by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
@@ -175,32 +178,6 @@ fun MediaEntryEditorSheet(
                         type = MediaType.fromValue(value)
                     }
                 )
-            }
-            item {
-                Selector(
-                    "Series",
-                    series.firstOrNull { it.id == seriesId }?.title ?: "Choose series",
-                    series,
-                    { it.title },
-                    onAdd = {
-                        createSeries = true
-                        seriesId = null
-                        if (newSeriesTitle.isBlank()) newSeriesTitle = title
-                    }
-                ) { seriesId = it.id; createSeries = false }
-            }
-            if (createSeries) {
-                item { HorizontalDivider() }
-                item { Text("New series details", style = MaterialTheme.typography.titleMedium) }
-                item {
-                    OutlinedTextField(
-                        newSeriesTitle,
-                        { newSeriesTitle = it },
-                        label = { Text("Series name") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-                }
             }
             item {
                 Selector(
@@ -258,6 +235,78 @@ fun MediaEntryEditorSheet(
                     )
                 }
             }
+
+            // Collapsible Series Details Section
+            item { HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp)) }
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showSeriesDetails = !showSeriesDetails }
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Series details",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Icon(
+                        imageVector = if (showSeriesDetails) {
+                            Icons.Default.KeyboardArrowUp
+                        } else {
+                            Icons.Default.KeyboardArrowDown
+                        },
+                        contentDescription = if (showSeriesDetails) "Collapse series details" else "Expand series details",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            if (showSeriesDetails) {
+                item {
+                    Selector(
+                        label = "Series (optional)",
+                        selected = series.firstOrNull { it.id == seriesId }?.title ?: "None (Standalone)",
+                        options = series,
+                        text = { it.title },
+                        onClear = if (seriesId != null || createSeries) {
+                            {
+                                seriesId = null
+                                createSeries = false
+                                newSeriesTitle = ""
+                                sequence = ""
+                            }
+                        } else null,
+                        onAdd = {
+                            createSeries = true
+                            seriesId = null
+                            if (newSeriesTitle.isBlank()) newSeriesTitle = title
+                        }
+                    ) { seriesId = it.id; createSeries = false }
+                }
+                if (createSeries) {
+                    item {
+                        OutlinedTextField(
+                            newSeriesTitle,
+                            { newSeriesTitle = it },
+                            label = { Text("New series name") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                    }
+                }
+                item {
+                    EntryField(
+                        label = "Pos. in series (optional)",
+                        value = sequence,
+                        onValueChange = { sequence = it },
+                        keyboardType = KeyboardType.Decimal
+                    )
+                }
+            }
+
+            // Collapsible Media Details Section
             item { HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp)) }
             item {
                 Row(
@@ -304,26 +353,26 @@ fun MediaEntryEditorSheet(
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         EntryField(
-                            label = "Pos. in series",
-                            value = sequence.orEmpty(),
-                            onValueChange = { sequence = it },
-                            modifier = Modifier.weight(1f),
-                            keyboardType = KeyboardType.Number
-                        )
-                        EntryField(
                             label = "Current ${unitName.trim().lowercase()}",
                             value = currentUnit,
-                            onValueChange = { currentUnit = it },
+                            onValueChange = { newValue ->
+                                val sanitized = newValue.replace("-", "")
+                                currentUnit = sanitized
+                                val parsed = sanitized.toDoubleOrNull() ?: 0.0
+                                if (parsed > 0.0 && userStatus == UserStatus.PLANNING.value) {
+                                    userStatus = UserStatus.IN_PROGRESS.value
+                                }
+                            },
                             modifier = Modifier.weight(1f)
                         )
+                        EntryField(
+                            label = "Unit name",
+                            value = unitName,
+                            onValueChange = { unitName = it },
+                            modifier = Modifier.weight(1f),
+                            keyboardType = KeyboardType.Text
+                        )
                     }
-                }
-                item {
-                    EntryField(
-                        "Unit name",
-                        unitName,
-                        onValueChange = { unitName = it }
-                    )
                 }
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -332,6 +381,7 @@ fun MediaEntryEditorSheet(
                     }
                 }
             }
+
             item { HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp)) }
             item { Text("Publication and cover", style = MaterialTheme.typography.titleMedium) }
             item {
@@ -390,24 +440,26 @@ fun MediaEntryEditorSheet(
             item {
                 Button(
                     onClick = {
-                        val selectedSeries = seriesId
                         val selectedAuthor = authorId
+                        val missingNewSeriesTitle = createSeries && newSeriesTitle.isBlank()
                         if (title.isBlank() ||
-                            (selectedSeries == null && (!createSeries || newSeriesTitle.isBlank())) ||
+                            missingNewSeriesTitle ||
                             (selectedAuthor == null && (!createAuthor || newAuthorName.isBlank())) ||
                             (platformId == null && (!createPlatform || newPlatformName.isBlank()))
                         ) {
-                            error = "Title, series, and author are required."
+                            error = if (missingNewSeriesTitle) {
+                                "Please enter a name for the new series or clear it."
+                            } else {
+                                "Title, author, and platform are required."
+                            }
                         } else {
                             onSave(
                                 MediaEntryEditorData(
                                     title = title,
                                     type = type,
-                                    seriesId = selectedSeries,
-                                    newSeries = if (createSeries) {
-                                        NewSeriesData(
-                                            title = newSeriesTitle,
-                                        )
+                                    seriesId = seriesId,
+                                    newSeries = if (createSeries && newSeriesTitle.isNotBlank()) {
+                                        NewSeriesData(title = newSeriesTitle.trim())
                                     } else null,
                                     authorId = selectedAuthor,
                                     newAuthor = if (createAuthor) NewAuthorData(newAuthorName) else null,
@@ -421,8 +473,8 @@ fun MediaEntryEditorSheet(
                                     } else null,
                                     userStatus = userStatus,
                                     publishingStatus = publishingStatus,
-                                    sequenceNumber = sequence?.toDoubleOrNull(),
-                                    currentUnit = currentUnit.toDoubleOrNull() ?: 0.0,
+                                    sequenceNumber = sequence.toDoubleOrNull(),
+                                    currentUnit = (currentUnit.toDoubleOrNull() ?: 0.0).coerceAtLeast(0.0),
                                     unitName = unitName,
                                     sourceUrl = sourceUrl.ifBlank { null },
                                     coverUrl = coverUrl.ifBlank { null },
@@ -497,6 +549,7 @@ private fun <T> Selector(
     selected: String,
     options: List<T>,
     text: (T) -> String,
+    onClear: (() -> Unit)? = null,
     onAdd: (() -> Unit)? = null,
     onSelected: (T) -> Unit
 ) {
@@ -507,12 +560,22 @@ private fun <T> Selector(
             onValueChange = {},
             label = { Text(label) },
             readOnly = true,
-            trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = null) },
+            trailingIcon = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (onClear != null) {
+                        IconButton(onClick = onClear) {
+                            Icon(Icons.Default.Clear, contentDescription = "Clear $label")
+                        }
+                    }
+                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                }
+            },
             modifier = Modifier.fillMaxWidth()
         )
         Box(
             modifier = Modifier
                 .matchParentSize()
+                .padding(end = if (onClear != null) 48.dp else 0.dp)
                 .clickable { expanded = true }
         )
         DropdownMenu(expanded, { expanded = false }) {
