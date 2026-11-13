@@ -56,6 +56,7 @@ import com.omnitrack.app.domain.model.PublishingStatus
 import com.omnitrack.app.domain.model.UserStatus
 import com.omnitrack.app.domain.model.toDisplayLabel
 import com.omnitrack.app.utils.CoverLookup
+import com.omnitrack.app.utils.ScrapedMediaDraft
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -97,6 +98,7 @@ data class NewPlatformData(
 @Composable
 fun MediaEntryEditorSheet(
     existing: MediaEntry?,
+    prefill: ScrapedMediaDraft? = null,
     entries: List<MediaEntry>,
     onDismiss: () -> Unit,
     onSave: (MediaEntryEditorData) -> Unit
@@ -104,6 +106,7 @@ fun MediaEntryEditorSheet(
     var series by remember { mutableStateOf<List<SeriesDto>>(emptyList()) }
     var authors by remember { mutableStateOf<List<AuthorDto>>(emptyList()) }
     var platforms by remember { mutableStateOf<List<PlatformDto>>(emptyList()) }
+    var metadataLoaded by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
@@ -114,31 +117,36 @@ fun MediaEntryEditorSheet(
             platforms = SupabaseService.getPlatforms()
         } catch (e: Exception) {
             error = e.message ?: "Could not load series and authors"
+        } finally {
+            metadataLoaded = true
         }
     }
 
-    var title by remember { mutableStateOf(existing?.title.orEmpty()) }
-    var type by remember { mutableStateOf(existing?.type ?: MediaType.NOVEL) }
+    var title by remember { mutableStateOf(existing?.title ?: prefill?.title.orEmpty()) }
+    var type by remember { mutableStateOf(existing?.type ?: prefill?.type ?: MediaType.NOVEL) }
     var seriesId by remember { mutableStateOf(existing?.seriesId) }
-    var authorId by remember(existing?.id, authors) {
-        mutableStateOf(authors.firstOrNull { existing?.authors?.contains(it.name) == true }?.id)
-    }
     var userStatus by remember { mutableStateOf(existing?.userStatus?.value ?: "planning") }
-    var publishingStatus by remember { mutableStateOf(existing?.publishingStatus ?: "releasing") }
+    var publishingStatus by remember {
+        mutableStateOf(existing?.publishingStatus ?: prefill?.publishingStatus ?: "releasing")
+    }
     var sequence by remember { mutableStateOf(existing?.sequenceNumber?.toInt()?.toString().orEmpty()) }
     var currentUnit by remember { mutableStateOf(existing?.currentUnit?.toString() ?: "0") }
-    var unitName by remember { mutableStateOf(existing?.unitName ?: "Chapter") }
+    var unitName by remember { mutableStateOf(existing?.unitName ?: prefill?.unitName ?: "Chapter") }
+    var sourceUrl by remember { mutableStateOf(existing?.sourceUrl ?: prefill?.sourceUrl.orEmpty()) }
+    var coverUrl by remember { mutableStateOf(existing?.coverUrl ?: prefill?.coverUrl.orEmpty()) }
+
+    var authorId by remember { mutableStateOf<String?>(null) }
+    var createAuthor by remember { mutableStateOf(false) }
+    var newAuthorName by remember { mutableStateOf(prefill?.authorName.orEmpty()) }
+
     var platformId by remember { mutableStateOf(existing?.platformId) }
-    var sourceUrl by remember { mutableStateOf(existing?.sourceUrl.orEmpty()) }
-    var coverUrl by remember { mutableStateOf(existing?.coverUrl.orEmpty()) }
+    var createPlatform by remember { mutableStateOf(false) }
+    var newPlatformName by remember { mutableStateOf(prefill?.platformHint.orEmpty()) }
+
     var isCanon by remember { mutableStateOf(existing?.isCanon ?: true) }
     var findingCover by remember { mutableStateOf(false) }
     var createSeries by remember { mutableStateOf(false) }
-    var createAuthor by remember { mutableStateOf(false) }
     var newSeriesTitle by remember { mutableStateOf("") }
-    var newAuthorName by remember { mutableStateOf("") }
-    var createPlatform by remember { mutableStateOf(false) }
-    var newPlatformName by remember { mutableStateOf("") }
     var newPlatformWebsiteUrl by remember { mutableStateOf("") }
     var newPlatformLogoUrl by remember { mutableStateOf("") }
 
@@ -146,6 +154,38 @@ fun MediaEntryEditorSheet(
     var showSeriesDetails by remember { mutableStateOf(existing?.seriesId != null) }
     var showMediaDetails by remember { mutableStateOf(false) }
 
+    LaunchedEffect(existing?.id, prefill, metadataLoaded) {
+        if (!metadataLoaded) return@LaunchedEffect
+        val matched = authors.firstOrNull {
+            existing?.authors?.contains(it.name) == true ||
+                    (!prefill?.authorName.isNullOrBlank() && it.name.trim().equals(prefill.authorName.trim(), ignoreCase = true))
+        }
+        if (matched != null) {
+            authorId = matched.id
+            createAuthor = false
+        } else if (!prefill?.authorName.isNullOrBlank()) {
+            authorId = null
+            createAuthor = true
+            newAuthorName = prefill.authorName.trim()
+        }
+    }
+
+    LaunchedEffect(existing?.id, prefill, metadataLoaded) {
+        if (!metadataLoaded) return@LaunchedEffect
+        val normalizedHint = prefill?.platformHint?.replace(" ", "")?.trim()
+        val matched = platforms.firstOrNull {
+            it.id == existing?.platformId ||
+                    (!normalizedHint.isNullOrBlank() && it.name.replace(" ", "").trim().equals(normalizedHint, ignoreCase = true))
+        }
+        if (matched != null) {
+            platformId = matched.id
+            createPlatform = false
+        } else if (!prefill?.platformHint.isNullOrBlank()) {
+            platformId = null
+            createPlatform = true
+            newPlatformName = prefill.platformHint.trim()
+        }
+    }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface

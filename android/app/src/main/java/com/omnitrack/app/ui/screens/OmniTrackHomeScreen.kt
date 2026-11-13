@@ -51,6 +51,17 @@ import com.omnitrack.app.ui.components.MediaEntryEditorSheet
 import com.omnitrack.app.ui.components.TrackedMediaRow
 import kotlinx.coroutines.launch
 import com.omnitrack.app.utils.LibrarySortOption
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.ui.draw.rotate
+import com.omnitrack.app.utils.ScrapedMediaDraft
+import com.omnitrack.app.utils.MediaUrlImporter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -75,22 +86,84 @@ fun OmniTrackHomeScreen(
     var sortOption by remember {
         mutableStateOf(LibrarySortOption.fromKey(prefs.getString("sort_option", "last_updated")))
     }
+    var fabExpanded by remember { mutableStateOf(false) }
+    var showImportUrlDialog by remember { mutableStateOf(false) }
+    var scrapedPrefill by remember { mutableStateOf<ScrapedMediaDraft?>(null) }
 
     LaunchedEffect(bottomNavIndex) {
-        sortOption = LibrarySortOption.fromKey(prefs.getString("sort_option", "last_update"))
+        sortOption = LibrarySortOption.fromKey(prefs.getString("sort_option", "last_updated"))
+        if (bottomNavIndex != 0) fabExpanded = false
     }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         floatingActionButton = {
             if (bottomNavIndex == 0) {
-                FloatingActionButton(
-                    onClick = {
-                        editorEntry = null
-                        showEntryEditor = true
-                    }
+                val rotation by animateFloatAsState(
+                    targetValue = if (fabExpanded) 45f else 0f,
+                    label = "fab rotation"
+                )
+
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add media")
+                    AnimatedVisibility(
+                        visible = fabExpanded,
+                        enter = fadeIn() + expandVertically(expandFrom = Alignment.Bottom),
+                        exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Bottom)
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.End,
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            ExtendedFloatingActionButton(
+                                onClick = {
+                                    fabExpanded = false
+                                    showImportUrlDialog = true
+                                },
+                                shape = CircleShape,
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                icon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Link,
+                                        contentDescription = "Import from link"
+                                    )
+                                },
+                                text = { Text("Import from link") }
+                            )
+
+                            ExtendedFloatingActionButton(
+                                onClick = {
+                                    fabExpanded = false
+                                    editorEntry = null
+                                    scrapedPrefill = null
+                                    showEntryEditor = true
+                                },
+                                shape = CircleShape,
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                icon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = "Custom entry"
+                                    )
+                                },
+                                text = { Text("Custom entry") }
+                            )
+                        }
+                    }
+
+                    FloatingActionButton(
+                        onClick = { fabExpanded = !fabExpanded }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = if (fabExpanded) "Close menu" else "Add media",
+                            modifier = Modifier.rotate(rotation)
+                        )
+                    }
                 }
             }
         },
@@ -402,6 +475,7 @@ fun OmniTrackHomeScreen(
             onEdit = {
                 editorEntry = entry
                 selectedEntryForDetail = null
+                scrapedPrefill = null
                 showEntryEditor = true
             },
             onDelete = {
@@ -425,78 +499,162 @@ fun OmniTrackHomeScreen(
         )
     }
 
+        if (showImportUrlDialog) {
+            var importUrl by remember { mutableStateOf("") }
+            var isImporting by remember { mutableStateOf(false) }
+            var importError by remember { mutableStateOf<String?>(null) }
+
+            AlertDialog(
+                onDismissRequest = { if (!isImporting) showImportUrlDialog = false },
+                title = { Text("Import from link") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "Paste a URL from MyAnimeList, Royal Road, MangaFire, or any supported site.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        OutlinedTextField(
+                            value = importUrl,
+                            onValueChange = {
+                                importUrl = it
+                                importError = null
+                            },
+                            label = { Text("Media URL") },
+                            singleLine = true,
+                            enabled = !isImporting,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        if (importError != null) {
+                            Text(
+                                text = importError!!,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        enabled = importUrl.isNotBlank() && !isImporting,
+                        onClick = {
+                            refreshScope.launch {
+                                isImporting = true
+                                importError = null
+                                try {
+                                    val draft = MediaUrlImporter.importFromUrl(context, importUrl)
+                                    scrapedPrefill = draft
+                                    editorEntry = null
+                                    showImportUrlDialog = false
+                                    showEntryEditor = true
+                                } catch (e: Exception) {
+                                    importError = e.message ?: "Failed to fetch media details"
+                                } finally {
+                                    isImporting = false
+                                }
+                            }
+                        }
+                    ) {
+                        Text(if (isImporting) "Importing..." else "Fetch")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        enabled = !isImporting,
+                        onClick = { showImportUrlDialog = false }
+                    ) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+
     if (showEntryEditor) {
         MediaEntryEditorSheet(
             existing = editorEntry,
+            prefill = scrapedPrefill,
             entries = mediaEntries,
-            onDismiss = { showEntryEditor = false },
+            onDismiss = {
+                showEntryEditor = false
+                scrapedPrefill = null
+            },
             onSave = { form: MediaEntryEditorData ->
                 refreshScope.launch {
-                    // Only link or create a series if the user explicitly chose one or typed a new series title
-                    val resolvedSeriesId: String? = when {
-                        form.seriesId != null -> form.seriesId
-                        !form.newSeries?.title.isNullOrBlank() -> {
-                            SupabaseService.createSeries(
-                                CreateSeriesRequest(title = form.newSeries!!.title.trim())
-                            ).id
+                    try {
+                        // Only link or create a series if the user explicitly chose one or typed a new series title
+                        val resolvedSeriesId: String? = when {
+                            form.seriesId != null -> form.seriesId
+                            !form.newSeries?.title.isNullOrBlank() -> {
+                                SupabaseService.createSeries(
+                                    CreateSeriesRequest(title = form.newSeries!!.title.trim())
+                                ).id
+                            }
+                            else -> null // Standalone continuous webnovel / work
                         }
-                        else -> null // Standalone continuous webnovel / work
-                    }
 
-                    val authorId = form.authorId ?: SupabaseService.createAuthor(
-                        form.newAuthor!!.name,
-                        null,
-                        null,
-                        null
-                    ).id
+                        val authorId = form.authorId ?: SupabaseService.createAuthor(
+                            form.newAuthor!!.name,
+                            null,
+                            null,
+                            null
+                        ).id
 
-                    val platformId = form.platformId ?: SupabaseService.createPlatform(
-                        CreatePlatformRequest(
-                            name = form.newPlatform!!.name,
-                            websiteUrl = form.newPlatform.websiteUrl,
-                            logoUrl = form.newPlatform.logoUrl
-                        )
-                    ).id
+                        val platformId = form.platformId ?: SupabaseService.createPlatform(
+                            CreatePlatformRequest(
+                                name = form.newPlatform!!.name,
+                                websiteUrl = form.newPlatform.websiteUrl,
+                                logoUrl = form.newPlatform.logoUrl
+                            )
+                        ).id
 
-                    if (editorEntry == null) {
-                        SupabaseService.createEntry(
-                            com.omnitrack.app.data.model.CreateEntryRequest(
-                                seriesId = resolvedSeriesId, // Passes null for standalone entries
+                        if (editorEntry == null) {
+                            SupabaseService.createEntry(
+                                com.omnitrack.app.data.model.CreateEntryRequest(
+                                    seriesId = resolvedSeriesId, // Passes null for standalone entries
+                                    title = form.title,
+                                    type = form.type.value,
+                                    sequenceNumber = form.sequenceNumber,
+                                    userStatus = form.userStatus,
+                                    publishingStatus = form.publishingStatus,
+                                    currentUnit = form.currentUnit,
+                                    unitName = form.unitName,
+                                    sourceUrl = form.sourceUrl,
+                                    platformId = platformId,
+                                    coverUrl = form.coverUrl,
+                                    isCanon = form.isCanon
+                                )
+                            ).also { created ->
+                                SupabaseService.replaceEntryAuthor(created.id, authorId)
+                            }
+                        } else {
+                            SupabaseService.updateEntry(
+                                id = editorEntry!!.id,
                                 title = form.title,
                                 type = form.type.value,
-                                sequenceNumber = form.sequenceNumber,
-                                userStatus = form.userStatus,
-                                publishingStatus = form.publishingStatus,
-                                currentUnit = form.currentUnit,
-                                unitName = form.unitName,
-                                sourceUrl = form.sourceUrl,
+                                seriesId = resolvedSeriesId,
+                                authorId = authorId,
                                 platformId = platformId,
                                 coverUrl = form.coverUrl,
+                                sourceUrl = form.sourceUrl,
+                                userStatus = form.userStatus,
+                                publishingStatus = form.publishingStatus,
+                                sequenceNumber = form.sequenceNumber,
+                                currentUnit = form.currentUnit,
+                                unitName = form.unitName,
                                 isCanon = form.isCanon
                             )
-                        ).also { created ->
-                            SupabaseService.replaceEntryAuthor(created.id, authorId)
                         }
-                    } else {
-                        SupabaseService.updateEntry(
-                            id = editorEntry!!.id,
-                            title = form.title,
-                            type = form.type.value,
-                            seriesId = resolvedSeriesId,
-                            authorId = authorId,
-                            platformId = platformId,
-                            coverUrl = form.coverUrl,
-                            sourceUrl = form.sourceUrl,
-                            userStatus = form.userStatus,
-                            publishingStatus = form.publishingStatus,
-                            sequenceNumber = form.sequenceNumber,
-                            currentUnit = form.currentUnit,
-                            unitName = form.unitName,
-                            isCanon = form.isCanon
-                        )
+                        showEntryEditor = false
+                        scrapedPrefill = null
+                        viewModel.refreshData()
+                    } catch ( e: Exception ){
+                        android.util.Log.e("OmniTrackHomeScreen", "Failed to save entry", e)
+                        android.widget.Toast.makeText(
+                            context,
+                            "Save failed: ${e.message ?: "Unknown error"}",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
                     }
-                    showEntryEditor = false
-                    viewModel.refreshData()
                 }
             }
         )
