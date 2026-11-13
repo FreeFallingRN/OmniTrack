@@ -16,10 +16,10 @@ data class SeriesDto(
 @Serializable
 data class MediaEntryDto(
     val id: String,
-    @SerialName("series_id") val seriesId: String,
+    @SerialName("series_id") val seriesId: String? = null,
     val title: String,
     val type: String = "novel",
-    @SerialName("sequence_number") val sequenceNumber: Double,
+    @SerialName("sequence_number") val sequenceNumber: Double? = null,
     @SerialName("user_status") val userStatus: String,
     @SerialName("publishing_status") val publishingStatus: String,
     @SerialName("current_unit") val currentUnit: Double,
@@ -44,7 +44,7 @@ data class PlatformDto(
 @Serializable
 data class ExternalLinkDto(
     val id: Long,
-    @SerialName("series_id") val seriesId: String,
+    @SerialName("series_id") val seriesId: String? = null,
     @SerialName("entry_id") val entryId: String? = null,
     val platform: String,
     @SerialName("display_name") val displayName: String,
@@ -67,10 +67,10 @@ data class UpdateSeriesRequest(
 
 @Serializable
 data class CreateEntryRequest(
-    @SerialName("series_id") val seriesId: String,
+    @SerialName("series_id") val seriesId: String? = null,
     val title: String,
     val type: String,
-    @SerialName("sequence_number") val sequenceNumber: Double,
+    @SerialName("sequence_number") val sequenceNumber: Double? = null,
     @SerialName("user_status") val userStatus: String,
     @SerialName("publishing_status") val publishingStatus: String,
     @SerialName("current_unit") val currentUnit: Double = 0.0,
@@ -85,13 +85,13 @@ data class CreateEntryRequest(
 data class UpdateEntryRequest(
     val title: String,
     val type: String,
-    @SerialName("series_id") val seriesId: String,
+    @SerialName("series_id") val seriesId: String? = null,
     @SerialName("cover_url") val coverUrl: String? = null,
     @SerialName("source_url") val sourceUrl: String? = null,
     @SerialName("platform_id") val platformId: String? = null,
     @SerialName("user_status") val userStatus: String,
     @SerialName("publishing_status") val publishingStatus: String,
-    @SerialName("sequence_number") val sequenceNumber: Double,
+    @SerialName("sequence_number") val sequenceNumber: Double? = null,
     @SerialName("current_unit") val currentUnit: Double,
     @SerialName("unit_name") val unitName: String,
     @SerialName("is_canon") val isCanon: Boolean,

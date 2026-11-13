@@ -428,17 +428,24 @@ fun OmniTrackHomeScreen(
             onDismiss = { showEntryEditor = false },
             onSave = { form: MediaEntryEditorData ->
                 refreshScope.launch {
-                    val seriesId = form.seriesId ?: SupabaseService.createSeries(
-                        CreateSeriesRequest(
-                            title = form.newSeries!!.title
-                        )
-                    ).id
+                    // Only link or create a series if the user explicitly chose one or typed a new series title
+                    val resolvedSeriesId: String? = when {
+                        form.seriesId != null -> form.seriesId
+                        !form.newSeries?.title.isNullOrBlank() -> {
+                            SupabaseService.createSeries(
+                                CreateSeriesRequest(title = form.newSeries!!.title.trim())
+                            ).id
+                        }
+                        else -> null // Standalone continuous webnovel / work
+                    }
+
                     val authorId = form.authorId ?: SupabaseService.createAuthor(
                         form.newAuthor!!.name,
                         null,
                         null,
                         null
                     ).id
+
                     val platformId = form.platformId ?: SupabaseService.createPlatform(
                         CreatePlatformRequest(
                             name = form.newPlatform!!.name,
@@ -446,10 +453,11 @@ fun OmniTrackHomeScreen(
                             logoUrl = form.newPlatform.logoUrl
                         )
                     ).id
+
                     if (editorEntry == null) {
                         SupabaseService.createEntry(
                             com.omnitrack.app.data.model.CreateEntryRequest(
-                                seriesId = seriesId,
+                                seriesId = resolvedSeriesId, // Passes null for standalone entries
                                 title = form.title,
                                 type = form.type.value,
                                 sequenceNumber = form.sequenceNumber,
@@ -470,7 +478,7 @@ fun OmniTrackHomeScreen(
                             id = editorEntry!!.id,
                             title = form.title,
                             type = form.type.value,
-                            seriesId = seriesId,
+                            seriesId = resolvedSeriesId,
                             authorId = authorId,
                             platformId = platformId,
                             coverUrl = form.coverUrl,

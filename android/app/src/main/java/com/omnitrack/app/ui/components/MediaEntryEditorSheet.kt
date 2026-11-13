@@ -67,7 +67,7 @@ data class MediaEntryEditorData(
     val newAuthor: NewAuthorData?,
     val userStatus: String,
     val publishingStatus: String,
-    val sequenceNumber: Double,
+    val sequenceNumber: Double?,
     val currentUnit: Double,
     val unitName: String,
     val platformId: String?,
@@ -124,7 +124,7 @@ fun MediaEntryEditorSheet(
     }
     var userStatus by remember { mutableStateOf(existing?.userStatus?.value ?: "planning") }
     var publishingStatus by remember { mutableStateOf(existing?.publishingStatus ?: "releasing") }
-    var sequence by remember { mutableStateOf(existing?.sequenceNumber?.toInt()?.toString() ?: "1") }
+    var sequence by remember { mutableStateOf(existing?.sequenceNumber?.toInt()?.toString()) }
     var currentUnit by remember { mutableStateOf(existing?.currentUnit?.toString() ?: "0") }
     var unitName by remember { mutableStateOf(existing?.unitName ?: "Chapter") }
     var platformId by remember { mutableStateOf(existing?.platformId) }
@@ -305,7 +305,7 @@ fun MediaEntryEditorSheet(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         EntryField(
                             label = "Pos. in series",
-                            value = sequence,
+                            value = sequence.orEmpty(),
                             onValueChange = { sequence = it },
                             modifier = Modifier.weight(1f),
                             keyboardType = KeyboardType.Number
@@ -421,7 +421,7 @@ fun MediaEntryEditorSheet(
                                     } else null,
                                     userStatus = userStatus,
                                     publishingStatus = publishingStatus,
-                                    sequenceNumber = sequence.toDoubleOrNull() ?: 1.0,
+                                    sequenceNumber = sequence?.toDoubleOrNull(),
                                     currentUnit = currentUnit.toDoubleOrNull() ?: 0.0,
                                     unitName = unitName,
                                     sourceUrl = sourceUrl.ifBlank { null },

@@ -1,0 +1,1 @@
+ALTER TABLE "media_entries" ALTER COLUMN "sequence_number" DROP NOT NULL;

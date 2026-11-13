@@ -256,7 +256,7 @@ fun LibraryManagementScreen(
                         subtitle = seriesEntryCountLabel(entries.filter { it.seriesId == item.id }),
                         imageUrl = entries
                             .filter { it.seriesId == item.id && !it.coverUrl.isNullOrBlank() }
-                            .maxByOrNull { it.sequenceNumber }
+                            .maxByOrNull { it.sequenceNumber ?: Double.NEGATIVE_INFINITY }
                             ?.coverUrl,
                         selected = false,
                         onClick = {
@@ -266,7 +266,7 @@ fun LibraryManagementScreen(
                             detailBody = null
                             detailImageUrl = seriesEntries
                                 .filter { !it.coverUrl.isNullOrBlank() }
-                                .maxByOrNull { it.sequenceNumber }
+                                .maxByOrNull { it.sequenceNumber ?: Double.NEGATIVE_INFINITY }
                                 ?.coverUrl
                             detailWorks = seriesEntries
                             detailUserStatus = UserStatus.fromValue(derivedSeriesStatus(entries, item.id)).label

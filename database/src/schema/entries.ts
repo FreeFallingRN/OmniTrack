@@ -17,13 +17,11 @@ export const mediaEntries = pgTable(
   {
     id: pkUuid(),
     seriesId: uuid("series_id")
-      .notNull()
       .references(() => series.id, { onDelete: "cascade" }),
 
     title: text("title").notNull(), // e.g. "Book 1: Unsouled", "Season 2 Part 2"
     type: mediaTypeEnum("type").notNull().default("novel"),
     sequenceNumber: numeric("sequence_number", { precision: 5, scale: 2 })
-      .notNull()
       .default("1.00"),
 
     publishingStatus: publishingStatusEnum("publishing_status")

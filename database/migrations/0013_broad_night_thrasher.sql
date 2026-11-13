@@ -1,0 +1,1 @@
+ALTER TABLE "media_entries" ALTER COLUMN "series_id" DROP NOT NULL;

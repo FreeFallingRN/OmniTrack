@@ -12,10 +12,10 @@ data class SeriesTitleDto(
 @Serializable
 data class MediaEntryDto(
     @SerialName("id") val id: String,
-    @SerialName("series_id") val seriesId: String,
+    @SerialName("series_id") val seriesId: String? = null,
     @SerialName("title") val title: String,
     @SerialName("type") val type: String = "novel",
-    @SerialName("sequence_number") val sequenceNumber: Double = 1.0,
+    @SerialName("sequence_number") val sequenceNumber: Double? = null,
     @SerialName("user_status") val userStatus: String,
     @SerialName("publishing_status") val publishingStatus: String = "releasing",
     @SerialName("is_canon") val isCanon: Boolean = true,

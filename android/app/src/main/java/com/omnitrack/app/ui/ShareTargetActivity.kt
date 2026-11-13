@@ -71,7 +71,6 @@ fun ShareSheetUI(sharedUrl: String, onDismiss: () -> Unit) {
                                 seriesId = series.id,
                                 title = title,
                                 type = "novel",
-                                sequenceNumber = 1.0,
                                 userStatus = "in_progress",
                                 publishingStatus = "releasing",
                                 unitName = unitName,

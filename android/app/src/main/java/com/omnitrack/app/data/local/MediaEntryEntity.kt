@@ -10,7 +10,7 @@ data class MediaEntryEntity(
     val seriesTitle: String?,
     val title: String,
     val type: String,
-    val sequenceNumber: Double,
+    val sequenceNumber: Double?,
     val userStatus: String,
     val publishingStatus: String,
     val isCanon: Boolean,

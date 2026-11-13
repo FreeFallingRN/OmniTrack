@@ -2,11 +2,11 @@ package com.omnitrack.app.domain.model
 
 data class MediaEntry(
     val id: String,
-    val seriesId: String?,
-    val seriesTitle: String?,
+    val seriesId: String? = null,
+    val seriesTitle: String? = null,
     val title: String,
     val type: MediaType,
-    val sequenceNumber: Double,
+    val sequenceNumber: Double? = null,
     val userStatus: UserStatus,
     val publishingStatus: String = "releasing",
     val isCanon: Boolean = true,
