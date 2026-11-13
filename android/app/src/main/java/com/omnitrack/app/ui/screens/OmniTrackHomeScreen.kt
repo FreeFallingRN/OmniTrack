@@ -62,6 +62,7 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.ui.draw.rotate
 import com.omnitrack.app.utils.ScrapedMediaDraft
 import com.omnitrack.app.utils.MediaUrlImporter
+import com.omnitrack.app.data.model.CreateEntryRequest
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -569,95 +570,128 @@ fun OmniTrackHomeScreen(
             )
         }
 
-    if (showEntryEditor) {
-        MediaEntryEditorSheet(
-            existing = editorEntry,
-            prefill = scrapedPrefill,
-            entries = mediaEntries,
-            onDismiss = {
-                showEntryEditor = false
-                scrapedPrefill = null
-            },
-            onSave = { form: MediaEntryEditorData ->
-                refreshScope.launch {
-                    try {
-                        // Only link or create a series if the user explicitly chose one or typed a new series title
-                        val resolvedSeriesId: String? = when {
-                            form.seriesId != null -> form.seriesId
-                            !form.newSeries?.title.isNullOrBlank() -> {
-                                SupabaseService.createSeries(
-                                    CreateSeriesRequest(title = form.newSeries!!.title.trim())
-                                ).id
+        if (showEntryEditor) {
+            MediaEntryEditorSheet(
+                existing = editorEntry,
+                prefill = scrapedPrefill,
+                entries = mediaEntries,
+                onDismiss = {
+                    showEntryEditor = false
+                    scrapedPrefill = null
+                },
+                onSave = { form: MediaEntryEditorData ->
+                    refreshScope.launch {
+                        try {
+                            val resolvedSeriesId: String? = when {
+                                form.seriesId != null -> form.seriesId
+                                !form.newSeries?.title.isNullOrBlank() -> {
+                                    SupabaseService.createSeries(
+                                        CreateSeriesRequest(title = form.newSeries.title.trim())
+                                    ).id
+                                }
+                                else -> null
                             }
-                            else -> null // Standalone continuous webnovel / work
-                        }
 
-                        val authorId = form.authorId ?: SupabaseService.createAuthor(
-                            form.newAuthor!!.name,
-                            null,
-                            null,
-                            null
-                        ).id
+                            val resolvedCreators: List<Pair<String, String>> = form.creators.mapNotNull { row ->
+                                val id = if (row.createNew && row.newAuthorName.isNotBlank()) {
+                                    SupabaseService.createAuthor(row.newAuthorName.trim()).id
+                                } else {
+                                    row.authorId
+                                }
+                                id?.let { it to row.role }
+                            }
 
-                        val platformId = form.platformId ?: SupabaseService.createPlatform(
-                            CreatePlatformRequest(
-                                name = form.newPlatform!!.name,
-                                websiteUrl = form.newPlatform.websiteUrl,
-                                logoUrl = form.newPlatform.logoUrl
-                            )
-                        ).id
+                            val resolvedPlatformId = form.platformId ?: SupabaseService.createPlatform(
+                                CreatePlatformRequest(
+                                    name = form.newPlatform!!.name,
+                                    websiteUrl = form.newPlatform.websiteUrl,
+                                    logoUrl = form.newPlatform.logoUrl
+                                )
+                            ).id
 
-                        if (editorEntry == null) {
-                            SupabaseService.createEntry(
-                                com.omnitrack.app.data.model.CreateEntryRequest(
-                                    seriesId = resolvedSeriesId, // Passes null for standalone entries
+                            // 1. If "Same series" was selected on a standalone match, link that existing entry to the series too
+                            form.linkExistingEntryToSeriesId?.let { existingId ->
+                                val existingMatch = mediaEntries.firstOrNull { it.id == existingId }
+                                if (existingMatch != null && existingMatch.seriesId == null && resolvedSeriesId != null) {
+                                    SupabaseService.updateEntry(
+                                        id = existingMatch.id,
+                                        title = existingMatch.title,
+                                        type = existingMatch.type.value,
+                                        seriesId = resolvedSeriesId,
+                                        creators = existingMatch.creators.mapNotNull { c -> c.id?.let { it to c.role } },
+                                        platformId = existingMatch.platformId,
+                                        coverUrl = existingMatch.coverUrl,
+                                        sourceUrl = existingMatch.sourceUrl,
+                                        userStatus = existingMatch.userStatus.value,
+                                        publishingStatus = existingMatch.publishingStatus,
+                                        sequenceNumber = existingMatch.sequenceNumber ?: 1.0,
+                                        currentUnit = existingMatch.currentUnit,
+                                        unitName = existingMatch.unitName,
+                                        isCanon = existingMatch.isCanon,
+                                        alternativeTitles = existingMatch.alternativeTitles
+                                    )
+                                }
+                            }
+
+                            // 2. Create a new entry OR update the edited / merged entry
+                            val targetUpdateId = editorEntry?.id ?: form.mergeIntoEntryId
+                            if (targetUpdateId == null) {
+                                val created = SupabaseService.createEntry(
+                                    CreateEntryRequest(
+                                        seriesId = resolvedSeriesId,
+                                        title = form.title,
+                                        type = form.type.value,
+                                        sequenceNumber = form.sequenceNumber,
+                                        userStatus = form.userStatus,
+                                        publishingStatus = form.publishingStatus,
+                                        isCanon = form.isCanon,
+                                        currentUnit = form.currentUnit,
+                                        unitName = form.unitName,
+                                        sourceUrl = form.sourceUrl,
+                                        platformId = resolvedPlatformId,
+                                        coverUrl = form.coverUrl
+                                    )
+                                )
+                                SupabaseService.replaceEntryAuthors(created.id, resolvedCreators)
+                                SupabaseService.replaceEntryAlternateTitles(
+                                    entryId = created.id,
+                                    seriesId = resolvedSeriesId,
+                                    titles = form.alternativeTitles
+                                )
+                            } else {
+                                SupabaseService.updateEntry(
+                                    id = targetUpdateId,
                                     title = form.title,
                                     type = form.type.value,
-                                    sequenceNumber = form.sequenceNumber,
+                                    seriesId = resolvedSeriesId,
+                                    creators = resolvedCreators,
+                                    platformId = resolvedPlatformId,
+                                    coverUrl = form.coverUrl,
+                                    sourceUrl = form.sourceUrl,
                                     userStatus = form.userStatus,
                                     publishingStatus = form.publishingStatus,
+                                    sequenceNumber = form.sequenceNumber,
                                     currentUnit = form.currentUnit,
                                     unitName = form.unitName,
-                                    sourceUrl = form.sourceUrl,
-                                    platformId = platformId,
-                                    coverUrl = form.coverUrl,
-                                    isCanon = form.isCanon
+                                    isCanon = form.isCanon,
+                                    alternativeTitles = form.alternativeTitles
                                 )
-                            ).also { created ->
-                                SupabaseService.replaceEntryAuthor(created.id, authorId)
                             }
-                        } else {
-                            SupabaseService.updateEntry(
-                                id = editorEntry!!.id,
-                                title = form.title,
-                                type = form.type.value,
-                                seriesId = resolvedSeriesId,
-                                authorId = authorId,
-                                platformId = platformId,
-                                coverUrl = form.coverUrl,
-                                sourceUrl = form.sourceUrl,
-                                userStatus = form.userStatus,
-                                publishingStatus = form.publishingStatus,
-                                sequenceNumber = form.sequenceNumber,
-                                currentUnit = form.currentUnit,
-                                unitName = form.unitName,
-                                isCanon = form.isCanon
-                            )
+
+                            showEntryEditor = false
+                            scrapedPrefill = null
+                            viewModel.refreshData()
+                        } catch (e: Exception) {
+                            android.util.Log.e("OmniTrackHomeScreen", "Failed to save entry", e)
+                            android.widget.Toast.makeText(
+                                context,
+                                "Save failed: ${e.message ?: "Unknown error"}",
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
                         }
-                        showEntryEditor = false
-                        scrapedPrefill = null
-                        viewModel.refreshData()
-                    } catch ( e: Exception ){
-                        android.util.Log.e("OmniTrackHomeScreen", "Failed to save entry", e)
-                        android.widget.Toast.makeText(
-                            context,
-                            "Save failed: ${e.message ?: "Unknown error"}",
-                            android.widget.Toast.LENGTH_LONG
-                        ).show()
                     }
                 }
-            }
-        )
+            )
+        }
     }
-}
 }

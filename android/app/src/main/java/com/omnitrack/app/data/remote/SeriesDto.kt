@@ -37,11 +37,23 @@ data class PlatformRefDto(
 @Serializable
 data class EntryAuthorDto(
     @SerialName("entry_id") val entryId: String,
-    @SerialName("author_id") val authorId: String
+    @SerialName("author_id") val authorId: String,
+    @SerialName("role") val role: String = "author"
 )
 
 @Serializable
 data class AuthorDto(
     @SerialName("id") val id: String,
     @SerialName("name") val name: String
+)
+
+@Serializable
+data class AlternateTitleDto(
+    @SerialName("id") val id: Long? = null,
+    @SerialName("series_id") val seriesId: String? = null,
+    @SerialName("entry_id") val entryId: String? = null,
+    @SerialName("title") val title: String,
+    @SerialName("clean_title") val cleanTitle: String? = null,
+    @SerialName("language") val language: String? = null,
+    @SerialName("is_primary") val isPrimary: Boolean = false
 )

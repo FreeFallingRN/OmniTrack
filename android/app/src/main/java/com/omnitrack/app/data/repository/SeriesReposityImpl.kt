@@ -20,6 +20,9 @@ import io.ktor.http.contentType
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.time.LocalDate
+import kotlin.collections.filter
+import com.omnitrack.app.data.remote.AlternateTitleDto
+import com.omnitrack.app.domain.model.EntryCreator
 
 class SeriesRepositoryImpl(
     private val mediaEntryDao: MediaEntryDao,
@@ -33,37 +36,59 @@ class SeriesRepositoryImpl(
             entities.map { it.toDomain() }
         }
     }
-
     override suspend fun fetchFromSupabase() {
         if (supabaseUrl.isBlank() || supabaseKey.isBlank()) return
         try {
-            val seriesResponse = httpClient.get("$supabaseUrl/rest/v1/series?select=id,title") {
+            val series: List<SeriesTitleDto> = httpClient.get("$supabaseUrl/rest/v1/series?select=id,title") {
                 header("apikey", supabaseKey)
                 header("Authorization", "Bearer $supabaseKey")
-            }
-            val series: List<SeriesTitleDto> = seriesResponse.body()
-            val entriesResponse = httpClient.get("$supabaseUrl/rest/v1/media_entries?select=*") {
+            }.body()
+
+            val entries: List<MediaEntryDto> = httpClient.get("$supabaseUrl/rest/v1/media_entries?select=*") {
                 header("apikey", supabaseKey)
                 header("Authorization", "Bearer $supabaseKey")
-            }
-            val entries: List<MediaEntryDto> = entriesResponse.body()
-            val entryAuthors = httpClient.get("$supabaseUrl/rest/v1/entry_authors?select=entry_id,author_id") {
+            }.body()
+
+            val entryAuthors = httpClient.get("$supabaseUrl/rest/v1/entry_authors?select=entry_id,author_id,role") {
                 header("apikey", supabaseKey)
                 header("Authorization", "Bearer $supabaseKey")
             }.body<List<EntryAuthorDto>>()
+
             val authors = httpClient.get("$supabaseUrl/rest/v1/authors?select=id,name") {
                 header("apikey", supabaseKey)
                 header("Authorization", "Bearer $supabaseKey")
             }.body<List<AuthorDto>>().associate { it.id to it.name }
-            val authorNamesByEntry = entryAuthors
+
+            val altTitles = httpClient.get("$supabaseUrl/rest/v1/alternate_titles?select=id,series_id,entry_id,title,clean_title,language,is_primary") {
+                header("apikey", supabaseKey)
+                header("Authorization", "Bearer $supabaseKey")
+            }.body<List<AlternateTitleDto>>()
+
+            val creatorsByEntry = entryAuthors
                 .groupBy { it.entryId }
-                .mapValues { (_, links) -> links.mapNotNull { authors[it.authorId] } }
+                .mapValues { (_, links) ->
+                    links.mapNotNull { link ->
+                        authors[link.authorId]?.let { name ->
+                            EntryCreator(id = link.authorId, name = name, role = link.role)
+                        }
+                    }
+                }
+
+            val altTitlesByEntry = altTitles.filter { it.entryId != null }.groupBy { it.entryId!! }
+            val altTitlesBySeries = altTitles.filter { it.entryId == null && it.seriesId != null }.groupBy { it.seriesId!! }
             val seriesTitles = series.associate { it.id to it.title }
+
             mediaEntryDao.replaceAll(
-                entries.map {
-                    it.toEntity(
-                        seriesTitle = seriesTitles[it.seriesId],
-                        authorNames = authorNamesByEntry[it.id].orEmpty()
+                entries.map { entry ->
+                    val mergedAlts = (
+                            altTitlesByEntry[entry.id].orEmpty() +
+                                    entry.seriesId?.let { altTitlesBySeries[it] }.orEmpty()
+                            ).map { it.title }.distinct()
+
+                    entry.toEntity(
+                        seriesTitle = seriesTitles[entry.seriesId],
+                        creators = creatorsByEntry[entry.id].orEmpty(),
+                        altTitles = mergedAlts
                     )
                 }
             )

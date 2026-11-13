@@ -15,6 +15,7 @@ data class MediaEntryEntity(
     val publishingStatus: String,
     val isCanon: Boolean,
     val authorNames: String,
+    val alternativeTitles: String = "",
     val coverUrl: String?,
     val sourceUrl: String?,
     val platformId: String?,

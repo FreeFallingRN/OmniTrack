@@ -60,14 +60,27 @@ import com.omnitrack.app.utils.ScrapedMediaDraft
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.InputChip
+import androidx.compose.material3.Surface
+import com.omnitrack.app.domain.model.CreatorRole
+
+data class CreatorFormRow(
+    val authorId: String? = null,
+    val newAuthorName: String = "",
+    val createNew: Boolean = false,
+    val role: String = "author"
+)
 
 data class MediaEntryEditorData(
     val title: String,
+    val alternativeTitles: List<String>,
     val type: MediaType,
     val seriesId: String?,
     val newSeries: NewSeriesData?,
-    val authorId: String?,
-    val newAuthor: NewAuthorData?,
+    val creators: List<CreatorFormRow>,
     val userStatus: String,
     val publishingStatus: String,
     val sequenceNumber: Double?,
@@ -77,15 +90,13 @@ data class MediaEntryEditorData(
     val newPlatform: NewPlatformData?,
     val sourceUrl: String?,
     val coverUrl: String?,
-    val isCanon: Boolean
+    val isCanon: Boolean,
+    val mergeIntoEntryId: String? = null,
+    val linkExistingEntryToSeriesId: String? = null
 )
 
 data class NewSeriesData(
     val title: String,
-)
-
-data class NewAuthorData(
-    val name: String
 )
 
 data class NewPlatformData(
@@ -106,9 +117,9 @@ fun MediaEntryEditorSheet(
     var series by remember { mutableStateOf<List<SeriesDto>>(emptyList()) }
     var authors by remember { mutableStateOf<List<AuthorDto>>(emptyList()) }
     var platforms by remember { mutableStateOf<List<PlatformDto>>(emptyList()) }
-    var metadataLoaded by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    var metadataLoaded by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         try {
@@ -123,6 +134,11 @@ fun MediaEntryEditorSheet(
     }
 
     var title by remember { mutableStateOf(existing?.title ?: prefill?.title.orEmpty()) }
+    var altTitles by remember {
+        mutableStateOf(existing?.alternativeTitles ?: prefill?.alternativeTitles.orEmpty())
+    }
+    var newAltTitle by remember { mutableStateOf("") }
+
     var type by remember { mutableStateOf(existing?.type ?: prefill?.type ?: MediaType.NOVEL) }
     var seriesId by remember { mutableStateOf(existing?.seriesId) }
     var userStatus by remember { mutableStateOf(existing?.userStatus?.value ?: "planning") }
@@ -135,9 +151,7 @@ fun MediaEntryEditorSheet(
     var sourceUrl by remember { mutableStateOf(existing?.sourceUrl ?: prefill?.sourceUrl.orEmpty()) }
     var coverUrl by remember { mutableStateOf(existing?.coverUrl ?: prefill?.coverUrl.orEmpty()) }
 
-    var authorId by remember { mutableStateOf<String?>(null) }
-    var createAuthor by remember { mutableStateOf(false) }
-    var newAuthorName by remember { mutableStateOf(prefill?.authorName.orEmpty()) }
+    var creatorRows by remember { mutableStateOf(listOf(CreatorFormRow())) }
 
     var platformId by remember { mutableStateOf(existing?.platformId) }
     var createPlatform by remember { mutableStateOf(false) }
@@ -150,23 +164,34 @@ fun MediaEntryEditorSheet(
     var newPlatformWebsiteUrl by remember { mutableStateOf("") }
     var newPlatformLogoUrl by remember { mutableStateOf("") }
 
-    // Collapsible sections: Series defaults closed for new standalone entries, open if editing an entry already in a series
     var showSeriesDetails by remember { mutableStateOf(existing?.seriesId != null) }
     var showMediaDetails by remember { mutableStateOf(false) }
 
+    // Populate multi-creator rows once authors finish loading
     LaunchedEffect(existing?.id, prefill, metadataLoaded) {
         if (!metadataLoaded) return@LaunchedEffect
-        val matched = authors.firstOrNull {
-            existing?.authors?.contains(it.name) == true ||
-                    (!prefill?.authorName.isNullOrBlank() && it.name.trim().equals(prefill.authorName.trim(), ignoreCase = true))
+
+        val sourceCreators: List<Pair<String, String>> = when {
+            existing != null && existing.creators.isNotEmpty() ->
+                existing.creators.map { it.name to it.role }
+            existing != null && existing.authors.isNotEmpty() ->
+                existing.authors.map { it to "author" }
+            prefill != null && prefill.creators.isNotEmpty() ->
+                prefill.creators.map { it.name to it.role }
+            else -> emptyList()
         }
-        if (matched != null) {
-            authorId = matched.id
-            createAuthor = false
-        } else if (!prefill?.authorName.isNullOrBlank()) {
-            authorId = null
-            createAuthor = true
-            newAuthorName = prefill.authorName.trim()
+
+        if (sourceCreators.isNotEmpty()) {
+            creatorRows = sourceCreators.map { (rawName, role) ->
+                val matched = authors.firstOrNull {
+                    it.name.trim().equals(rawName.trim(), ignoreCase = true)
+                }
+                if (matched != null) {
+                    CreatorFormRow(authorId = matched.id, role = role)
+                } else {
+                    CreatorFormRow(createNew = true, newAuthorName = rawName.trim(), role = role)
+                }
+            }
         }
     }
 
@@ -186,6 +211,48 @@ fun MediaEntryEditorSheet(
             newPlatformName = prefill.platformHint.trim()
         }
     }
+
+    // Duplicate detection against existing library entries
+    fun normalizeTitleKey(raw: String): String =
+        raw.lowercase()
+            .replace(Regex("""@\s*comic\b|\((?:novel|manga|comic|webtoon|light novel|ln|wn)\)|:\s*season\s*\d+|season\s*\d+"""), "")
+            .replace(Regex("[^a-z0-9]"), "")
+
+    fun isSimilarTitle(a: String, b: String): Boolean {
+        if (a.length < 4 || b.length < 4) return false
+        if (a == b) return true
+        val shorter = if (a.length <= b.length) a else b
+        val longer = if (a.length > b.length) a else b
+        // Prefix / substring containment when the shared core is substantial (>= 8 chars and >= 65% of longer)
+        if (shorter.length >= 8 && longer.contains(shorter) && shorter.length.toDouble() / longer.length >= 0.65) {
+            return true
+        }
+        return false
+    }
+
+    val duplicateMatch = remember(title, altTitles, sourceUrl, type, entries, existing?.id) {
+        if (existing != null) return@remember null
+        val cleanUrl = sourceUrl.trim().trimEnd('/').lowercase()
+        val candidateKeys = (listOf(title) + altTitles)
+            .map(::normalizeTitleKey)
+            .filter { it.length >= 4 }
+            .distinct()
+
+        entries.firstOrNull { candidate ->
+            val urlMatch = cleanUrl.isNotBlank() &&
+                    !candidate.sourceUrl.isNullOrBlank() &&
+                    candidate.sourceUrl.trim().trimEnd('/').lowercase() == cleanUrl
+
+            val existingKeys = (listOf(candidate.title) + candidate.alternativeTitles + listOfNotNull(candidate.seriesTitle))
+                .map(::normalizeTitleKey)
+                .filter { it.length >= 4 }
+
+            val titleMatch = existingKeys.any { ex -> candidateKeys.any { cand -> isSimilarTitle(ex, cand) } }
+            urlMatch || titleMatch
+        }
+    }
+    var mergeTargetEntry by remember { mutableStateOf<MediaEntry?>(null) }
+    var groupWithEntry by remember { mutableStateOf<MediaEntry?>(null) }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface
@@ -200,6 +267,72 @@ fun MediaEntryEditorSheet(
                     style = MaterialTheme.typography.headlineSmall
                 )
             }
+            if (duplicateMatch != null && mergeTargetEntry == null && groupWithEntry == null) {
+                val match = duplicateMatch
+                item {
+                    Surface(
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "Similar entry already in library",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                            Text(
+                                text = "\"${match.title}\" (${match.type.singularLabel} • ${match.userStatus.label} • ${match.currentUnit} ${match.unitName})",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                FilterChip(
+                                    selected = false,
+                                    onClick = {
+                                        mergeTargetEntry = match
+                                        groupWithEntry = null
+                                        val currentParsed = currentUnit.toDoubleOrNull() ?: 0.0
+                                        if (match.currentUnit > currentParsed) {
+                                            currentUnit = match.currentUnit.toString()
+                                        }
+                                        if (userStatus == UserStatus.PLANNING.value && match.userStatus != UserStatus.PLANNING) {
+                                            userStatus = match.userStatus.value
+                                        }
+                                        altTitles = (altTitles + match.alternativeTitles + listOf(match.title))
+                                            .filter { !it.equals(title.trim(), ignoreCase = true) }
+                                            .distinctBy { it.lowercase() }
+                                    },
+                                    label = { Text("Merge into existing") }
+                                )
+                                FilterChip(
+                                    selected = false,
+                                    onClick = {
+                                        groupWithEntry = match
+                                        mergeTargetEntry = null
+                                        showSeriesDetails = true
+                                        if (match.seriesId != null) {
+                                            seriesId = match.seriesId
+                                            createSeries = false
+                                        } else {
+                                            seriesId = null
+                                            createSeries = true
+                                            newSeriesTitle = match.title
+                                        }
+                                    },
+                                    label = { Text("Same series") }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             item {
                 OutlinedTextField(
                     title,
@@ -208,6 +341,55 @@ fun MediaEntryEditorSheet(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
+            }
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Alternative titles", style = MaterialTheme.typography.labelMedium)
+                    if (altTitles.isNotEmpty()) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            altTitles.forEach { alt ->
+                                InputChip(
+                                    selected = false,
+                                    onClick = { altTitles = altTitles.filterNot { it == alt } },
+                                    label = { Text(alt) },
+                                    trailingIcon = {
+                                        Icon(
+                                            Icons.Default.Clear,
+                                            contentDescription = "Remove $alt"
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = newAltTitle,
+                            onValueChange = { newAltTitle = it },
+                            label = { Text("Add alias / native title") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                        TextButton(
+                            onClick = {
+                                val cleaned = newAltTitle.trim()
+                                if (cleaned.isNotBlank() && altTitles.none { it.equals(cleaned, ignoreCase = true) }) {
+                                    altTitles = altTitles + cleaned
+                                }
+                                newAltTitle = ""
+                            },
+                            enabled = newAltTitle.isNotBlank()
+                        ) {
+                            Text("Add")
+                        }
+                    }
+                }
             }
             item {
                 StatusButtonGroup(
@@ -220,28 +402,79 @@ fun MediaEntryEditorSheet(
                 )
             }
             item {
-                Selector(
-                    "Author",
-                    authors.firstOrNull { it.id == authorId }?.name ?: "Choose author",
-                    authors,
-                    { it.name },
-                    onAdd = {
-                        createAuthor = true
-                        authorId = null
-                    }
-                ) { authorId = it.id; createAuthor = false }
+                Text("Creators", style = MaterialTheme.typography.titleMedium)
             }
-            if (createAuthor) {
-                item { HorizontalDivider() }
-                item { Text("New author details", style = MaterialTheme.typography.titleMedium) }
-                item {
-                    OutlinedTextField(
-                        newAuthorName,
-                        { newAuthorName = it },
-                        label = { Text("Author name") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
+            creatorRows.forEachIndexed { index, row ->
+                item(key = "creator_row_$index") {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                Selector(
+                                    label = "Creator ${index + 1}",
+                                    selected = when {
+                                        row.createNew -> "New: ${row.newAuthorName.ifBlank { "Enter name below" }}"
+                                        else -> authors.firstOrNull { it.id == row.authorId }?.name ?: "Choose creator"
+                                    },
+                                    options = authors,
+                                    text = { it.name },
+                                    onAdd = {
+                                        creatorRows = creatorRows.toMutableList().also {
+                                            it[index] = row.copy(createNew = true, authorId = null)
+                                        }
+                                    }
+                                ) { selected ->
+                                    creatorRows = creatorRows.toMutableList().also {
+                                        it[index] = row.copy(authorId = selected.id, createNew = false)
+                                    }
+                                }
+                            }
+                            if (creatorRows.size > 1) {
+                                IconButton(
+                                    onClick = {
+                                        creatorRows = creatorRows.toMutableList().also { it.removeAt(index) }
+                                    }
+                                ) {
+                                    Icon(Icons.Default.Clear, contentDescription = "Remove creator")
+                                }
+                            }
+                        }
+
+                        if (row.createNew) {
+                            OutlinedTextField(
+                                value = row.newAuthorName,
+                                onValueChange = { updatedName ->
+                                    creatorRows = creatorRows.toMutableList().also {
+                                        it[index] = row.copy(newAuthorName = updatedName)
+                                    }
+                                },
+                                label = { Text("New creator name") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+                        }
+
+                        StatusButtonGroup(
+                            label = "Role",
+                            selected = row.role,
+                            options = CreatorRole.values.map { it to it.toDisplayLabel() },
+                            onSelected = { newRole ->
+                                creatorRows = creatorRows.toMutableList().also {
+                                    it[index] = row.copy(role = newRole)
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+            item {
+                TextButton(
+                    onClick = { creatorRows = creatorRows + CreatorFormRow(role = "illustrator") }
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Text("Add another creator / artist")
                 }
             }
             item {
@@ -480,29 +713,31 @@ fun MediaEntryEditorSheet(
             item {
                 Button(
                     onClick = {
-                        val selectedAuthor = authorId
+                        val validCreators = creatorRows.filter {
+                            it.authorId != null || (it.createNew && it.newAuthorName.isNotBlank())
+                        }
                         val missingNewSeriesTitle = createSeries && newSeriesTitle.isBlank()
                         if (title.isBlank() ||
                             missingNewSeriesTitle ||
-                            (selectedAuthor == null && (!createAuthor || newAuthorName.isBlank())) ||
+                            validCreators.isEmpty() ||
                             (platformId == null && (!createPlatform || newPlatformName.isBlank()))
                         ) {
                             error = if (missingNewSeriesTitle) {
                                 "Please enter a name for the new series or clear it."
                             } else {
-                                "Title, author, and platform are required."
+                                "Title, at least one creator, and platform are required."
                             }
                         } else {
                             onSave(
                                 MediaEntryEditorData(
-                                    title = title,
+                                    title = title.trim(),
+                                    alternativeTitles = altTitles,
                                     type = type,
                                     seriesId = seriesId,
                                     newSeries = if (createSeries && newSeriesTitle.isNotBlank()) {
                                         NewSeriesData(title = newSeriesTitle.trim())
                                     } else null,
-                                    authorId = selectedAuthor,
-                                    newAuthor = if (createAuthor) NewAuthorData(newAuthorName) else null,
+                                    creators = validCreators,
                                     platformId = platformId,
                                     newPlatform = if (createPlatform) {
                                         NewPlatformData(

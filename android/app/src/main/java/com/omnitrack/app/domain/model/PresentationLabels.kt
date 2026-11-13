@@ -6,3 +6,7 @@ fun String.toDisplayLabel(): String =
 object PublishingStatus {
     val values = listOf("announced", "releasing", "hiatus", "completed", "discontinued")
 }
+
+object CreatorRole {
+    val values = listOf("author", "illustrator", "studio", "director")
+}

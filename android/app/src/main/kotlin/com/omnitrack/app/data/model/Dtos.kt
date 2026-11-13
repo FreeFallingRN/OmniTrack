@@ -124,7 +124,7 @@ data class AuthorDto(
 data class EntryAuthorDto(
     @SerialName("entry_id") val entryId: String,
     @SerialName("author_id") val authorId: String,
-    val role: String = "author",
+    @SerialName("role") val role: String = "author"
 )
 
 @Serializable

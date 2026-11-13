@@ -29,6 +29,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
+import com.omnitrack.app.data.remote.AlternateTitleDto
 
 object SupabaseService {
 
@@ -231,7 +232,7 @@ object SupabaseService {
         title: String,
         type: String,
         seriesId: String?,
-        authorId: String,
+        creators: List<Pair<String, String>>,
         platformId: String?,
         coverUrl: String?,
         sourceUrl: String?,
@@ -240,7 +241,8 @@ object SupabaseService {
         sequenceNumber: Double?,
         currentUnit: Double,
         unitName: String,
-        isCanon: Boolean
+        isCanon: Boolean,
+        alternativeTitles: List<String> = emptyList()
     ) {
         client.patch("$supabaseUrl/rest/v1/media_entries?id=eq.$id") {
             contentType(ContentType.Application.Json)
@@ -261,18 +263,55 @@ object SupabaseService {
                 )
             )
         }
-        replaceEntryAuthor(id, authorId)
+        replaceEntryAuthors(id, creators)
+        replaceEntryAlternateTitles(id, seriesId, alternativeTitles)
     }
 
     suspend fun deleteEntry(id: String) {
         client.delete("$supabaseUrl/rest/v1/media_entries?id=eq.$id")
     }
 
-    suspend fun replaceEntryAuthor(entryId: String, authorId: String) {
+    suspend fun replaceEntryAuthors(entryId: String, creators: List<Pair<String, String>>) {
         client.delete("$supabaseUrl/rest/v1/entry_authors?entry_id=eq.$entryId")
-        client.post("$supabaseUrl/rest/v1/entry_authors") {
-            contentType(ContentType.Application.Json)
-            setBody(mapOf("entry_id" to entryId, "author_id" to authorId, "role" to "author"))
+        val rows = creators
+            .distinctBy { (authorId, role) -> "$authorId::${role.trim().lowercase()}" }
+            .map { (authorId, role) ->
+                mapOf(
+                    "entry_id" to entryId,
+                    "author_id" to authorId,
+                    "role" to role.trim().lowercase().ifBlank { "author" }
+                )
+            }
+        if (rows.isNotEmpty()) {
+            client.post("$supabaseUrl/rest/v1/entry_authors") {
+                contentType(ContentType.Application.Json)
+                setBody(rows)
+            }
+        }
+    }
+
+    suspend fun replaceEntryAlternateTitles(
+        entryId: String,
+        seriesId: String?,
+        titles: List<String>
+    ) {
+        client.delete("$supabaseUrl/rest/v1/alternate_titles?entry_id=eq.$entryId")
+        val rows = titles
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinctBy { it.lowercase() }
+            .map { title ->
+                AlternateTitleDto(
+                    seriesId = seriesId,
+                    entryId = entryId,
+                    title = title
+                )
+            }
+        if (rows.isNotEmpty()) {
+            client.post("$supabaseUrl/rest/v1/alternate_titles") {
+                contentType(ContentType.Application.Json)
+                setBody(rows)
+            }
         }
     }
 }

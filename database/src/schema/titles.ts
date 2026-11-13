@@ -17,7 +17,6 @@ export const alternateTitles = pgTable(
       .generatedAlwaysAsIdentity(),
 
     seriesId: uuid("series_id")
-      .notNull()
       .references(() => series.id, { onDelete: "cascade" }),
 
     entryId: uuid("entry_id").references(() => mediaEntries.id, {
@@ -38,6 +37,7 @@ export const alternateTitles = pgTable(
   },
   (table) => [
     index("idx_alternate_titles_series_id").on(table.seriesId),
+    index("idx_alternate_titles_entry_id").on(table.entryId),
     index("idx_alternate_titles_clean_title").on(table.cleanTitle),
   ]
 );

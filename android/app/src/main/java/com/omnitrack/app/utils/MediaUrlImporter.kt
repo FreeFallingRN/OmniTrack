@@ -9,7 +9,6 @@ import com.omnitrack.app.domain.model.MediaType
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.statement.HttpResponse
@@ -23,15 +22,24 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import org.json.JSONObject
 import org.json.JSONTokener
+import java.net.HttpURLConnection
 import java.net.URI
+import java.net.URL
 import kotlin.coroutines.resume
 import kotlin.time.Duration.Companion.milliseconds
 
+data class ScrapedCreator(
+    val name: String,
+    val role: String = "author" // "author", "illustrator", "studio", "director"
+)
+
 data class ScrapedMediaDraft(
     val title: String = "",
+    val alternativeTitles: List<String> = emptyList(),
     val type: MediaType = MediaType.NOVEL,
-    val authorName: String? = null,
+    val creators: List<ScrapedCreator> = emptyList(),
     val platformHint: String? = null,
     val publishingStatus: String = "releasing",
     val unitName: String = "Chapter",
@@ -86,7 +94,6 @@ object MediaUrlImporter {
             }
         }
 
-        // Direct MAL HTML Scrape Fallback
         val html = fetchHtmlWithFallback(context, url)
         val generic = extractOpenGraph(html, url)
 
@@ -99,20 +106,57 @@ object MediaUrlImporter {
             .find(html)?.value
             ?: generic.coverUrl?.takeUnless { it.contains("mal-logo", ignoreCase = true) || it.contains("icon", ignoreCase = true) }
 
-        val creator = if (isManga) {
-            val authorSection = Regex("""Authors?:</span>([\s\S]{0,400}?)</div>""", RegexOption.IGNORE_CASE)
+        val creators = if (isManga) {
+            val authorSection = Regex("""Authors?:</span>([\s\S]{0,800}?)</div>""", RegexOption.IGNORE_CASE)
                 .find(html)?.groupValues?.getOrNull(1).orEmpty()
-            Regex("""<a[^>]*href="/people/\d+/[^"]*"[^>]*>([^<]+)</a>""", RegexOption.IGNORE_CASE)
-                .find(authorSection)?.groupValues?.getOrNull(1)?.trim()
-                ?.let { formatMalAuthorName(decodeHtmlEntities(it)) }
+
+            val authorMatches = Regex("""<a[^>]*href="/people/\d+/[^"]*"[^>]*>([^<]+)</a>\s*(?:\(([^)]+)\))?""", RegexOption.IGNORE_CASE)
+                .findAll(authorSection)
+
+            val authorRolesMap = mutableMapOf<String, MutableSet<String>>()
+            for (match in authorMatches) {
+                val rawName = match.groupValues.getOrNull(1)?.trim() ?: continue
+                val name = formatMalAuthorName(decodeHtmlEntities(rawName))
+                if (name.isBlank()) continue
+
+                val roleParen = match.groupValues.getOrNull(2)?.lowercase().orEmpty()
+                val roles = authorRolesMap.getOrPut(name) { mutableSetOf() }
+                when {
+                    roleParen.contains("art") || roleParen.contains("illustrat") || roleParen.contains("design") -> {
+                        roles.add("illustrator")
+                    }
+                    roleParen.contains("story") -> {
+                        roles.add("author")
+                    }
+                    else -> {
+                        roles.add("author")
+                    }
+                }
+            }
+
+            buildList {
+                authorRolesMap.forEach { (name, roles) ->
+                    if (roles.contains("author") && roles.contains("illustrator")) {
+                        add(ScrapedCreator(name, "author"))
+                        add(ScrapedCreator(name, "illustrator"))
+                    } else if (roles.contains("illustrator")) {
+                        add(ScrapedCreator(name, "illustrator"))
+                    } else {
+                        add(ScrapedCreator(name, "author"))
+                    }
+                }
+            }
         } else {
-            // Scope strictly to the "Studios:" block (ignoring "Producers:" which also use /anime/producer/)
-            val studioSection = Regex("""Studios?:</span>([\s\S]{0,400}?)</div>""", RegexOption.IGNORE_CASE)
+            val studioSection = Regex("""Studios?:</span>([\s\S]{0,600}?)</div>""", RegexOption.IGNORE_CASE)
                 .find(html)?.groupValues?.getOrNull(1).orEmpty()
             Regex("""<a[^>]*href="/anime/producer/\d+/[^"]*"[^>]*>([^<]+)</a>""", RegexOption.IGNORE_CASE)
-                .find(studioSection)?.groupValues?.getOrNull(1)?.trim()
-                ?.let { decodeHtmlEntities(it) }
-                ?.takeUnless { it.equals("None found", ignoreCase = true) }
+                .findAll(studioSection)
+                .mapNotNull { match ->
+                    val name = match.groupValues.getOrNull(1)?.trim()?.let(::decodeHtmlEntities)
+                    name?.takeIf { it.isNotBlank() && !it.equals("None found", ignoreCase = true) }
+                        ?.let { ScrapedCreator(it, "studio") }
+                }
+                .toList()
         }
 
         val statusBlock = Regex("""Status:</span>[\s\S]{0,60}?([A-Za-z ]+)""", RegexOption.IGNORE_CASE)
@@ -129,7 +173,7 @@ object MediaUrlImporter {
         val draft = ScrapedMediaDraft(
             title = cleanTitle,
             type = mediaType,
-            authorName = creator,
+            creators = creators.distinctBy { "${it.name.lowercase()}::${it.role}" },
             platformHint = "MyAnimeList",
             publishingStatus = pubStatus,
             unitName = if (mediaType == MediaType.ANIME) "Episode" else "Chapter",
@@ -138,6 +182,27 @@ object MediaUrlImporter {
         )
         Log.d(TAG, "Scraped MAL HTML draft: $draft")
         return draft
+    }
+
+    // 2. AniList Direct URL (anilist.co/anime/{id} or /manga/{id})
+    private suspend fun scrapeAniList(context: Context, url: String): ScrapedMediaDraft {
+        val isManga = url.contains("/manga/")
+        val idMatch = Regex("""/(anime|manga)/(\d+)""").find(url)
+        val anilistId = idMatch?.groupValues?.getOrNull(2)?.toIntOrNull()
+
+        if (anilistId != null) {
+            val draft = runCatching {
+                fetchFromAniList(id = anilistId, isManga = isManga, platformHint = "AniList", sourceUrl = url)
+            }.onFailure { e ->
+                Log.w(TAG, "AniList direct lookup failed (${e.message}), falling back to HTML")
+            }.getOrNull()
+
+            if (draft != null) {
+                Log.d(TAG, "Scraped AniList draft: $draft")
+                return draft
+            }
+        }
+        return scrapeGeneric(context, url, "anilist.co")
     }
 
     private suspend fun fetchFromAniList(
@@ -155,10 +220,11 @@ object MediaUrlImporter {
               Media($argUse, type: ${'$'}type) {
                 format
                 status
-                title { english romaji }
+                title { english romaji native }
+                synonyms
                 coverImage { extraLarge large }
                 studios(isMain: true) { nodes { name } }
-                staff(perPage: 5) {
+                staff(perPage: 12) {
                   edges {
                     role
                     node { name { full } }
@@ -169,9 +235,9 @@ object MediaUrlImporter {
         """.trimIndent().replace("\n", " ")
 
         val idField = if (id != null) "\"id\":$id" else "\"idMal\":$idMal"
-        val payload = """{"query":${org.json.JSONObject.quote(query)},"variables":{$idField,"type":"$typeEnum"}}"""
+        val payload = """{"query":${JSONObject.quote(query)},"variables":{$idField,"type":"$typeEnum"}}"""
 
-        val conn = (java.net.URL("https://graphql.anilist.co").openConnection() as java.net.HttpURLConnection).apply {
+        val conn = (URL("https://graphql.anilist.co").openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 6_000
             readTimeout = 6_000
@@ -192,8 +258,17 @@ object MediaUrlImporter {
             ?.jsonObject?.get("Media")?.jsonObject ?: return@withContext null
 
         val titleObj = media["title"]?.jsonObject
-        val title = titleObj?.get("english")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() && it != "null" }
-            ?: titleObj?.get("romaji")?.jsonPrimitive?.content.orEmpty()
+        val english = titleObj?.get("english")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() && it != "null" }
+        val romaji = titleObj?.get("romaji")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() && it != "null" }
+        val native = titleObj?.get("native")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() && it != "null" }
+        val synonyms = media["synonyms"]?.jsonArray?.mapNotNull {
+            it.jsonPrimitive.content.takeIf { s -> s.isNotBlank() && s != "null" }
+        }.orEmpty()
+
+        val title = english ?: romaji ?: native.orEmpty()
+        val altTitles = (listOfNotNull(english, romaji, native) + synonyms)
+            .filter { !it.equals(title, ignoreCase = true) }
+            .distinctBy { it.lowercase() }
 
         val coverObj = media["coverImage"]?.jsonObject
         val coverUrl = coverObj?.get("extraLarge")?.jsonPrimitive?.content?.takeIf { it != "null" }
@@ -207,16 +282,46 @@ object MediaUrlImporter {
             else -> "releasing"
         }
 
-        val creatorName = if (isManga) {
-            media["staff"]?.jsonObject?.get("edges")?.jsonArray
-                ?.firstOrNull { it.jsonObject["role"]?.jsonPrimitive?.content?.contains("Story", ignoreCase = true) == true }
-                ?.jsonObject?.get("node")?.jsonObject?.get("name")?.jsonObject?.get("full")?.jsonPrimitive?.content
-                ?: media["staff"]?.jsonObject?.get("edges")?.jsonArray?.firstOrNull()
-                    ?.jsonObject?.get("node")?.jsonObject?.get("name")?.jsonObject?.get("full")?.jsonPrimitive?.content
-        } else {
-            media["studios"]?.jsonObject?.get("nodes")?.jsonArray?.firstOrNull()
-                ?.jsonObject?.get("name")?.jsonPrimitive?.content
-        }
+        val creators = buildList {
+            if (!isManga) {
+                media["studios"]?.jsonObject?.get("nodes")?.jsonArray.orEmpty().forEach { node ->
+                    val name = node.jsonObject["name"]?.jsonPrimitive?.content?.trim().orEmpty()
+                    if (name.isNotBlank()) add(ScrapedCreator(name = name, role = "studio"))
+                }
+            }
+
+            val authorRolesMap = mutableMapOf<String, MutableSet<String>>()
+            media["staff"]?.jsonObject?.get("edges")?.jsonArray.orEmpty().forEach { edge ->
+                val roleRaw = edge.jsonObject["role"]?.jsonPrimitive?.content.orEmpty().lowercase()
+                val name = edge.jsonObject["node"]?.jsonObject?.get("name")?.jsonObject
+                    ?.get("full")?.jsonPrimitive?.content?.trim().orEmpty()
+                if (name.isBlank()) return@forEach
+
+                val roles = authorRolesMap.getOrPut(name) { mutableSetOf() }
+                when {
+                    roleRaw.contains("story") && (roleRaw.contains("art") || roleRaw.contains("mangaka") || roleRaw.contains("manga")) -> {
+                        roles.add("illustrator")
+                    }
+                    roleRaw.contains("art") || roleRaw.contains("illustrat") || roleRaw.contains("mangaka") || roleRaw.contains("manga") || roleRaw.contains("character design") || roleRaw.contains("storyboard") -> {
+                        roles.add("illustrator")
+                    }
+                    roleRaw.contains("story") || roleRaw.contains("original creator") || roleRaw.contains("original work") -> {
+                        roles.add("author")
+                    }
+                    roleRaw.contains("director") && !isManga -> {
+                        roles.add("director")
+                    }
+                    else -> {
+                        roles.add("author")
+                    }
+                }
+            }
+
+            authorRolesMap.forEach { (name, roles) ->
+                val role = if (roles.contains("illustrator")) "illustrator" else "author"
+                add(ScrapedCreator(name, role))
+            }
+        }.distinctBy { "${it.name.lowercase()}::${it.role}" }
 
         val mediaType = when (media["format"]?.jsonPrimitive?.content) {
             "MOVIE" -> MediaType.MOVIE
@@ -225,75 +330,15 @@ object MediaUrlImporter {
 
         ScrapedMediaDraft(
             title = title,
+            alternativeTitles = altTitles,
             type = mediaType,
-            authorName = creatorName,
-            platformHint = "MyAnimeList",
+            creators = creators,
+            platformHint = platformHint,
             publishingStatus = pubStatus,
             unitName = if (mediaType == MediaType.ANIME) "Episode" else "Chapter",
             coverUrl = coverUrl,
             sourceUrl = sourceUrl
         )
-    }
-
-    // 2. Royal Road HTML Parser
-    private suspend fun scrapeRoyalRoad(context: Context, url: String): ScrapedMediaDraft {
-        val html = fetchHtmlWithFallback(context, url)
-        val generic = extractOpenGraph(html, url)
-
-        val rawTitle = generic.title
-            .substringBefore(" | Royal Road")
-            .trim()
-            .ifBlank { extractTitleFromSlug(url) }
-
-        val author = Regex("""Author card for ([^<]+)</div>""", RegexOption.IGNORE_CASE)
-            .find(html)?.groupValues?.getOrNull(1)?.trim()
-            ?: Regex("""<a[^>]*href="/profile/\d+"[^>]*>\s*<h4[^>]*>([^<]+)</h4>""", RegexOption.IGNORE_CASE)
-                .find(html)?.groupValues?.getOrNull(1)?.trim()
-            ?: Regex("""<meta[^>]+name=["']author["'][^>]+content=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
-                .find(html)?.groupValues?.getOrNull(1)?.trim()
-            ?: Regex(""""author"\s*:\s*\{[^}]*"name"\s*:\s*"([^"]+)"""", RegexOption.IGNORE_CASE)
-                .find(html)?.groupValues?.getOrNull(1)?.trim()
-
-        val status = when {
-            html.contains(">COMPLETED<", ignoreCase = true) -> "completed"
-            html.contains(">HIATUS<", ignoreCase = true) -> "hiatus"
-            html.contains(">STUB<", ignoreCase = true) || html.contains(">DROPPED<", ignoreCase = true) -> "discontinued"
-            else -> "releasing"
-        }
-
-        val draft = ScrapedMediaDraft(
-            title = rawTitle,
-            type = MediaType.NOVEL,
-            authorName = author?.let { decodeHtmlEntities(it) },
-            platformHint = "Royal Road",
-            publishingStatus = status,
-            unitName = "Chapter",
-            coverUrl = generic.coverUrl,
-            sourceUrl = url
-        )
-        Log.d(TAG, "Scraped Royal Road draft: $draft")
-        return draft
-    }
-
-    // 2. AniList Direct URL (anilist.co/anime/{id} or /manga/{id})
-    private suspend fun scrapeAniList(context: Context, url: String): ScrapedMediaDraft {
-        val isManga = url.contains("/manga/")
-        val idMatch = Regex("""/(anime|manga)/(\d+)""").find(url)
-        val anilistId = idMatch?.groupValues?.getOrNull(2)?.toIntOrNull()
-
-        if (anilistId != null) {
-            val draft = runCatching {
-                fetchFromAniList(id = anilistId, idMal = null, isManga = isManga, platformHint = "AniList", sourceUrl = url)
-            }.onFailure { e ->
-                Log.w(TAG, "AniList direct lookup failed (${e.message}), falling back to HTML")
-            }.getOrNull()
-
-            if (draft != null) {
-                Log.d(TAG, "Scraped AniList draft: $draft")
-                return draft
-            }
-        }
-        return scrapeGeneric(context, url, "anilist.co")
     }
 
     // 3. MangaDex Public REST API (mangadex.org/title/{uuid}/...)
@@ -303,7 +348,7 @@ object MediaUrlImporter {
 
         if (mangaId != null) {
             val draft = runCatching {
-                val apiUrl = "https://api.mangadex.org/manga/$mangaId?includes[]=author&includes[]=cover_art"
+                val apiUrl = "https://api.mangadex.org/manga/$mangaId?includes[]=author&includes[]=artist&includes[]=cover_art"
                 Log.d(TAG, "Fetching MangaDex API: $apiUrl")
                 val responseText = httpGetJson(apiUrl)
                 val data = json.parseToJsonElement(responseText).jsonObject["data"]?.jsonObject
@@ -314,6 +359,19 @@ object MediaUrlImporter {
                 val title = titleObj?.get("en")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
                     ?: titleObj?.values?.firstOrNull()?.jsonPrimitive?.content.orEmpty()
 
+                val altTitles = buildList {
+                    titleObj?.values?.forEach { elem ->
+                        val t = elem.jsonPrimitive.content.trim()
+                        if (t.isNotBlank() && !t.equals(title, ignoreCase = true)) add(t)
+                    }
+                    attrs["altTitles"]?.jsonArray.orEmpty().forEach { mapElem ->
+                        mapElem.jsonObject.values.forEach { v ->
+                            val t = v.jsonPrimitive.content.trim()
+                            if (t.isNotBlank() && !t.equals(title, ignoreCase = true)) add(t)
+                        }
+                    }
+                }.distinctBy { it.lowercase() }
+
                 val pubStatus = when (attrs["status"]?.jsonPrimitive?.content?.lowercase()) {
                     "completed" -> "completed"
                     "hiatus" -> "hiatus"
@@ -322,9 +380,16 @@ object MediaUrlImporter {
                 }
 
                 val relationships = data["relationships"]?.jsonArray.orEmpty()
-                val authorName = relationships.firstOrNull {
-                    it.jsonObject["type"]?.jsonPrimitive?.content == "author"
-                }?.jsonObject?.get("attributes")?.jsonObject?.get("name")?.jsonPrimitive?.content
+                val creators = relationships.mapNotNull { rel ->
+                    val relType = rel.jsonObject["type"]?.jsonPrimitive?.content
+                    val name = rel.jsonObject["attributes"]?.jsonObject?.get("name")?.jsonPrimitive?.content?.trim()
+                    if (name.isNullOrBlank()) null
+                    else when (relType) {
+                        "author" -> ScrapedCreator(name, "author")
+                        "artist" -> ScrapedCreator(name, "illustrator")
+                        else -> null
+                    }
+                }.distinctBy { "${it.name.lowercase()}::${it.role}" }
 
                 val coverFileName = relationships.firstOrNull {
                     it.jsonObject["type"]?.jsonPrimitive?.content == "cover_art"
@@ -334,8 +399,9 @@ object MediaUrlImporter {
 
                 ScrapedMediaDraft(
                     title = title,
+                    alternativeTitles = altTitles,
                     type = MediaType.COMIC,
-                    authorName = authorName,
+                    creators = creators,
                     platformHint = "MangaDex",
                     publishingStatus = pubStatus,
                     unitName = "Chapter",
@@ -368,6 +434,11 @@ object MediaUrlImporter {
                 val root = json.parseToJsonElement(responseText).jsonObject
 
                 val title = decodeHtmlEntities(root["title"]?.jsonPrimitive?.content.orEmpty())
+                val altTitles = root["associated"]?.jsonArray.orEmpty()
+                    .mapNotNull { it.jsonObject["title"]?.jsonPrimitive?.content?.let(::decodeHtmlEntities)?.trim() }
+                    .filter { it.isNotBlank() && !it.equals(title, ignoreCase = true) }
+                    .distinctBy { it.lowercase() }
+
                 val coverUrl = root["image"]?.jsonObject?.get("url")?.jsonObject
                     ?.get("original")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() && it != "null" }
 
@@ -380,16 +451,24 @@ object MediaUrlImporter {
                     else -> "releasing"
                 }
 
-                val authorName = root["authors"]?.jsonArray?.firstOrNull()
-                    ?.jsonObject?.get("name")?.jsonPrimitive?.content
+                val creators = root["authors"]?.jsonArray.orEmpty().mapNotNull { item ->
+                    val name = item.jsonObject["name"]?.jsonPrimitive?.content?.trim()
+                    val roleType = item.jsonObject["type"]?.jsonPrimitive?.content.orEmpty().lowercase()
+                    if (name.isNullOrBlank()) null
+                    else ScrapedCreator(
+                        name = name,
+                        role = if (roleType.contains("artist") || roleType.contains("illustrat")) "illustrator" else "author"
+                    )
+                }.distinctBy { "${it.name.lowercase()}::${it.role}" }
 
                 val typeRaw = root["type"]?.jsonPrimitive?.content.orEmpty().lowercase()
                 val mediaType = if (typeRaw.contains("novel")) MediaType.NOVEL else MediaType.COMIC
 
                 ScrapedMediaDraft(
                     title = title,
+                    alternativeTitles = altTitles,
                     type = mediaType,
-                    authorName = authorName,
+                    creators = creators,
                     platformHint = "MangaUpdates",
                     publishingStatus = pubStatus,
                     unitName = "Chapter",
@@ -408,8 +487,67 @@ object MediaUrlImporter {
         return scrapeGeneric(context, url, "mangaupdates.com")
     }
 
+    // 5. Royal Road HTML Parser
+    private suspend fun scrapeRoyalRoad(context: Context, url: String): ScrapedMediaDraft {
+        val html = fetchHtmlWithFallback(context, url)
+        val generic = extractOpenGraph(html, url)
+
+        val rawTitle = generic.title
+            .substringBefore(" | Royal Road")
+            .trim()
+            .ifBlank { extractTitleFromSlug(url) }
+
+        val author = Regex("""Author card for ([^<]+)</div>""", RegexOption.IGNORE_CASE)
+            .find(html)?.groupValues?.getOrNull(1)?.trim()
+            ?: Regex("""<a[^>]*href="/profile/\d+"[^>]*>\s*<h4[^>]*>([^<]+)</h4>""", RegexOption.IGNORE_CASE)
+                .find(html)?.groupValues?.getOrNull(1)?.trim()
+            ?: Regex("""<meta[^>]+name=["']author["'][^>]+content=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+                .find(html)?.groupValues?.getOrNull(1)?.trim()
+            ?: Regex(""""author"\s*:\s*\{[^}]*"name"\s*:\s*"([^"]+)"""", RegexOption.IGNORE_CASE)
+                .find(html)?.groupValues?.getOrNull(1)?.trim()
+
+        val status = when {
+            html.contains(">COMPLETED<", ignoreCase = true) -> "completed"
+            html.contains(">HIATUS<", ignoreCase = true) -> "hiatus"
+            html.contains(">STUB<", ignoreCase = true) || html.contains(">DROPPED<", ignoreCase = true) -> "discontinued"
+            else -> "releasing"
+        }
+
+        val creators = listOfNotNull(
+            author?.let { decodeHtmlEntities(it).trim() }?.takeIf { it.isNotBlank() }?.let { ScrapedCreator(it, "author") }
+        )
+
+        val draft = ScrapedMediaDraft(
+            title = rawTitle,
+            type = MediaType.NOVEL,
+            creators = creators,
+            platformHint = "Royal Road",
+            publishingStatus = status,
+            unitName = "Chapter",
+            coverUrl = generic.coverUrl,
+            sourceUrl = url
+        )
+        Log.d(TAG, "Scraped Royal Road draft: $draft")
+        return draft
+    }
+
+    // 6. Generic Fallback for Any Other Site
+    private suspend fun scrapeGeneric(context: Context, url: String, host: String): ScrapedMediaDraft {
+        val html = fetchHtmlWithFallback(context, url)
+        val generic = extractOpenGraph(html, url)
+        val title = generic.title.ifBlank { extractTitleFromSlug(url) }
+
+        return ScrapedMediaDraft(
+            title = title,
+            type = MediaType.NOVEL,
+            platformHint = host.removePrefix("www.").substringBefore(".").replaceFirstChar { it.uppercase() },
+            coverUrl = generic.coverUrl,
+            sourceUrl = url
+        )
+    }
+
     private suspend fun httpGetJson(url: String): String = withContext(Dispatchers.IO) {
-        val conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 6_000
             readTimeout = 6_000
@@ -427,22 +565,6 @@ object MediaUrlImporter {
         }
     }
 
-    // 4. Generic Fallback for Any Other Site
-    private suspend fun scrapeGeneric(context: Context, url: String, host: String): ScrapedMediaDraft {
-        val html = fetchHtmlWithFallback(context, url)
-        val generic = extractOpenGraph(html, url)
-        val title = generic.title.ifBlank { extractTitleFromSlug(url) }
-
-        return ScrapedMediaDraft(
-            title = title,
-            type = MediaType.NOVEL,
-            platformHint = host.removePrefix("www.").substringBefore(".").replaceFirstChar { it.uppercase() },
-            coverUrl = generic.coverUrl,
-            sourceUrl = url
-        )
-    }
-
-    // Tries fast Ktor HTTP first; automatically falls back to hidden WebView if Cloudflare blocks it
     private suspend fun fetchHtmlWithFallback(context: Context, url: String): String {
         val fastHtml = runCatching { fetchHtmlFast(url) }.getOrDefault("")
         if (fastHtml.isNotBlank()) return fastHtml
