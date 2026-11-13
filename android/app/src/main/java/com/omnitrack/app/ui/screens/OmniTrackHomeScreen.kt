@@ -385,9 +385,13 @@ fun OmniTrackHomeScreen(
     selectedEntryForDetail?.let { entry ->
         MediaDetailSheet(
             entry = entry,
-            relatedEntries = mediaEntries
-                .filter { it.seriesId == entry.seriesId && it.id != entry.id }
-                .sortedBy { it.sequenceNumber },
+            relatedEntries = if (!entry.seriesId.isNullOrBlank()) {
+                mediaEntries
+                    .filter { it.seriesId == entry.seriesId && it.id != entry.id }
+                    .sortedBy { it.sequenceNumber }
+            } else {
+                emptyList()
+            },
             onDismiss = { selectedEntryForDetail = null },
             onUpdateProgress = { newProgress -> viewModel.updateProgress(entry.id, newProgress) },
             onSelectEntry = { selectedEntryForDetail = it },
