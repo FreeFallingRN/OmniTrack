@@ -79,8 +79,6 @@ data class MediaEntryEditorData(
 
 data class NewSeriesData(
     val title: String,
-    val userStatus: String,
-    val publishingStatus: String
 )
 
 data class NewAuthorData(
@@ -137,8 +135,6 @@ fun MediaEntryEditorSheet(
     var createSeries by remember { mutableStateOf(false) }
     var createAuthor by remember { mutableStateOf(false) }
     var newSeriesTitle by remember { mutableStateOf("") }
-    var newSeriesStatus by remember { mutableStateOf("planning") }
-    var newSeriesPublishingStatus by remember { mutableStateOf("releasing") }
     var newAuthorName by remember { mutableStateOf("") }
     var createPlatform by remember { mutableStateOf(false) }
     var newPlatformName by remember { mutableStateOf("") }
@@ -204,21 +200,6 @@ fun MediaEntryEditorSheet(
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
-                }
-                item {
-                    Selector("Series status", newSeriesStatus, UserStatus.entries, { it.label }) {
-                        newSeriesStatus = it.value
-                    }
-                }
-                item {
-                    Selector(
-                        "Series publishing status",
-                        newSeriesPublishingStatus,
-                        PublishingStatus.values,
-                        { it.toDisplayLabel() }
-                    ) {
-                        newSeriesPublishingStatus = it
-                    }
                 }
             }
             item {
@@ -426,8 +407,6 @@ fun MediaEntryEditorSheet(
                                     newSeries = if (createSeries) {
                                         NewSeriesData(
                                             title = newSeriesTitle,
-                                            userStatus = newSeriesStatus,
-                                            publishingStatus = newSeriesPublishingStatus
                                         )
                                     } else null,
                                     authorId = selectedAuthor,
