@@ -354,11 +354,13 @@ fun MediaEntryEditorSheet(
                                 InputChip(
                                     selected = false,
                                     onClick = { altTitles = altTitles.filterNot { it == alt } },
-                                    label = { Text(alt) },
+                                    modifier = Modifier.height(36.dp),
+                                    label = { Text(alt, style = MaterialTheme.typography.bodySmall) },
                                     trailingIcon = {
                                         Icon(
                                             Icons.Default.Clear,
-                                            contentDescription = "Remove $alt"
+                                            contentDescription = "Remove $alt",
+                                            modifier = Modifier.height(18.dp)
                                         )
                                     }
                                 )
@@ -406,7 +408,7 @@ fun MediaEntryEditorSheet(
             }
             creatorRows.forEachIndexed { index, row ->
                 item(key = "creator_row_$index") {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -460,6 +462,7 @@ fun MediaEntryEditorSheet(
                             label = "Role",
                             selected = row.role,
                             options = CreatorRole.values.map { it to it.toDisplayLabel() },
+                            compact = true,
                             onSelected = { newRole ->
                                 creatorRows = creatorRows.toMutableList().also {
                                     it[index] = row.copy(role = newRole)
@@ -753,7 +756,9 @@ fun MediaEntryEditorSheet(
                                     unitName = unitName,
                                     sourceUrl = sourceUrl.ifBlank { null },
                                     coverUrl = coverUrl.ifBlank { null },
-                                    isCanon = isCanon
+                                    isCanon = isCanon,
+                                    mergeIntoEntryId = mergeTargetEntry?.id,
+                                    linkExistingEntryToSeriesId = groupWithEntry?.id
                                 )
                             )
                         }
@@ -799,6 +804,7 @@ private fun StatusButtonGroup(
     label: String,
     selected: String,
     options: List<Pair<String, String>>,
+    compact: Boolean = false,
     onSelected: (String) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -811,7 +817,14 @@ private fun StatusButtonGroup(
                 FilterChip(
                     selected = selected == value,
                     onClick = { onSelected(value) },
-                    label = { Text(text) }
+                    modifier = if (compact) Modifier.height(36.dp) else Modifier,
+                    label = {
+                        if (compact) {
+                            Text(text, style = MaterialTheme.typography.bodySmall)
+                        } else {
+                            Text(text)
+                        }
+                    }
                 )
             }
         }

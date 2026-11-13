@@ -633,7 +633,7 @@ fun OmniTrackHomeScreen(
                                 }
                             }
 
-                            // 2. Create a new entry OR update the edited / merged entry
+                            // 2. Determine target ID for create vs merge/edit
                             val targetUpdateId = editorEntry?.id ?: form.mergeIntoEntryId
                             if (targetUpdateId == null) {
                                 val created = SupabaseService.createEntry(
@@ -659,6 +659,7 @@ fun OmniTrackHomeScreen(
                                     titles = form.alternativeTitles
                                 )
                             } else {
+                                // Update the existing entry or merged target with all new fields & creators
                                 SupabaseService.updateEntry(
                                     id = targetUpdateId,
                                     title = form.title,
