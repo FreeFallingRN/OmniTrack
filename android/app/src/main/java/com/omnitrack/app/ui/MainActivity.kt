@@ -1,5 +1,6 @@
 package com.omnitrack.app.ui
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -35,10 +36,13 @@ import androidx.compose.runtime.remember
 class MainActivity : ComponentActivity() {
 
     var availableUpdate by mutableStateOf<Triple<String, String, String>?>(null)
+    var pendingSharedUrl by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        pendingSharedUrl = extractSharedUrl(intent)
 
         // 1. Initialize Ktor HTTP Client with Content Negotiation
         val httpClient = HttpClient(Android) {
@@ -81,8 +85,6 @@ class MainActivity : ComponentActivity() {
             try {
                 val pInfo = packageManager.getPackageInfo(packageName, 0)
                 val currentVersion = pInfo.versionName ?: "1.0.0"
-
-                // Pass current version to checkForUpdate
                 availableUpdate = UpdateChecker.checkForUpdate(currentVersion)
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -96,7 +98,9 @@ class MainActivity : ComponentActivity() {
                 var isDownloadingUpdate by remember { mutableStateOf(false) }
 
                 OmniTrackHomeScreen(
-                    viewModel = seriesViewModel
+                    viewModel = seriesViewModel,
+                    initialSharedUrl = pendingSharedUrl,
+                    onSharedUrlConsumed = { pendingSharedUrl = null }
                 )
 
                 // Render Update Available dialog if a newer GitHub release is detected
@@ -112,9 +116,7 @@ class MainActivity : ComponentActivity() {
                                 TextButton(onClick = {
                                     isDownloadingUpdate = true
                                     coroutineScope.launch {
-                                        val success = UpdateChecker.downloadAndInstallApk(this@MainActivity, downloadUrl) { progress ->
-                                            // Optional: track progress if you want a progress bar in the dialog
-                                        }
+                                        val success = UpdateChecker.downloadAndInstallApk(this@MainActivity, downloadUrl) { progress -> }
                                         isDownloadingUpdate = false
                                         if (success) {
                                             availableUpdate = null
@@ -138,4 +140,18 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pendingSharedUrl = extractSharedUrl(intent)
+    }
+
+    private fun extractSharedUrl(intent: Intent?): String? {
+        if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
+            return intent.getStringExtra(Intent.EXTRA_TEXT)?.let { text ->
+                Regex("""https?://[^\s]+""").find(text)?.value ?: text.trim()
+            }
+        }
+        return null
+    }
 }

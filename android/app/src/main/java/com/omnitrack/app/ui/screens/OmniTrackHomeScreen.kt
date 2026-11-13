@@ -67,7 +67,9 @@ import com.omnitrack.app.data.model.CreateEntryRequest
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OmniTrackHomeScreen(
-    viewModel: SeriesViewModel
+    viewModel: SeriesViewModel,
+    initialSharedUrl: String? = null,
+    onSharedUrlConsumed: (() -> Unit)? = null
 ) {
     val mediaEntries by viewModel.mediaEntries.collectAsState()
 
@@ -94,6 +96,23 @@ fun OmniTrackHomeScreen(
     LaunchedEffect(bottomNavIndex) {
         sortOption = LibrarySortOption.fromKey(prefs.getString("sort_option", "last_updated"))
         if (bottomNavIndex != 0) fabExpanded = false
+    }
+
+    LaunchedEffect(initialSharedUrl) {
+        if (!initialSharedUrl.isNullOrBlank()) {
+            onSharedUrlConsumed?.invoke()
+
+            refreshScope.launch {
+                try {
+                    val draft = MediaUrlImporter.importFromUrl(context, initialSharedUrl)
+                    scrapedPrefill = draft
+                    editorEntry = null
+                    showEntryEditor = true
+                } catch (e: Exception) {
+                    android.widget.Toast.makeText(context, "Import failed: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     Scaffold(
