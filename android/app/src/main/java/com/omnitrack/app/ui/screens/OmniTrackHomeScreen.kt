@@ -271,7 +271,7 @@ fun OmniTrackHomeScreen(
                     listOf(
                         Triple(Icons.Default.LocalLibrary, "Library", 0),
                         Triple(Icons.Default.AccountTree, "Manage library", 1),
-                        Triple(Icons.Default.DateRange, "History", 2),
+                        Triple(Icons.Default.DateRange, "Stats", 2),
                         Triple(Icons.Default.Settings, "Settings", 3)
                     ).forEach { (icon, label, index) ->
                         Box(
@@ -463,10 +463,10 @@ fun OmniTrackHomeScreen(
                     )
                 }
                 2 -> {
-                    // 2: History View
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("History Screen", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    HistoryStatsScreen(
+                        viewModel = viewModel,
+                        onSelectEntry = { selectedEntryForDetail = it }
+                    )
                 }
                 3 -> {
                     // 3: Settings View

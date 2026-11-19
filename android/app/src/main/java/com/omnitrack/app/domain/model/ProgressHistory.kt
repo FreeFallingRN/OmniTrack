@@ -15,6 +15,13 @@ enum class ProgressSource(val value: String) {
     }
 }
 
+enum class HistoryTimeframe(val label: String) {
+    DAYS_7("7D"),
+    DAYS_30("30D"),
+    YEAR("Year"),
+    ALL_TIME("All Time")
+}
+
 data class ProgressHistoryItem(
     val entryId: String,
     val activityDate: String,

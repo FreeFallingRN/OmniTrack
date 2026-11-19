@@ -112,9 +112,10 @@ class SeriesRepositoryImpl(
             }
 
             var prevUnitForHistory = current?.currentUnit ?: nextUnit
+            val hasNetProgress = (nextUnit - prevUnitForHistory) > 0.0001
 
-            // Only log daily consumption progress_history for active reading/watching sessions
-            if (source.isActiveConsumption) {
+            // Only log daily consumption progress_history for active reading/watching sessions with positive progress
+            if (source.isActiveConsumption && hasNetProgress) {
                 // Preserve the original previous_unit of the day if a record for today already exists
                 val existingTodayHistory = progressHistoryDao.getEntryHistoryForDate(id, today)
                 prevUnitForHistory = existingTodayHistory?.previousUnit
@@ -142,7 +143,8 @@ class SeriesRepositoryImpl(
                 currentUnit = newUnit,
                 updatedStatus = statusToWrite
             )
-            if (source.isActiveConsumption) {
+            val hasNetProgress = (newUnit - previousUnitToLog) > 0.0001
+            if (source.isActiveConsumption && hasNetProgress) {
                 supabaseService.logProgress(
                     entryId = id,
                     activityDate = today,
@@ -199,7 +201,9 @@ class SeriesRepositoryImpl(
 
     override fun getRecentActivityFeed(): Flow<List<ProgressHistoryItem>> {
         return progressHistoryDao.getRecentActivityFeed().map { rows ->
-            rows.map { row ->
+            rows.mapNotNull { row ->
+                val delta = (row.newUnit - row.previousUnit).coerceAtLeast(0.0)
+                if (delta <= 0.0001) return@mapNotNull null
                 ProgressHistoryItem(
                     entryId = row.entryId,
                     activityDate = row.activityDate,

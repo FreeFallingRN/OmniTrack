@@ -22,5 +22,6 @@ data class MediaEntryEntity(
     val platform: String?,
     val currentUnit: Double,
     val unitName: String,
+    val createdAt: String = "",
     val updatedAt: String,
 )
