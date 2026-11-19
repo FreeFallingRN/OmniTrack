@@ -11,6 +11,7 @@ import com.omnitrack.app.utils.scraper.adapters.AniListAdapter
 import com.omnitrack.app.utils.scraper.adapters.GenericFallbackAdapter
 import com.omnitrack.app.utils.scraper.adapters.MangaDexAdapter
 import com.omnitrack.app.utils.scraper.adapters.MyAnimeListAdapter
+import com.omnitrack.app.utils.scraper.adapters.NovelpiaAdapter
 import com.omnitrack.app.utils.scraper.adapters.RoyalRoadAdapter
 import com.omnitrack.app.utils.scraper.adapters.WebnovelAdapter
 import io.ktor.client.HttpClient
@@ -54,7 +55,8 @@ object ExternalMediaScraper {
         MangaDexAdapter,
         RoyalRoadAdapter,
         AmazonAdapter,
-        WebnovelAdapter
+        WebnovelAdapter,
+        NovelpiaAdapter
     )
 
     private class ScrapeTrace(
