@@ -63,38 +63,86 @@ object AmazonAdapter : MediaSourceAdapter {
     private fun cleanAmazonPageTitle(raw: String): String {
         return raw
             .replace(Regex("""^Amazon\.[a-z.]+\s*:\s*""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""\s*:\s*[^:]+:\s*Amazon\.[a-z.]+\s*:\s*(?:Kindle Store|Audible\.com|Books)\s*$""", RegexOption.IGNORE_CASE), "")
             .replace(Regex("""\s*:\s*[^:]+:\s*(?:Kindle Store|Audible\.com|Books)\s*$""", RegexOption.IGNORE_CASE), "")
             .replace(Regex("""\s*:\s*(?:Kindle Store|Audible\.com|Books)\s*$""", RegexOption.IGNORE_CASE), "")
+            // Strip trailing " : Author1, Author2..." suffix from Amazon titles/og:title
+            .replace(Regex("""\s+:\s+[^:]+$"""), "")
             .replace(Regex("""\s*[-–|]\s*Amazon\.[a-z.]+\s*$""", RegexOption.IGNORE_CASE), "")
-            .replace(Regex("""\s*\((?:Kindle Edition|eBook|Paperback|Hardcover|Audiobook)\)\s*$""", RegexOption.IGNORE_CASE), "")
-            .replace(Regex("""\s+eBook$""", RegexOption.IGNORE_CASE), "")
+            // Strip format/edition tags like "(English Edition)", "(Kindle Edition)", "eBook", etc.
+            .replace(Regex("""\s*\((?:[^()]*(?:Edition|Kindle|eBook|Paperback|Hardcover|Audiobook|Large Print|Box Set|Omnibus)[^()]*)\)\s*""", RegexOption.IGNORE_CASE), " ")
+            .replace(Regex("""\s*\b(?:Kindle Edition|eBook|Paperback|Hardcover|Audiobook)\b\s*$""", RegexOption.IGNORE_CASE), "")
+            // Strip trailing series/book parentheticals like "(Demon Princess Magical Chaos Book 1)" or "(Series #1)"
+            .replace(Regex("""\s*\([^()]*(?:\bBook\s+\d+|\bVol\.?\s*\d+|\bVolume\s+\d+|#\s*\d+)[^()]*\)\s*$""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""\s{2,}"""), " ")
             .trim()
     }
 
     private fun extractCreatorsFromPageTitle(rawTitle: String): List<ScrapedCreator> {
         val withoutPrefix = rawTitle.replace(Regex("""^Amazon\.[a-z.]+\s*:\s*""", RegexOption.IGNORE_CASE), "")
-        val match = Regex("""\s*:\s*([^:]+?)\s*:\s*(?:Kindle Store|Audible\.com|Books)\s*$""", RegexOption.IGNORE_CASE)
-            .find(withoutPrefix)
+        val match = Regex(
+            """\s*:\s*([^:]+?)(?:\s*:\s*Amazon\.[a-z.]+)?\s*:\s*(?:Kindle Store|Audible\.com|Books)\s*$""",
+            RegexOption.IGNORE_CASE
+        ).find(withoutPrefix)
             ?: return emptyList()
 
         val creatorBlob = match.groupValues.getOrNull(1)?.trim().orEmpty()
         if (creatorBlob.isBlank()) return emptyList()
 
-        // Handles "Last, First, Last2, First2" or "First Last, First2 Last2"
-        val commaParts = creatorBlob.split(",").map { it.trim() }.filter { it.isNotBlank() }
-        val names = if (commaParts.size >= 2 && commaParts.size % 2 == 0 && !creatorBlob.contains(" and ", ignoreCase = true)) {
-            commaParts.chunked(2).map { (last, first) -> "$first $last".trim() }
-        } else {
-            creatorBlob.split(Regex("""\s+and\s+|,\s*""", RegexOption.IGNORE_CASE))
-                .map { it.trim() }
-                .filter { it.isNotBlank() }
+        val rawSegments = creatorBlob
+            .split(Regex("""\s+and\s+|,\s*""", RegexOption.IGNORE_CASE))
+            .map { it.trim() }
+            .filter { it.isNotBlank() && !isNonAuthorLabel(it) }
+
+        val initialsOrSuffixPattern = Regex(
+            """^(?:[A-Z]\.){1,4}(?:\s+[A-Z]\.?)*$|^(?:Jr\.?|Sr\.?|II|III|IV)$""",
+            RegexOption.IGNORE_CASE
+        )
+
+        val mergedNames = mutableListOf<String>()
+        for (segment in rawSegments) {
+            if (initialsOrSuffixPattern.matches(segment) && mergedNames.isNotEmpty()) {
+                val last = mergedNames.removeAt(mergedNames.lastIndex)
+                mergedNames.add("$segment $last".trim())
+            } else {
+                mergedNames.add(segment)
+            }
         }
 
-        return names.distinct().map { ScrapedCreator(it, "author") }
+        return mergedNames
+            .distinctBy { it.lowercase() }
+            .map { ScrapedCreator(it, "author") }
     }
 
     private fun extractAmazonCreators(html: String): List<ScrapedCreator> {
-        val contributorMatches = Regex(
+        val bylineBlock = Regex(
+            """id=["']bylineInfo["'][^>]*>([\s\S]*?)</div\s*>""",
+            RegexOption.IGNORE_CASE
+        ).find(html)?.groupValues?.getOrNull(1)
+
+        if (!bylineBlock.isNullOrBlank()) {
+            val entries = Regex(
+                """<(?:a|span)[^>]*class=["'][^"']*\b(?:contributorNameID|a-link-normal)\b[^"']*["'][^>]*>([^<]+)</(?:a|span)>([\s\S]{0,120})?""",
+                RegexOption.IGNORE_CASE
+            ).findAll(bylineBlock)
+                .mapNotNull { m ->
+                    val name = m.groupValues.getOrNull(1)
+                        ?.let(HtmlMetadataParser::decodeHtmlEntities)
+                        ?.trim()
+                        ?.takeUnless(::isNonAuthorLabel)
+                        ?: return@mapNotNull null
+
+                    val trailingContext = m.groupValues.getOrNull(2).orEmpty()
+                    val role = mapAmazonRole(trailingContext)
+                    ScrapedCreator(name, role)
+                }
+                .distinctBy { "${it.name.lowercase()}|${it.role.lowercase()}" }
+                .toList()
+
+            if (entries.isNotEmpty()) return entries
+        }
+
+        return Regex(
             """<(?:a|span)[^>]*(?:contributorNameID|a-size-medium)[^>]*>([^<]+)</(?:a|span)>""",
             RegexOption.IGNORE_CASE
         ).findAll(html)
@@ -103,31 +151,19 @@ object AmazonAdapter : MediaSourceAdapter {
                     ?.let(HtmlMetadataParser::decodeHtmlEntities)
                     ?.trim()
                     ?.takeUnless(::isNonAuthorLabel)
+                    ?.let { ScrapedCreator(it, "author") }
             }
-            .distinct()
-            .map { ScrapedCreator(it, "author") }
+            .distinctBy { "${it.name.lowercase()}|${it.role.lowercase()}" }
             .toList()
+    }
 
-        if (contributorMatches.isNotEmpty()) return contributorMatches
-
-        val bylineBlock = Regex(
-            """id=["']bylineInfo["'][^>]*>([\s\S]*?)</div\s*>""",
-            RegexOption.IGNORE_CASE
-        ).find(html)?.groupValues?.getOrNull(1).orEmpty()
-
-        if (bylineBlock.isBlank()) return emptyList()
-
-        return Regex("""<a[^>]*>([^<]+)</a>""", RegexOption.IGNORE_CASE)
-            .findAll(bylineBlock)
-            .mapNotNull { m ->
-                m.groupValues.getOrNull(1)
-                    ?.let(HtmlMetadataParser::decodeHtmlEntities)
-                    ?.trim()
-                    ?.takeUnless(::isNonAuthorLabel)
-            }
-            .distinct()
-            .map { ScrapedCreator(it, "author") }
-            .toList()
+    private fun mapAmazonRole(context: String): String {
+        val decoded = HtmlMetadataParser.decodeHtmlEntities(context)
+        return when {
+            Regex("""\b(?:illustrator|illus\.?|artist)\b""", RegexOption.IGNORE_CASE).containsMatchIn(decoded) -> "illustrator"
+            Regex("""\b(?:translator|trans\.?)\b""", RegexOption.IGNORE_CASE).containsMatchIn(decoded) -> "translator"
+            else -> "author"
+        }
     }
 
     private fun asinFromUrl(sourceUrl: String): String? =
