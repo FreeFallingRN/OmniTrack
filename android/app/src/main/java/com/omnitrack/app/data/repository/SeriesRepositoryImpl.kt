@@ -7,6 +7,7 @@ import com.omnitrack.app.data.local.MediaEntryEntity
 import com.omnitrack.app.data.local.ProgressHistoryDao
 import com.omnitrack.app.data.local.ProgressHistoryEntity
 import com.omnitrack.app.domain.model.*
+import com.omnitrack.app.domain.model.ProgressSource
 import com.omnitrack.app.domain.repository.SeriesRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -95,7 +96,7 @@ class SeriesRepositoryImpl(
     private suspend fun recordProgressInternal(
         id: String,
         computeTarget: (current: MediaEntryEntity?) -> Pair<Double, String?>,
-        source: String = "android_app"
+        source: ProgressSource
     ) {
         val today = LocalDate.now().toString()
 
@@ -110,21 +111,26 @@ class SeriesRepositoryImpl(
                 mediaEntryDao.updateProgress(id, nextUnit)
             }
 
-            // Preserve the original previous_unit of the day if a record for today already exists
-            val existingTodayHistory = progressHistoryDao.getEntryHistoryForDate(id, today)
-            val prevUnitForHistory = existingTodayHistory?.previousUnit
-                ?: (current?.currentUnit ?: nextUnit)
+            var prevUnitForHistory = current?.currentUnit ?: nextUnit
 
-            // Update local Room ProgressHistory
-            progressHistoryDao.upsert(
-                ProgressHistoryEntity(
-                    entryId = id,
-                    activityDate = today,
-                    previousUnit = prevUnitForHistory,
-                    newUnit = nextUnit,
-                    source = source
+            // Only log daily consumption progress_history for active reading/watching sessions
+            if (source.isActiveConsumption) {
+                // Preserve the original previous_unit of the day if a record for today already exists
+                val existingTodayHistory = progressHistoryDao.getEntryHistoryForDate(id, today)
+                prevUnitForHistory = existingTodayHistory?.previousUnit
+                    ?: (current?.currentUnit ?: nextUnit)
+
+                // Update local Room ProgressHistory
+                progressHistoryDao.upsert(
+                    ProgressHistoryEntity(
+                        entryId = id,
+                        activityDate = today,
+                        previousUnit = prevUnitForHistory,
+                        newUnit = nextUnit,
+                        source = source.value
+                    )
                 )
-            )
+            }
 
             Triple(nextUnit, targetStatus, prevUnitForHistory)
         }
@@ -136,26 +142,37 @@ class SeriesRepositoryImpl(
                 currentUnit = newUnit,
                 updatedStatus = statusToWrite
             )
-            supabaseService.logProgress(
-                entryId = id,
-                activityDate = today,
-                prevUnit = previousUnitToLog,
-                newUnit = newUnit,
-                source = source
-            )
+            if (source.isActiveConsumption) {
+                supabaseService.logProgress(
+                    entryId = id,
+                    activityDate = today,
+                    prevUnit = previousUnitToLog,
+                    newUnit = newUnit,
+                    source = source.value
+                )
+            }
         } catch (e: Exception) {
-            Log.e("SeriesRepository", "Failed to sync progress and history to Supabase", e)
+            Log.e("SeriesRepository", "Failed to sync progress to Supabase", e)
         }
     }
 
-    override suspend fun updateProgress(id: String, newProgress: Double) {
+    override suspend fun updateProgress(
+        id: String,
+        newProgress: Double,
+        source: ProgressSource
+    ) {
         recordProgressInternal(
             id = id,
-            computeTarget = { current -> Pair(newProgress, current?.userStatus) }
+            computeTarget = { current -> Pair(newProgress, current?.userStatus) },
+            source = source
         )
     }
 
-    override suspend fun incrementProgress(id: String, delta: Double) {
+    override suspend fun incrementProgress(
+        id: String,
+        delta: Double,
+        source: ProgressSource
+    ) {
         recordProgressInternal(
             id = id,
             computeTarget = { current ->
@@ -165,7 +182,8 @@ class SeriesRepositoryImpl(
                         (current?.userStatus == "paused" || current?.userStatus == "planning")
                 val statusToWrite = if (shouldAutoResume) "in_progress" else current?.userStatus
                 Pair(next, statusToWrite)
-            }
+            },
+            source = source
         )
     }
 
@@ -199,12 +217,15 @@ class SeriesRepositoryImpl(
 
     override fun getProgressStats(): Flow<OverallProgressStats> {
         return getRecentActivityFeed().map { history ->
+            // Filter strictly to active reading/watching progress
+            val activeHistory = history.filter { ProgressSource.fromValue(it.source).isActiveConsumption }
+
             var totalUnits = 0.0
             val activeDates = mutableSetOf<String>()
             val typeDeltaMap = mutableMapOf<MediaType, Double>()
             val typeEntryCountMap = mutableMapOf<MediaType, MutableSet<String>>()
 
-            for (item in history) {
+            for (item in activeHistory) {
                 val delta = item.delta
                 totalUnits += delta
                 activeDates.add(item.activityDate)
@@ -256,6 +277,7 @@ class SeriesRepositoryImpl(
         val rows = progressHistoryDao.getActivityFeedSince(startDate)
 
         return rows
+            .filter { ProgressSource.fromValue(it.source).isActiveConsumption }
             .groupBy { it.activityDate }
             .map { (date, items) ->
                 DailyProgressStats(

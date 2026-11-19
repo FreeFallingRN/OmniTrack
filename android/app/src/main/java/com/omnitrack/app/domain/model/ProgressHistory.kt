@@ -1,11 +1,26 @@
 package com.omnitrack.app.domain.model
 
+enum class ProgressSource(val value: String) {
+    DETAIL_SHEET("detail_sheet"),
+    INCREMENT("increment"),
+    EDITOR("editor"),
+    IMPORT("import");
+
+    val isActiveConsumption: Boolean
+        get() = this == DETAIL_SHEET || this == INCREMENT
+
+    companion object {
+        fun fromValue(value: String): ProgressSource =
+            entries.find { it.value.equals(value, ignoreCase = true) } ?: INCREMENT
+    }
+}
+
 data class ProgressHistoryItem(
     val entryId: String,
     val activityDate: String,
     val previousUnit: Double,
     val newUnit: Double,
-    val source: String = "android_app",
+    val source: String = ProgressSource.INCREMENT.value,
     val entryTitle: String = "",
     val mediaType: MediaType = MediaType.NOVEL,
     val unitName: String = "Chapter",

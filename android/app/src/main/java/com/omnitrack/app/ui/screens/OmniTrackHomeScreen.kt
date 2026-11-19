@@ -38,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.model.MediaEntry
+import com.omnitrack.app.domain.model.ProgressSource
 import com.omnitrack.app.domain.model.UserStatus
 import com.omnitrack.app.data.SupabaseService
 import com.omnitrack.app.data.model.CreateSeriesRequest
@@ -488,8 +489,12 @@ fun OmniTrackHomeScreen(
                 emptyList()
             },
             onDismiss = { selectedEntryForDetail = null },
-            onUpdateProgress = { newProgress -> viewModel.updateProgress(entry.id, newProgress) },
-            onIncrementProgress = { delta -> viewModel.incrementUnitCount(entry.id, delta) },
+            onUpdateProgress = { newProgress ->
+                viewModel.updateProgress(entry.id, newProgress, ProgressSource.DETAIL_SHEET)
+            },
+            onIncrementProgress = { delta ->
+                viewModel.incrementUnitCount(entry.id, delta, ProgressSource.INCREMENT)
+            },
             onSelectEntry = { selectedEntryForDetail = it },
             onOpenRelatedEntity = {
                 selectedRelatedEntity = it
@@ -678,7 +683,7 @@ fun OmniTrackHomeScreen(
                                     titles = form.alternativeTitles
                                 )
                                 if (form.currentUnit > 0.0) {
-                                    viewModel.updateProgress(created.id, form.currentUnit)
+                                    viewModel.updateProgress(created.id, form.currentUnit, ProgressSource.IMPORT)
                                 }
                             } else {
                                 val existingMatch = mediaEntries.firstOrNull { it.id == targetUpdateId }
@@ -704,7 +709,7 @@ fun OmniTrackHomeScreen(
                                 )
 
                                 if (progressChanged) {
-                                    viewModel.updateProgress(targetUpdateId, form.currentUnit)
+                                    viewModel.updateProgress(targetUpdateId, form.currentUnit, ProgressSource.EDITOR)
                                 }
                             }
 

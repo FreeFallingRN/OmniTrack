@@ -6,6 +6,7 @@ import com.omnitrack.app.domain.model.DailyProgressStats
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.OverallProgressStats
 import com.omnitrack.app.domain.model.ProgressHistoryItem
+import com.omnitrack.app.domain.model.ProgressSource
 import com.omnitrack.app.domain.repository.SeriesRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -51,16 +52,24 @@ class SeriesViewModel(
         }
     }
 
-    fun updateProgress(id: String, newProgress: Double) {
+    fun updateProgress(
+        id: String,
+        newProgress: Double,
+        source: ProgressSource = ProgressSource.DETAIL_SHEET
+    ) {
         viewModelScope.launch {
-            repository.updateProgress(id, newProgress)
+            repository.updateProgress(id, newProgress, source)
         }
     }
 
-    fun incrementUnitCount(id: String, delta: Double = 1.0) {
+    fun incrementUnitCount(
+        id: String,
+        delta: Double = 1.0,
+        source: ProgressSource = ProgressSource.INCREMENT
+    ) {
         viewModelScope.launch {
             try {
-                repository.incrementProgress(id, delta)
+                repository.incrementProgress(id, delta, source)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
