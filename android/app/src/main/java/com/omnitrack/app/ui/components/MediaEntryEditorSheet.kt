@@ -65,6 +65,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.Surface
+import androidx.compose.ui.platform.LocalContext
 import com.omnitrack.app.domain.model.CreatorRole
 
 data class CreatorFormRow(
@@ -119,6 +120,7 @@ fun MediaEntryEditorSheet(
     var platforms by remember { mutableStateOf<List<PlatformDto>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var metadataLoaded by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -672,20 +674,18 @@ fun MediaEntryEditorSheet(
             item {
                 Button(
                     onClick = {
-                        scope.launch(Dispatchers.IO) {
+                        scope.launch {
                             try {
                                 findingCover = true
-                                val found = CoverLookup.findOpenGraphImage(sourceUrl)
-                                withContext(Dispatchers.Main) {
-                                    findingCover = false
-                                    if (found == null) error = "No cover image found."
-                                    else coverUrl = found
+                                val found = withContext(Dispatchers.IO) {
+                                    CoverLookup.findOpenGraphImage(sourceUrl, context)
                                 }
+                                findingCover = false
+                                if (found == null) error = "No cover image found."
+                                else coverUrl = found
                             } catch (e: Exception) {
-                                withContext(Dispatchers.Main) {
-                                    findingCover = false
-                                    error = e.message ?: "Could not find cover image"
-                                }
+                                findingCover = false
+                                error = e.message ?: "Could not find cover image"
                             }
                         }
                     },
