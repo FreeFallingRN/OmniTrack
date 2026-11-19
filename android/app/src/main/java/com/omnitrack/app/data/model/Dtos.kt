@@ -153,3 +153,15 @@ data class ProgressHistoryRequest(
     val source: String
 )
 
+@Serializable
+data class ProgressHistoryDto(
+    val id: Long? = null,
+    @SerialName("entry_id") val entryId: String,
+    @SerialName("activity_date") val activityDate: String,
+    @SerialName("previous_unit") val previousUnit: Double,
+    @SerialName("new_unit") val newUnit: Double,
+    val source: String = "android_app",
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null,
+)
+

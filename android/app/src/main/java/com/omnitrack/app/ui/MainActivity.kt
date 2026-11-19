@@ -40,7 +40,8 @@ class MainActivity : ComponentActivity() {
 
         val database = AppDatabase.getInstance(applicationContext)
         val repository: SeriesRepository = SeriesRepositoryImpl(
-            mediaEntryDao = database.mediaEntryDao()
+            mediaEntryDao = database.mediaEntryDao(),
+            progressHistoryDao = database.progressHistoryDao()
         )
 
         // 3. Trigger initial background sync from Supabase to local Room cache

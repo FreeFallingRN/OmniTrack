@@ -677,7 +677,13 @@ fun OmniTrackHomeScreen(
                                     seriesId = resolvedSeriesId,
                                     titles = form.alternativeTitles
                                 )
+                                if (form.currentUnit > 0.0) {
+                                    viewModel.updateProgress(created.id, form.currentUnit)
+                                }
                             } else {
+                                val existingMatch = mediaEntries.firstOrNull { it.id == targetUpdateId }
+                                val progressChanged = existingMatch != null && existingMatch.currentUnit != form.currentUnit
+
                                 // Update the existing entry or merged target with all new fields & creators
                                 SupabaseService.updateEntry(
                                     id = targetUpdateId,
@@ -696,6 +702,10 @@ fun OmniTrackHomeScreen(
                                     isCanon = form.isCanon,
                                     alternativeTitles = form.alternativeTitles
                                 )
+
+                                if (progressChanged) {
+                                    viewModel.updateProgress(targetUpdateId, form.currentUnit)
+                                }
                             }
 
                             showEntryEditor = false

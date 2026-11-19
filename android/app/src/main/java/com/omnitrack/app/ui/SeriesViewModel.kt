@@ -2,7 +2,10 @@ package com.omnitrack.app.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.omnitrack.app.domain.model.DailyProgressStats
 import com.omnitrack.app.domain.model.MediaEntry
+import com.omnitrack.app.domain.model.OverallProgressStats
+import com.omnitrack.app.domain.model.ProgressHistoryItem
 import com.omnitrack.app.domain.repository.SeriesRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -18,6 +21,20 @@ class SeriesViewModel(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
+        )
+
+    val recentActivity: StateFlow<List<ProgressHistoryItem>> = repository.getRecentActivityFeed()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    val progressStats: StateFlow<OverallProgressStats> = repository.getProgressStats()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = OverallProgressStats(0.0, 0, 0, emptyList())
         )
 
     init {
@@ -54,5 +71,9 @@ class SeriesViewModel(
         viewModelScope.launch {
             repository.deleteMediaEntry(id)
         }
+    }
+
+    suspend fun getDailyStats(days: Int = 30): List<DailyProgressStats> {
+        return repository.getDailyStats(days)
     }
 }

@@ -122,23 +122,29 @@ object SupabaseService {
         activityDate: String,
         prevUnit: Double,
         newUnit: Double,
-        source: String,
+        source: String = "android_app",
     ): Boolean {
-        val request = ProgressHistoryRequest(
-            entryId = entryId,
-            activityDate = activityDate,
-            previousUnit = prevUnit,
-            newUnit = newUnit,
-            source = source
-        )
+        val payload = buildJsonObject {
+            put("entry_id", entryId)
+            put("activity_date", activityDate)
+            put("previous_unit", prevUnit)
+            put("new_unit", newUnit)
+            put("source", source)
+        }
         val response = client.post(
             "$supabaseUrl/rest/v1/progress_history?on_conflict=entry_id,activity_date"
         ) {
             contentType(ContentType.Application.Json)
             header("Prefer", "resolution=merge-duplicates,return=minimal")
-            setBody(request)
+            setBody(payload)
         }
         return response.status.value in 200..299
+    }
+
+    suspend fun getAllProgressHistory(): List<ProgressHistoryDto> {
+        return client.get(
+            "$supabaseUrl/rest/v1/progress_history?select=*&order=activity_date.desc"
+        ).body()
     }
 
     suspend fun createSeries(request: CreateSeriesRequest): SeriesDto {
