@@ -502,11 +502,8 @@ fun OmniTrackHomeScreen(
                 showEntryEditor = true
             },
             onDelete = {
-                refreshScope.launch {
-                    SupabaseService.deleteEntry(entry.id)
-                    selectedEntryForDetail = null
-                    viewModel.refreshData()
-                }
+                selectedEntryForDetail = null
+                viewModel.deleteMediaEntry(entry.id)
             }
         )
     }

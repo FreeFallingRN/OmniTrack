@@ -9,8 +9,14 @@ data class SeriesDto(
     val title: String,
     @SerialName("clean_title") val cleanTitle: String? = null,
     val rating: Int? = null,
-    @SerialName("created_at") val createdAt: String,
-    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("created_at") val createdAt: String = "",
+    @SerialName("updated_at") val updatedAt: String = "",
+)
+
+@Serializable
+data class SeriesTitleDto(
+    val id: String,
+    val title: String
 )
 
 @Serializable
@@ -21,16 +27,16 @@ data class MediaEntryDto(
     val type: String = "novel",
     @SerialName("sequence_number") val sequenceNumber: Double? = null,
     @SerialName("user_status") val userStatus: String,
-    @SerialName("publishing_status") val publishingStatus: String,
-    @SerialName("current_unit") val currentUnit: Double,
+    @SerialName("publishing_status") val publishingStatus: String = "releasing",
+    @SerialName("current_unit") val currentUnit: Double = 0.0,
     @SerialName("is_canon") val isCanon: Boolean = true,
-    @SerialName("unit_name") val unitName: String,
+    @SerialName("unit_name") val unitName: String = "Chapter",
     @SerialName("source_url") val sourceUrl: String? = null,
     @SerialName("platform_id") val platformId: String? = null,
     val platform: PlatformDto? = null,
     @SerialName("cover_url") val coverUrl: String? = null,
-    @SerialName("created_at") val createdAt: String,
-    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("created_at") val createdAt: String = "",
+    @SerialName("updated_at") val updatedAt: String = "",
 )
 
 @Serializable
@@ -72,10 +78,10 @@ data class CreateEntryRequest(
     val type: String,
     @SerialName("sequence_number") val sequenceNumber: Double? = null,
     @SerialName("user_status") val userStatus: String,
-    @SerialName("publishing_status") val publishingStatus: String,
+    @SerialName("publishing_status") val publishingStatus: String = "releasing",
     @SerialName("current_unit") val currentUnit: Double = 0.0,
     @SerialName("is_canon") val isCanon: Boolean = true,
-    @SerialName("unit_name") val unitName: String,
+    @SerialName("unit_name") val unitName: String = "Chapter",
     @SerialName("source_url") val sourceUrl: String? = null,
     @SerialName("platform_id") val platformId: String? = null,
     @SerialName("cover_url") val coverUrl: String? = null,
@@ -128,6 +134,17 @@ data class EntryAuthorDto(
 )
 
 @Serializable
+data class AlternateTitleDto(
+    @SerialName("id") val id: Long? = null,
+    @SerialName("series_id") val seriesId: String? = null,
+    @SerialName("entry_id") val entryId: String? = null,
+    @SerialName("title") val title: String,
+    @SerialName("clean_title") val cleanTitle: String? = null,
+    @SerialName("language") val language: String? = null,
+    @SerialName("is_primary") val isPrimary: Boolean = false
+)
+
+@Serializable
 data class ProgressHistoryRequest(
     @SerialName("entry_id") val entryId: String,
     @SerialName("activity_date") val activityDate: String,
@@ -135,3 +152,4 @@ data class ProgressHistoryRequest(
     @SerialName("new_unit") val newUnit: Double,
     val source: String
 )
+

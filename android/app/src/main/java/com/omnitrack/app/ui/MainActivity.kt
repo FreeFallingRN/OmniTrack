@@ -16,7 +16,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.omnitrack.app.BuildConfig
 import com.omnitrack.app.data.local.AppDatabase
 import com.omnitrack.app.data.repository.SeriesRepositoryImpl
 import com.omnitrack.app.domain.repository.SeriesRepository
@@ -24,12 +23,7 @@ import com.omnitrack.app.ui.screens.OmniTrackHomeScreen
 import com.omnitrack.app.ui.theme.OmniTrackTheme
 import com.omnitrack.app.utils.GitHubRelease
 import com.omnitrack.app.utils.UpdateChecker
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.android.Android
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.Json
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 
@@ -44,23 +38,9 @@ class MainActivity : ComponentActivity() {
 
         pendingSharedUrl = extractSharedUrl(intent)
 
-        // 1. Initialize Ktor HTTP Client with Content Negotiation
-        val httpClient = HttpClient(Android) {
-            install(ContentNegotiation) {
-                json(Json {
-                    ignoreUnknownKeys = true
-                    isLenient = true
-                })
-            }
-        }
-
-        // 2. Initialize Room Database & Series Repository
         val database = AppDatabase.getInstance(applicationContext)
         val repository: SeriesRepository = SeriesRepositoryImpl(
-            mediaEntryDao = database.mediaEntryDao(),
-            httpClient = httpClient,
-            supabaseUrl = BuildConfig.SUPABASE_URL,
-            supabaseKey = BuildConfig.SUPABASE_ANON_KEY
+            mediaEntryDao = database.mediaEntryDao()
         )
 
         // 3. Trigger initial background sync from Supabase to local Room cache

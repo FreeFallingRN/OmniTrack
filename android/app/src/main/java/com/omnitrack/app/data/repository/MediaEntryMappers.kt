@@ -1,7 +1,7 @@
 package com.omnitrack.app.data.repository
 
 import com.omnitrack.app.data.local.MediaEntryEntity
-import com.omnitrack.app.data.remote.MediaEntryDto
+import com.omnitrack.app.data.model.MediaEntryDto
 import com.omnitrack.app.domain.model.EntryCreator
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.MediaType

@@ -1,19 +1,7 @@
 package com.omnitrack.app.data
 
 import com.omnitrack.app.BuildConfig
-import com.omnitrack.app.data.model.CreateEntryRequest
-import com.omnitrack.app.data.model.UpdateSeriesRequest
-import com.omnitrack.app.data.model.UpdateEntryRequest
-import com.omnitrack.app.data.model.CreateSeriesRequest
-import com.omnitrack.app.data.model.CreatePlatformRequest
-import com.omnitrack.app.data.model.PlatformDto
-import com.omnitrack.app.data.model.UpdatePlatformRequest
-import com.omnitrack.app.data.model.AuthorDto
-import com.omnitrack.app.data.model.EntryAuthorDto
-import com.omnitrack.app.data.model.ExternalLinkDto
-import com.omnitrack.app.data.model.MediaEntryDto
-import com.omnitrack.app.data.model.ProgressHistoryRequest
-import com.omnitrack.app.data.model.SeriesDto
+import com.omnitrack.app.data.model.*
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.android.Android
@@ -29,7 +17,6 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
-import com.omnitrack.app.data.remote.AlternateTitleDto
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -55,6 +42,10 @@ object SupabaseService {
         return client.get(
             "$supabaseUrl/rest/v1/series?select=id,title,clean_title,rating,created_at,updated_at&order=updated_at.desc"
         ).body()
+    }
+
+    suspend fun getSeriesTitles(): List<SeriesTitleDto> {
+        return client.get("$supabaseUrl/rest/v1/series?select=id,title").body()
     }
 
     suspend fun getSeriesById(id: String): SeriesDto {
@@ -173,6 +164,12 @@ object SupabaseService {
 
     suspend fun getEntryAuthors(entryId: String): List<EntryAuthorDto> =
         client.get("$supabaseUrl/rest/v1/entry_authors?entry_id=eq.$entryId&select=*").body()
+
+    suspend fun getAllEntryAuthors(): List<EntryAuthorDto> =
+        client.get("$supabaseUrl/rest/v1/entry_authors?select=entry_id,author_id,role").body()
+
+    suspend fun getAlternateTitles(): List<AlternateTitleDto> =
+        client.get("$supabaseUrl/rest/v1/alternate_titles?select=id,series_id,entry_id,title,clean_title,language,is_primary").body()
 
     suspend fun createAuthor(
         name: String,
