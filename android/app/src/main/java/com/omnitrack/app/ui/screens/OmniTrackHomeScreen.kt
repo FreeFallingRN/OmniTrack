@@ -475,7 +475,9 @@ fun OmniTrackHomeScreen(
         }
     }
 
-    selectedEntryForDetail?.let { entry ->
+    selectedEntryForDetail?.let { snapshot ->
+        // Always resolve the live entry from the stream so the sheet sees the latest currentUnit
+        val entry = mediaEntries.firstOrNull { it.id == snapshot.id } ?: snapshot
         MediaDetailSheet(
             entry = entry,
             relatedEntries = if (!entry.seriesId.isNullOrBlank()) {
@@ -487,6 +489,7 @@ fun OmniTrackHomeScreen(
             },
             onDismiss = { selectedEntryForDetail = null },
             onUpdateProgress = { newProgress -> viewModel.updateProgress(entry.id, newProgress) },
+            onIncrementProgress = { delta -> viewModel.incrementUnitCount(entry.id, delta) },
             onSelectEntry = { selectedEntryForDetail = it },
             onOpenRelatedEntity = {
                 selectedRelatedEntity = it

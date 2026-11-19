@@ -40,6 +40,16 @@ class SeriesViewModel(
         }
     }
 
+    fun incrementUnitCount(id: String, delta: Double = 1.0) {
+        viewModelScope.launch {
+            try {
+                repository.incrementProgress(id, delta)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
     fun deleteMediaEntry(id: String) {
         viewModelScope.launch {
             repository.deleteMediaEntry(id)

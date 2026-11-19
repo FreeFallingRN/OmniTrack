@@ -30,6 +30,8 @@ import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 import com.omnitrack.app.data.remote.AlternateTitleDto
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 object SupabaseService {
 
@@ -103,13 +105,23 @@ object SupabaseService {
         ).body()
     }
 
-    suspend fun updateEntryProgress(entryId: String, currentUnit: Double): MediaEntryDto {
+    suspend fun updateEntryProgress(
+        entryId: String,
+        currentUnit: Double,
+        updatedStatus: String? = null
+    ): MediaEntryDto {
+        val payload = buildJsonObject {
+            put("current_unit", currentUnit)
+            if (updatedStatus != null) {
+                put("user_status", updatedStatus)
+            }
+        }
         val list: List<MediaEntryDto> = client.patch(
             "$supabaseUrl/rest/v1/media_entries?id=eq.$entryId"
         ) {
             contentType(ContentType.Application.Json)
             header("Prefer", "return=representation")
-            setBody(mapOf("current_unit" to currentUnit))
+            setBody(payload)
         }.body()
         return list.first()
     }

@@ -23,6 +23,10 @@ import java.time.LocalDate
 import kotlin.collections.filter
 import com.omnitrack.app.data.remote.AlternateTitleDto
 import com.omnitrack.app.domain.model.EntryCreator
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 class SeriesRepositoryImpl(
     private val mediaEntryDao: MediaEntryDao,
@@ -30,6 +34,9 @@ class SeriesRepositoryImpl(
     private val supabaseUrl: String,
     private val supabaseKey: String
 ) : SeriesRepository {
+
+    // Serializes all increment operations so rapid taps never read stale Room state
+    private val incrementMutex = Mutex()
 
     override fun getMediaEntriesStream(): Flow<List<MediaEntry>> {
         return mediaEntryDao.getAllEntries().map { entities ->
@@ -106,7 +113,11 @@ class SeriesRepositoryImpl(
                 header("apikey", supabaseKey)
                 header("Authorization", "Bearer $supabaseKey")
                 contentType(ContentType.Application.Json)
-                setBody(mapOf("current_unit" to newProgress))
+                setBody(
+                    buildJsonObject {
+                        put("current_unit", newProgress)
+                    }
+                )
             }
 
             httpClient.post(
@@ -117,17 +128,73 @@ class SeriesRepositoryImpl(
                 header("Prefer", "resolution=merge-duplicates,return=minimal")
                 contentType(ContentType.Application.Json)
                 setBody(
-                    mapOf(
-                        "entry_id" to id,
-                        "activity_date" to LocalDate.now().toString(),
-                        "previous_unit" to (previousEntry?.currentUnit ?: newProgress),
-                        "new_unit" to newProgress,
-                        "source" to "android_app"
-                    )
+                    buildJsonObject {
+                        put("entry_id", id)
+                        put("activity_date", LocalDate.now().toString())
+                        put("previous_unit", previousEntry?.currentUnit ?: newProgress)
+                        put("new_unit", newProgress)
+                        put("source", "android_app")
+                    }
                 )
             }
         } catch (e: Exception) {
             Log.e("SeriesRepository", "Failed to update progress on Supabase", e)
+        }
+    }
+
+    override suspend fun incrementProgress(id: String, delta: Double) {
+        // Hold the mutex for the full read-compute-write cycle so rapid taps are serialized
+        val (newUnit, newStatus, prevUnit) = incrementMutex.withLock {
+            val current = mediaEntryDao.getEntryById(id)
+            val prev = current?.currentUnit ?: 0.0
+            val next = (prev + delta).coerceAtLeast(0.0)
+
+            // Auto-resume PAUSED / PLANNING entries on a positive increment
+            val shouldAutoResume = delta > 0 &&
+                    (current?.userStatus == "paused" || current?.userStatus == "planning")
+            val statusToWrite = if (shouldAutoResume) "in_progress" else current?.userStatus
+
+            if (statusToWrite != null && statusToWrite != current?.userStatus) {
+                mediaEntryDao.updateProgressAndStatus(id, next, statusToWrite)
+            } else {
+                mediaEntryDao.updateProgress(id, next)
+            }
+            Triple(next, statusToWrite, prev)
+        }
+
+        if (supabaseUrl.isBlank()) return
+        try {
+            httpClient.patch("$supabaseUrl/rest/v1/media_entries?id=eq.$id") {
+                header("apikey", supabaseKey)
+                header("Authorization", "Bearer $supabaseKey")
+                contentType(ContentType.Application.Json)
+                setBody(
+                    buildJsonObject {
+                        put("current_unit", newUnit)
+                        if (newStatus != null) put("user_status", newStatus)
+                    }
+                )
+            }
+
+            httpClient.post(
+                "$supabaseUrl/rest/v1/progress_history?on_conflict=entry_id,activity_date"
+            ) {
+                header("apikey", supabaseKey)
+                header("Authorization", "Bearer $supabaseKey")
+                header("Prefer", "resolution=merge-duplicates,return=minimal")
+                contentType(ContentType.Application.Json)
+                setBody(
+                    buildJsonObject {
+                        put("entry_id", id)
+                        put("activity_date", LocalDate.now().toString())
+                        put("previous_unit", prevUnit)
+                        put("new_unit", newUnit)
+                        put("source", "android_app")
+                    }
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("SeriesRepository", "Failed to increment progress on Supabase", e)
         }
     }
 

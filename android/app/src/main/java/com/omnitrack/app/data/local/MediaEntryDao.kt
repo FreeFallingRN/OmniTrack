@@ -23,6 +23,8 @@ interface MediaEntryDao {
     @Query("UPDATE media_entries SET currentUnit = :newProgress WHERE id = :id")
     suspend fun updateProgress(id: String, newProgress: Double)
 
+    @Query("UPDATE media_entries SET currentUnit = :newProgress, userStatus = :newStatus WHERE id = :id")
+    suspend fun updateProgressAndStatus(id: String, newProgress: Double, newStatus: String)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(entries: List<MediaEntryEntity>)

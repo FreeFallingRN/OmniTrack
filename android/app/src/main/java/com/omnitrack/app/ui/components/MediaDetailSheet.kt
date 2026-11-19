@@ -29,6 +29,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,6 +56,7 @@ fun MediaDetailSheet(
     relatedEntries: List<MediaEntry>,
     onDismiss: () -> Unit,
     onUpdateProgress: (Double) -> Unit,
+    onIncrementProgress: (Double) -> Unit,
     onSelectEntry: (MediaEntry) -> Unit,
     onOpenRelatedEntity: (RelatedEntityDetail) -> Unit,
     onEdit: () -> Unit,
@@ -62,6 +64,13 @@ fun MediaDetailSheet(
 ) {
     var progressText by remember(entry.id) {
         mutableStateOf(entry.currentUnit.toString())
+    }
+
+    LaunchedEffect(entry.currentUnit) {
+        val displayed = progressText.toDoubleOrNull()
+        if (displayed != entry.currentUnit) {
+            progressText = entry.currentUnit.toString()
+        }
     }
     var showCover by remember(entry.id) { mutableStateOf(false) }
     var showDeleteWarning by remember(entry.id) { mutableStateOf(false) }
@@ -223,18 +232,14 @@ fun MediaDetailSheet(
                         )
                         FilledTonalButton(
                             onClick = {
-                                val next = (progressText.toDoubleOrNull() ?: entry.currentUnit) + 1.0
-                                progressText = next.toString()
-                                onUpdateProgress(next)
+                                onIncrementProgress(1.0)
                             }
                         ) {
                             Text("+1")
                         }
                         FilledTonalButton(
                             onClick = {
-                                val next = (progressText.toDoubleOrNull() ?: entry.currentUnit) + 10.0
-                                progressText = next.toString()
-                                onUpdateProgress(next)
+                                onIncrementProgress(10.0)
                             }
                         ) {
                             Text("+10")
