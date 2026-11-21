@@ -3,6 +3,7 @@ package com.omnitrack.app.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.omnitrack.app.domain.model.DailyProgressStats
+import com.omnitrack.app.domain.model.HistoryTimeframe
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.OverallProgressStats
 import com.omnitrack.app.domain.model.ProgressHistoryItem
@@ -128,17 +129,17 @@ class SeriesViewModel(
     private fun computeMinOffset(tab: String, earliestDate: LocalDate?, today: LocalDate): Int? {
         if (earliestDate == null) return 0
         return when (tab) {
-            "7D" -> {
+            HistoryTimeframe.DAYS_7.label -> {
                 val earliestWeekStart = get7DDates(0, earliestDate).first()
                 val currentWeekStart = get7DDates(0, today).first()
                 -ChronoUnit.WEEKS.between(earliestWeekStart, currentWeekStart).toInt().coerceAtLeast(0)
             }
-            "30D" -> {
+            HistoryTimeframe.DAYS_30.label -> {
                 val earliestYm = YearMonth.from(earliestDate)
                 val currentYm = YearMonth.from(today)
                 -ChronoUnit.MONTHS.between(earliestYm, currentYm).toInt().coerceAtLeast(0)
             }
-            "Year" -> {
+            HistoryTimeframe.YEAR.label -> {
                 -(today.year - earliestDate.year).coerceAtLeast(0)
             }
             else -> 0
