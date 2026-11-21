@@ -1,5 +1,8 @@
 package com.omnitrack.app.domain.model
 
+import java.time.LocalDate
+import java.time.format.DateTimeParseException
+
 enum class ProgressSource(val value: String) {
     DETAIL_SHEET("detail_sheet"),
     INCREMENT("increment"),
@@ -16,8 +19,8 @@ enum class ProgressSource(val value: String) {
 }
 
 enum class HistoryTimeframe(val label: String) {
-    DAYS_7("7D"),
-    DAYS_30("30D"),
+    DAYS_7("Week"),
+    DAYS_30("Month"),
     YEAR("Year"),
     ALL_TIME("All Time")
 }
@@ -33,6 +36,24 @@ data class ProgressHistoryItem(
     val unitName: String = "Chapter",
     val coverUrl: String? = null
 ) {
+    fun toEntryLocalDate(): LocalDate? {
+        val raw = activityDate.trim()
+        if (raw.isEmpty()) return null
+        return try {
+            LocalDate.parse(raw)
+        } catch (_: DateTimeParseException) {
+            if (raw.length >= 10) {
+                try {
+                    LocalDate.parse(raw.substring(0, 10))
+                } catch (_: DateTimeParseException) {
+                    null
+                }
+            } else {
+                null
+            }
+        }
+    }
+
     val delta: Double get() = (newUnit - previousUnit).coerceAtLeast(0.0)
 }
 
@@ -54,4 +75,3 @@ data class OverallProgressStats(
     val currentStreakDays: Int,
     val mediaTypeBreakdown: List<MediaTypeStats>
 )
-

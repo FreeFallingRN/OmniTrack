@@ -14,6 +14,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,7 +30,12 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.omnitrack.app.domain.model.*
 import com.omnitrack.app.ui.SeriesViewModel
+import com.omnitrack.app.utils.get30DWeeks
+import com.omnitrack.app.utils.get7DDates
+import com.omnitrack.app.utils.getAllTimeYears
+import com.omnitrack.app.utils.getYearMonths
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -36,28 +44,70 @@ fun HistoryStatsScreen(
     viewModel: SeriesViewModel,
     onSelectEntry: (MediaEntry) -> Unit
 ) {
-    val mediaEntries by viewModel.mediaEntries.collectAsState()
-    val recentActivity by viewModel.recentActivity.collectAsState()
+    val uiState by viewModel.state.collectAsState()
+    val mediaEntries = uiState.mediaEntries
+    val recentActivity = uiState.recentActivity
+    val periodOffset = uiState.periodOffset
+    val canGoPrevious = uiState.canGoPrevious
+    val canGoNext = uiState.canGoNext
 
-    var selectedTimeframe by remember { mutableStateOf(HistoryTimeframe.DAYS_30) }
+    val selectedTimeframe = remember(uiState.selectedPeriodTab) {
+        HistoryTimeframe.entries.find { it.label == uiState.selectedPeriodTab }
+            ?: HistoryTimeframe.DAYS_30
+    }
 
-    // Calculate cutoff date for selected timeframe
-    val cutoffDate = remember(selectedTimeframe) {
+    // Calendar-aligned [start, end] bounds for the active timeframe & offset
+    val periodBounds: Pair<LocalDate, LocalDate>? = remember(selectedTimeframe, periodOffset) {
         val today = LocalDate.now()
         when (selectedTimeframe) {
-            HistoryTimeframe.DAYS_7 -> today.minusDays(7).toString()
-            HistoryTimeframe.DAYS_30 -> today.minusDays(30).toString()
-            HistoryTimeframe.YEAR -> today.minusYears(1).toString()
+            HistoryTimeframe.DAYS_7 -> {
+                val dates = get7DDates(periodOffset, today)
+                dates.first() to dates.last()
+            }
+            HistoryTimeframe.DAYS_30 -> {
+                val targetMonth = YearMonth.from(today).plusMonths(periodOffset.toLong())
+                targetMonth.atDay(1) to targetMonth.atEndOfMonth()
+            }
+            HistoryTimeframe.YEAR -> {
+                val targetYear = today.year + periodOffset
+                LocalDate.of(targetYear, 1, 1) to LocalDate.of(targetYear, 12, 31)
+            }
             HistoryTimeframe.ALL_TIME -> null
         }
     }
 
-    // Filter activity strictly to active reading/watching sessions in timeframe with positive progress
-    val filteredActivity = remember(recentActivity, cutoffDate) {
+    // Human-readable label shown between < and >
+    val periodLabel: String? = remember(selectedTimeframe, periodOffset, periodBounds) {
+        when (selectedTimeframe) {
+            HistoryTimeframe.DAYS_7 -> {
+                periodBounds?.let { (start, end) ->
+                    val fmt = DateTimeFormatter.ofPattern("MMM d", Locale.getDefault())
+                    "${start.format(fmt)} – ${end.format(fmt)}"
+                }
+            }
+            HistoryTimeframe.DAYS_30 -> {
+                val targetMonth = YearMonth.from(LocalDate.now()).plusMonths(periodOffset.toLong())
+                targetMonth.format(DateTimeFormatter.ofPattern("MMM yyyy", Locale.getDefault()))
+            }
+            HistoryTimeframe.YEAR -> {
+                (LocalDate.now().year + periodOffset).toString()
+            }
+            HistoryTimeframe.ALL_TIME -> null
+        }
+    }
+
+    // Filter activity strictly to active reading/watching sessions within the active calendar period
+    val filteredActivity = remember(recentActivity, periodBounds) {
         recentActivity.filter { item ->
+            val inRange = if (periodBounds == null) {
+                true
+            } else {
+                val entryDate = item.toEntryLocalDate()
+                entryDate != null && !entryDate.isBefore(periodBounds.first) && !entryDate.isAfter(periodBounds.second)
+            }
             ProgressSource.fromValue(item.source).isActiveConsumption &&
                     item.delta > 0.0 &&
-                    (cutoffDate == null || item.activityDate >= cutoffDate)
+                    inRange
         }
     }
 
@@ -81,12 +131,17 @@ fun HistoryStatsScreen(
             .filterValues { it > 0.0 }
     }
 
-    // Media added count in the selected timeframe
-    val mediaAddedInTimeframe = remember(mediaEntries, cutoffDate) {
-        if (cutoffDate == null) {
+    // Media added count in the selected calendar period
+    val mediaAddedInTimeframe = remember(mediaEntries, periodBounds) {
+        if (periodBounds == null) {
             mediaEntries.size
         } else {
-            mediaEntries.count { it.createdAt.take(10) >= cutoffDate }
+            val startStr = periodBounds.first.toString()
+            val endStr = periodBounds.second.toString()
+            mediaEntries.count { entry ->
+                val created = entry.createdAt.take(10)
+                created in startStr..endStr
+            }
         }
     }
 
@@ -103,9 +158,9 @@ fun HistoryStatsScreen(
         filteredActivity.groupBy { it.activityDate }
     }
 
-    // Compute trend bars for the last 7 or 14 days
-    val trendDays = remember(selectedTimeframe, recentActivity) {
-        calculateTrendBars(recentActivity, selectedTimeframe)
+    // Compute calendar-aligned trend bars
+    val trendDays = remember(selectedTimeframe, recentActivity, periodOffset) {
+        calculateTrendBars(recentActivity, selectedTimeframe, periodOffset)
     }
 
     LazyColumn(
@@ -125,7 +180,6 @@ fun HistoryStatsScreen(
                     fontWeight = FontWeight.Bold
                 )
 
-                // Timeframe Filter Chip Row
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -140,7 +194,7 @@ fun HistoryStatsScreen(
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null,
-                                    onClick = { selectedTimeframe = timeframe }
+                                    onClick = { viewModel.selectPeriodTab(timeframe.label) }
                                 ),
                             shape = CircleShape,
                             color = if (selected) {
@@ -169,7 +223,7 @@ fun HistoryStatsScreen(
         item {
             // Compact Summary Metric Strip (2x2 Grid)
             AnimatedContent(
-                targetState = selectedTimeframe,
+                targetState = selectedTimeframe to periodOffset,
                 transitionSpec = { fadeIn() togetherWith fadeOut() },
                 label = "stats summary transition"
             ) { _ ->
@@ -178,7 +232,6 @@ fun HistoryStatsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // Stat 1: Consumed Units by type
                         StatCard(
                             modifier = Modifier.weight(1f),
                             title = "Consumed",
@@ -189,10 +242,9 @@ fun HistoryStatsScreen(
                                     "${formatUnit(count)} $unit${if (count != 1.0) "s" else ""}"
                                 }
                             },
-                            subtitle = "${filteredActivity.size} reading sessions"
+                            subtitle = "${filteredActivity.map { it.entryId }.distinct().size} unique titles"
                         )
 
-                        // Stat 2: Active Streak
                         StatCard(
                             modifier = Modifier.weight(1f),
                             title = "Active Streak",
@@ -205,7 +257,6 @@ fun HistoryStatsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // Stat 3: Media Added (Period New Titles vs. Total Library)
                         StatCard(
                             modifier = Modifier.weight(1f),
                             title = "Media Added",
@@ -213,7 +264,6 @@ fun HistoryStatsScreen(
                             subtitle = "Total ${mediaEntries.size} in library"
                         )
 
-                        // Stat 4: In Progress (with Completed as subtitle)
                         StatCard(
                             modifier = Modifier.weight(1f),
                             title = "In Progress",
@@ -225,9 +275,9 @@ fun HistoryStatsScreen(
             }
         }
 
-        // Minimal Activity Trend Bars
+        // Activity Pace Card
         if (trendDays.isNotEmpty()) {
-            item {
+            item(key = "activity_pace") {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
@@ -241,12 +291,58 @@ fun HistoryStatsScreen(
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Text(
-                            text = "Activity Pace",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Activity Pace",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+
+                            if (selectedTimeframe != HistoryTimeframe.ALL_TIME) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    IconButton(
+                                        onClick = { viewModel.stepPeriod(-1) },
+                                        enabled = canGoPrevious,
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                                            contentDescription = "Previous period",
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+
+                                    if (periodLabel != null) {
+                                        Text(
+                                            text = periodLabel,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(horizontal = 4.dp)
+                                        )
+                                    }
+
+                                    IconButton(
+                                        onClick = { viewModel.stepPeriod(1) },
+                                        enabled = canGoNext,
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                            contentDescription = "Next period",
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
 
                         val maxDelta = (trendDays.maxOfOrNull { it.delta } ?: 1.0).coerceAtLeast(1.0)
                         val barWidth = when (selectedTimeframe) {
@@ -276,7 +372,6 @@ fun HistoryStatsScreen(
                                         .weight(1f)
                                         .fillMaxHeight()
                                 ) {
-                                    // Numeric value above bar
                                     Text(
                                         text = if (bar.delta > 0.0) formatUnit(bar.delta) else "",
                                         style = MaterialTheme.typography.labelSmall,
@@ -343,7 +438,6 @@ fun HistoryStatsScreen(
                         fontWeight = FontWeight.SemiBold
                     )
 
-                    // By Status Proportional Bar
                     if (mediaEntries.isNotEmpty()) {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(
@@ -353,7 +447,7 @@ fun HistoryStatsScreen(
                             )
 
                             val total = mediaEntries.size.toFloat()
-                            val inProgressCount = mediaEntries.count { it.userStatus == UserStatus.IN_PROGRESS }
+                            val inProgressCountVal = mediaEntries.count { it.userStatus == UserStatus.IN_PROGRESS }
                             val completedCountVal = mediaEntries.count { it.userStatus == UserStatus.COMPLETED }
                             val pausedCount = mediaEntries.count { it.userStatus == UserStatus.PAUSED }
                             val planningCount = mediaEntries.count { it.userStatus == UserStatus.PLANNING }
@@ -364,10 +458,10 @@ fun HistoryStatsScreen(
                                     .height(10.dp)
                                     .clip(CircleShape)
                             ) {
-                                if (inProgressCount > 0) {
+                                if (inProgressCountVal > 0) {
                                     Box(
                                         modifier = Modifier
-                                            .weight(inProgressCount / total)
+                                            .weight(inProgressCountVal / total)
                                             .fillMaxHeight()
                                             .background(MaterialTheme.colorScheme.primary)
                                     )
@@ -402,14 +496,13 @@ fun HistoryStatsScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                LegendItem("Reading: $inProgressCount", MaterialTheme.colorScheme.primary)
+                                LegendItem("Reading: $inProgressCountVal", MaterialTheme.colorScheme.primary)
                                 LegendItem("Completed: $completedCountVal", MaterialTheme.colorScheme.tertiary)
                                 LegendItem("Paused: $pausedCount", MaterialTheme.colorScheme.secondary)
                                 LegendItem("Planning: $planningCount", MaterialTheme.colorScheme.outlineVariant)
                             }
                         }
 
-                        // By MediaType Proportional Bar
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(
                                 text = "Format",
@@ -624,7 +717,6 @@ private fun HistoryItemRow(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Thumbnail
             val coverUrl = item.coverUrl ?: entry?.coverUrl
             Box(
                 modifier = Modifier
@@ -650,7 +742,6 @@ private fun HistoryItemRow(
                 }
             }
 
-            // Info column
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
@@ -700,7 +791,8 @@ private data class DailyTrendBar(
 
 private fun calculateTrendBars(
     activity: List<ProgressHistoryItem>,
-    timeframe: HistoryTimeframe
+    timeframe: HistoryTimeframe,
+    periodOffset: Int = 0
 ): List<DailyTrendBar> {
     val today = LocalDate.now()
     val activeHistory = activity.filter {
@@ -710,58 +802,51 @@ private fun calculateTrendBars(
     return when (timeframe) {
         HistoryTimeframe.DAYS_7 -> {
             val dayFormatter = DateTimeFormatter.ofPattern("EEE", Locale.getDefault())
-            (6 downTo 0).map { daysAgo ->
-                val date = today.minusDays(daysAgo.toLong())
-                val dateStr = date.toString()
+            get7DDates(periodOffset, today).map { date ->
                 val delta = activeHistory
-                    .filter { it.activityDate == dateStr }
+                    .filter { it.toEntryLocalDate() == date }
                     .sumOf { it.delta }
 
                 DailyTrendBar(
-                    label = if (daysAgo == 0) "Today" else date.format(dayFormatter),
+                    label = if (periodOffset == 0 && date == today) "Today" else date.format(dayFormatter),
                     delta = delta
                 )
             }
         }
         HistoryTimeframe.DAYS_30 -> {
-            // 4 weeks covering the 30-day window: W1 (oldest) to W4 (current week)
-            (3 downTo 0).map { weeksAgo ->
-                val start = today.minusDays(((weeksAgo + 1) * 7 - 1).toLong()).toString()
-                val end = today.minusDays((weeksAgo * 7).toLong()).toString()
+            get30DWeeks(periodOffset, YearMonth.from(today)).map { (weekNumber, weekDates) ->
+                val dateSet = weekDates.toHashSet()
                 val delta = activeHistory
-                    .filter { it.activityDate in start..end }
+                    .filter { item -> item.toEntryLocalDate()?.let { it in dateSet } == true }
                     .sumOf { it.delta }
 
-                val weekNum = 4 - weeksAgo
                 DailyTrendBar(
-                    label = "W$weekNum",
+                    label = "W$weekNumber",
                     delta = delta
                 )
             }
         }
         HistoryTimeframe.YEAR -> {
             val monthFormatter = DateTimeFormatter.ofPattern("MMM", Locale.getDefault())
-            (11 downTo 0).map { monthsAgo ->
-                val monthDate = today.minusMonths(monthsAgo.toLong())
-                val yearMonthPrefix = DateTimeFormatter.ofPattern("yyyy-MM", Locale.getDefault()).format(monthDate)
+            val monthPrefixFormatter = DateTimeFormatter.ofPattern("yyyy-MM", Locale.getDefault())
+            getYearMonths(periodOffset, today.year).map { month ->
+                val prefix = month.format(monthPrefixFormatter)
                 val delta = activeHistory
-                    .filter { it.activityDate.startsWith(yearMonthPrefix) }
+                    .filter { it.activityDate.startsWith(prefix) }
                     .sumOf { it.delta }
 
                 DailyTrendBar(
-                    label = monthDate.format(monthFormatter),
+                    label = month.format(monthFormatter),
                     delta = delta
                 )
             }
         }
         HistoryTimeframe.ALL_TIME -> {
-            val currentYear = today.year
-            val earliestYear = activeHistory.mapNotNull {
-                it.activityDate.take(4).toIntOrNull()
-            }.minOrNull() ?: (currentYear - 2)
+            val earliestDate = activeHistory
+                .mapNotNull { it.toEntryLocalDate() }
+                .minOrNull() ?: return emptyList()
 
-            val startYear = minOf(earliestYear, currentYear - 2)
-            (startYear..currentYear).map { year ->
+            getAllTimeYears(earliestDate, today).map { year ->
                 val yearPrefix = year.toString()
                 val delta = activeHistory
                     .filter { it.activityDate.startsWith(yearPrefix) }
@@ -836,4 +921,3 @@ private fun formatUnit(value: Double): String {
         String.format(Locale.US, "%.1f", value)
     }
 }
-
