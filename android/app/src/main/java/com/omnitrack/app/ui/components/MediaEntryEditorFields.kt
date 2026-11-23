@@ -1,7 +1,6 @@
 package com.omnitrack.app.ui.components
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,7 +8,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -25,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,13 +63,18 @@ internal fun StatusButtonGroup(
     enabled: Boolean = true,
     onSelected: (String) -> Unit
 ) {
+    val listState = rememberLazyListState()
+    LaunchedEffect(selected, options) {
+        val index = options.indexOfFirst { it.first == selected }
+        if (index >= 0) listState.animateScrollToItem(index)
+    }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(label, style = MaterialTheme.typography.labelMedium)
-        Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
+        LazyRow(
+            state = listState,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            options.forEach { (value, text) ->
+            itemsIndexed(options, key = { _, option -> option.first }) { _, (value, text) ->
                 FilterChip(
                     selected = selected == value,
                     onClick = { onSelected(value) },

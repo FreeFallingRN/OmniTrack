@@ -2,27 +2,34 @@ package com.omnitrack.app.ui.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -34,7 +41,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.omnitrack.app.data.SupabaseService
 import com.omnitrack.app.data.model.AuthorDto
 import com.omnitrack.app.data.model.PlatformDto
@@ -92,7 +106,7 @@ data class NewPlatformData(
     val logoUrl: String?
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun MediaEntryEditorSheet(
     existing: MediaEntry?,
@@ -127,6 +141,7 @@ fun MediaEntryEditorSheet(
         mutableStateOf(existing?.alternativeTitles ?: prefill?.alternativeTitles.orEmpty())
     }
     var newAltTitle by remember { mutableStateOf("") }
+    var showAliasInput by remember { mutableStateOf(false) }
 
     var type by remember { mutableStateOf(existing?.type ?: prefill?.type ?: MediaType.NOVEL) }
     var seriesId by remember { mutableStateOf(existing?.seriesId) }
@@ -140,7 +155,9 @@ fun MediaEntryEditorSheet(
     var sourceUrl by remember { mutableStateOf(existing?.sourceUrl ?: prefill?.sourceUrl.orEmpty()) }
     var coverUrl by remember { mutableStateOf(existing?.coverUrl ?: prefill?.coverUrl.orEmpty()) }
 
-    var creatorRows by remember { mutableStateOf(listOf(CreatorFormRow())) }
+    var creatorRows by remember { mutableStateOf(emptyList<CreatorFormRow>()) }
+    var creatorDraft by remember { mutableStateOf(CreatorFormRow()) }
+    var editingCreator by remember { mutableStateOf<Int?>(null) }
 
     var platformId by remember { mutableStateOf(existing?.platformId) }
     var createPlatform by remember { mutableStateOf(false) }
@@ -153,8 +170,7 @@ fun MediaEntryEditorSheet(
     var newPlatformWebsiteUrl by remember { mutableStateOf("") }
     var newPlatformLogoUrl by remember { mutableStateOf("") }
 
-    var showSeriesDetails by remember { mutableStateOf(existing?.seriesId != null) }
-    var showMediaDetails by remember { mutableStateOf(false) }
+    var showSeriesDetails by remember { mutableStateOf(false) }
 
     // Populate multi-creator rows once authors finish loading
     LaunchedEffect(existing?.id, prefill, metadataLoaded) {
@@ -219,10 +235,10 @@ fun MediaEntryEditorSheet(
         return false
     }
 
-    val duplicateMatch = remember(title, altTitles, sourceUrl, type, entries, existing?.id) {
+    val duplicateMatch = remember(title, altTitles, newAltTitle, sourceUrl, type, entries, existing?.id) {
         if (existing != null) return@remember null
         val cleanUrl = sourceUrl.trim().trimEnd('/').lowercase()
-        val candidateKeys = (listOf(title) + altTitles)
+        val candidateKeys = (listOf(title, newAltTitle) + altTitles)
             .map(::normalizeTitleKey)
             .filter { it.length >= 4 }
             .distinct()
@@ -242,20 +258,91 @@ fun MediaEntryEditorSheet(
     }
     var mergeTargetEntry by remember { mutableStateOf<MediaEntry?>(null) }
     var groupWithEntry by remember { mutableStateOf<MediaEntry?>(null) }
+
+    fun addAlias() {
+        val cleaned = newAltTitle.trim()
+        if (cleaned.isNotBlank() && altTitles.none { it.equals(cleaned, ignoreCase = true) }) {
+            altTitles = altTitles + cleaned
+        }
+        newAltTitle = ""
+    }
+
+    fun saveEntry() {
+        val hasDraft = creatorDraft.authorId != null || (creatorDraft.createNew && creatorDraft.newAuthorName.isNotBlank())
+        val hasIncompleteDraft = creatorDraft.createNew && creatorDraft.newAuthorName.isBlank()
+        val validCreators = if (hasDraft) {
+            if (editingCreator != null) {
+                creatorRows.mapIndexed { index, row -> if (index == editingCreator) creatorDraft else row }
+            } else creatorRows + creatorDraft
+        } else creatorRows
+        val missingNewSeriesTitle = createSeries && newSeriesTitle.isBlank()
+        if (hasIncompleteDraft) {
+            error = "Please enter a creator name or choose an existing creator."
+        } else if (title.isBlank() || missingNewSeriesTitle || validCreators.isEmpty() ||
+            (platformId == null && (!createPlatform || newPlatformName.isBlank()))
+        ) {
+            error = if (missingNewSeriesTitle) "Please enter a name for the new series or clear it."
+                else "Title, at least one creator, and platform are required."
+        } else {
+            val pendingAlias = newAltTitle.trim()
+            val aliases = if (pendingAlias.isNotBlank() && altTitles.none { it.equals(pendingAlias, ignoreCase = true) }) {
+                altTitles + pendingAlias
+            } else altTitles
+            onSave(
+                MediaEntryEditorData(
+                    title = title.trim(),
+                    alternativeTitles = aliases,
+                    type = type,
+                    seriesId = seriesId,
+                    newSeries = if (createSeries && newSeriesTitle.isNotBlank()) NewSeriesData(title = newSeriesTitle.trim()) else null,
+                    creators = validCreators,
+                    platformId = platformId,
+                    newPlatform = if (createPlatform) NewPlatformData(
+                        name = newPlatformName,
+                        websiteUrl = newPlatformWebsiteUrl.ifBlank { null },
+                        logoUrl = newPlatformLogoUrl.ifBlank { null }
+                    ) else null,
+                    userStatus = userStatus,
+                    publishingStatus = publishingStatus,
+                    sequenceNumber = sequence.toDoubleOrNull(),
+                    currentUnit = (currentUnit.toDoubleOrNull() ?: 0.0).coerceAtLeast(0.0),
+                    unitName = unitName,
+                    sourceUrl = sourceUrl.ifBlank { null },
+                    coverUrl = coverUrl.ifBlank { null },
+                    isCanon = isCanon,
+                    mergeIntoEntryId = mergeTargetEntry?.id,
+                    linkExistingEntryToSeriesId = groupWithEntry?.id
+                )
+            )
+        }
+    }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surface
+        containerColor = MaterialTheme.colorScheme.surface,
+        dragHandle = null
     ) {
+        Column {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Default.Close, contentDescription = "Close editor")
+            }
+            Text(
+                text = if (existing == null) "New entry" else "Edit entry",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.weight(1f)
+            )
+            Button(onClick = ::saveEntry, contentPadding = PaddingValues(horizontal = 16.dp)) {
+                Text("Save")
+            }
+        }
         LazyColumn(
-            contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 36.dp),
+            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 36.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            item {
-                Text(
-                    text = if (existing == null) "New entry" else "Edit entry",
-                    style = MaterialTheme.typography.headlineSmall
-                )
-            }
             if (duplicateMatch != null && mergeTargetEntry == null && groupWithEntry == null) {
                 val match = duplicateMatch
                 item {
@@ -323,18 +410,32 @@ fun MediaEntryEditorSheet(
                 }
             }
             item {
-                OutlinedTextField(
-                    title,
-                    { title = it },
-                    label = { Text("Entry title") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-            }
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Alternative titles", style = MaterialTheme.typography.labelMedium)
-                    if (altTitles.isNotEmpty()) {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            title, { title = it },
+                            label = { Text("Entry title") },
+                            modifier = Modifier.fillMaxWidth(), singleLine = true
+                        )
+                        Text("Type", style = MaterialTheme.typography.labelMedium)
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                            MediaType.entries.forEachIndexed { index, option ->
+                                SegmentedButton(
+                                    selected = type == option,
+                                    onClick = { type = option },
+                                    shape = SegmentedButtonDefaults.itemShape(index, MediaType.entries.size),
+                                    icon = {},
+                                    contentPadding = PaddingValues(horizontal = 2.dp)
+                                ) {
+                                    Text(option.singularLabel, fontSize = 12.sp, maxLines = 1)
+                                }
+                            }
+                        }
+                        Text("Alternative titles", style = MaterialTheme.typography.labelMedium)
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -354,48 +455,80 @@ fun MediaEntryEditorSheet(
                                     }
                                 )
                             }
+                            InputChip(
+                                selected = showAliasInput,
+                                onClick = {
+                                    if (showAliasInput) addAlias()
+                                    showAliasInput = !showAliasInput
+                                },
+                                modifier = Modifier.height(36.dp),
+                                label = { Text("Alias") },
+                                leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                            )
                         }
-                    }
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedTextField(
-                            value = newAltTitle,
-                            onValueChange = { newAltTitle = it },
-                            label = { Text("Add alias / native title") },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true
-                        )
-                        TextButton(
-                            onClick = {
-                                val cleaned = newAltTitle.trim()
-                                if (cleaned.isNotBlank() && altTitles.none { it.equals(cleaned, ignoreCase = true) }) {
-                                    altTitles = altTitles + cleaned
+                        if (showAliasInput) {
+                            OutlinedTextField(
+                                value = newAltTitle,
+                                onValueChange = { newAltTitle = it },
+                                label = { Text("Add alias / native title") },
+                                modifier = Modifier.fillMaxWidth().onPreviewKeyEvent {
+                                    if (it.key == Key.Enter && it.type == KeyEventType.KeyDown) {
+                                        addAlias()
+                                        true
+                                    } else false
+                                },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(onDone = { addAlias() }),
+                                trailingIcon = {
+                                    IconButton(onClick = ::addAlias, enabled = newAltTitle.isNotBlank()) {
+                                        Icon(Icons.Default.Add, contentDescription = "Add alias")
+                                    }
                                 }
-                                newAltTitle = ""
-                            },
-                            enabled = newAltTitle.isNotBlank()
-                        ) {
-                            Text("Add")
+                            )
                         }
                     }
                 }
             }
-            item {
-                StatusButtonGroup(
-                    label = "Type",
-                    selected = type.value,
-                    options = MediaType.entries.map { it.value to it.singularLabel },
-                    onSelected = { value ->
-                        type = MediaType.fromValue(value)
-                    }
-                )
-            }
             creatorSection(
                 authors = authors,
                 creatorRows = creatorRows,
-                onCreatorRowsChange = { creatorRows = it },
+                onRemoveCreator = { removedIndex ->
+                    val editedIndex = editingCreator
+                    if (editedIndex != null) {
+                        when {
+                            removedIndex == editedIndex -> {
+                                editingCreator = null
+                                creatorDraft = CreatorFormRow()
+                            }
+                            removedIndex < editedIndex -> editingCreator = editedIndex - 1
+                        }
+                    }
+                    creatorRows = creatorRows.filterIndexed { index, _ -> index != removedIndex }
+                },
+                creatorDraft = creatorDraft,
+                onCreatorDraftChange = { creatorDraft = it },
+                editingCreator = editingCreator,
+                onEditCreator = { index ->
+                    if (creatorDraft.createNew && creatorDraft.newAuthorName.isBlank()) {
+                        error = "Please enter a creator name or choose an existing creator."
+                    } else {
+                        val editedIndex = editingCreator
+                        if (creatorDraft.authorId != null || creatorDraft.createNew) {
+                            creatorRows = if (editedIndex == null) creatorRows + creatorDraft
+                                else creatorRows.mapIndexed { i, row -> if (i == editedIndex) creatorDraft else row }
+                        }
+                        editingCreator = index
+                        creatorDraft = creatorRows[index]
+                    }
+                },
+                onAddCreator = {
+                    val index = editingCreator
+                    creatorRows = if (index == null) creatorRows + creatorDraft
+                        else creatorRows.mapIndexed { i, row -> if (i == index) creatorDraft else row }
+                    creatorDraft = CreatorFormRow()
+                    editingCreator = null
+                },
                 platforms = platforms,
                 platformId = platformId,
                 onSelectPlatform = { platformId = it.id; createPlatform = false },
@@ -411,6 +544,7 @@ fun MediaEntryEditorSheet(
                 onToggle = { showSeriesDetails = !showSeriesDetails },
                 series = series,
                 seriesId = seriesId,
+                seriesTitle = existing?.seriesTitle?.takeIf { existing.seriesId == seriesId },
                 createSeries = createSeries,
                 onSelectSeries = { seriesId = it.id; createSeries = false },
                 onClearSeries = {
@@ -426,13 +560,10 @@ fun MediaEntryEditorSheet(
                 },
                 newSeriesTitle = newSeriesTitle,
                 onNewSeriesTitleChange = { newSeriesTitle = it },
-                title = title,
                 sequence = sequence,
                 onSequenceChange = { sequence = it }
             )
             mediaSection(
-                showMediaDetails = showMediaDetails,
-                onToggle = { showMediaDetails = !showMediaDetails },
                 userStatus = userStatus,
                 onUserStatusChange = { userStatus = it },
                 publishingStatus = publishingStatus,
@@ -474,61 +605,6 @@ fun MediaEntryEditorSheet(
                 coverUrl = coverUrl,
                 onCoverUrlChange = { coverUrl = it }
             )
-            item {
-                Button(
-                    onClick = {
-                        val validCreators = creatorRows.filter {
-                            it.authorId != null || (it.createNew && it.newAuthorName.isNotBlank())
-                        }
-                        val missingNewSeriesTitle = createSeries && newSeriesTitle.isBlank()
-                        if (title.isBlank() ||
-                            missingNewSeriesTitle ||
-                            validCreators.isEmpty() ||
-                            (platformId == null && (!createPlatform || newPlatformName.isBlank()))
-                        ) {
-                            error = if (missingNewSeriesTitle) {
-                                "Please enter a name for the new series or clear it."
-                            } else {
-                                "Title, at least one creator, and platform are required."
-                            }
-                        } else {
-                            onSave(
-                                MediaEntryEditorData(
-                                    title = title.trim(),
-                                    alternativeTitles = altTitles,
-                                    type = type,
-                                    seriesId = seriesId,
-                                    newSeries = if (createSeries && newSeriesTitle.isNotBlank()) {
-                                        NewSeriesData(title = newSeriesTitle.trim())
-                                    } else null,
-                                    creators = validCreators,
-                                    platformId = platformId,
-                                    newPlatform = if (createPlatform) {
-                                        NewPlatformData(
-                                            name = newPlatformName,
-                                            websiteUrl = newPlatformWebsiteUrl.ifBlank { null },
-                                            logoUrl = newPlatformLogoUrl.ifBlank { null }
-                                        )
-                                    } else null,
-                                    userStatus = userStatus,
-                                    publishingStatus = publishingStatus,
-                                    sequenceNumber = sequence.toDoubleOrNull(),
-                                    currentUnit = (currentUnit.toDoubleOrNull() ?: 0.0).coerceAtLeast(0.0),
-                                    unitName = unitName,
-                                    sourceUrl = sourceUrl.ifBlank { null },
-                                    coverUrl = coverUrl.ifBlank { null },
-                                    isCanon = isCanon,
-                                    mergeIntoEntryId = mergeTargetEntry?.id,
-                                    linkExistingEntryToSeriesId = groupWithEntry?.id
-                                )
-                            )
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Save entry")
-                }
-            }
             if (existing != null && onDelete != null) {
                 item {
                     OutlinedButton(
@@ -541,6 +617,7 @@ fun MediaEntryEditorSheet(
                     ) {
                         Text("Delete")
                     }
+                }
                 }
             }
         }

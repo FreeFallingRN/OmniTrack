@@ -4,28 +4,42 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -37,10 +51,16 @@ import com.omnitrack.app.domain.model.PublishingStatus
 import com.omnitrack.app.domain.model.UserStatus
 import com.omnitrack.app.domain.model.toDisplayLabel
 
+@OptIn(ExperimentalLayoutApi::class)
 internal fun LazyListScope.creatorSection(
     authors: List<AuthorDto>,
     creatorRows: List<CreatorFormRow>,
-    onCreatorRowsChange: (List<CreatorFormRow>) -> Unit,
+    onRemoveCreator: (Int) -> Unit,
+    creatorDraft: CreatorFormRow,
+    onCreatorDraftChange: (CreatorFormRow) -> Unit,
+    editingCreator: Int?,
+    onEditCreator: (Int) -> Unit,
+    onAddCreator: () -> Unit,
     platforms: List<PlatformDto>,
     platformId: String?,
     onSelectPlatform: (PlatformDto) -> Unit,
@@ -51,110 +71,108 @@ internal fun LazyListScope.creatorSection(
     newPlatformWebsiteUrl: String,
     onNewPlatformWebsiteUrlChange: (String) -> Unit
 ) {
-    item { Text("Creators", style = MaterialTheme.typography.titleMedium) }
-    creatorRows.forEachIndexed { index, row ->
-        item(key = "creator_row_$index") {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Box(modifier = Modifier.weight(1f)) {
-                        Selector(
-                            label = "Creator ${index + 1}",
-                            selected = when {
-                                row.createNew -> "New: ${row.newAuthorName.ifBlank { "Enter name below" }}"
-                                else -> authors.firstOrNull { it.id == row.authorId }?.name ?: "Choose creator"
-                            },
-                            options = authors,
-                            text = { it.name },
-                            onAdd = {
-                                onCreatorRowsChange(creatorRows.toMutableList().also {
-                                    it[index] = row.copy(createNew = true, authorId = null)
-                                })
+    item {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp) ) {
+                Text("Credits", style = MaterialTheme.typography.titleMedium)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    creatorRows.forEachIndexed { index, creator ->
+                        val name = if (creator.createNew) creator.newAuthorName
+                            else authors.firstOrNull { it.id == creator.authorId }?.name ?: "Unknown creator"
+                        InputChip(
+                            selected = editingCreator == index,
+                            onClick = { onEditCreator(index) },
+                            label = { Text("$name · ${creator.role.toDisplayLabel()}") },
+                            trailingIcon = {
+                                IconButton(
+                                    onClick = { onRemoveCreator(index) },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(Icons.Default.Clear, contentDescription = "Remove $name", modifier = Modifier.size(18.dp))
+                                }
                             }
-                        ) { selected ->
-                            onCreatorRowsChange(creatorRows.toMutableList().also {
-                                it[index] = row.copy(authorId = selected.id, createNew = false)
-                            })
-                        }
-                    }
-                    if (creatorRows.size > 1) {
-                        IconButton(
-                            onClick = {
-                                onCreatorRowsChange(creatorRows.toMutableList().also { it.removeAt(index) })
-                            }
-                        ) {
-                            Icon(Icons.Default.Clear, contentDescription = "Remove creator")
-                        }
+                        )
                     }
                 }
-
-                if (row.createNew) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(Modifier.weight(1f)) {
+                        if (creatorDraft.createNew) {
+                            OutlinedTextField(
+                                value = creatorDraft.newAuthorName,
+                                onValueChange = { onCreatorDraftChange(creatorDraft.copy(newAuthorName = it)) },
+                                label = { Text("Creator") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                trailingIcon = {
+                                    IconButton(onClick = { onCreatorDraftChange(creatorDraft.copy(createNew = false, newAuthorName = "")) }) {
+                                        Icon(Icons.Default.Clear, contentDescription = "Choose existing creator")
+                                    }
+                                }
+                            )
+                        } else {
+                            Selector(
+                                label = "Creator",
+                                selected = authors.firstOrNull { it.id == creatorDraft.authorId }?.name ?: "Choose",
+                                options = authors,
+                                text = { it.name },
+                                onAdd = { onCreatorDraftChange(creatorDraft.copy(createNew = true, authorId = null)) }
+                            ) { onCreatorDraftChange(creatorDraft.copy(authorId = it.id, createNew = false)) }
+                        }
+                    }
+                    Box {
+                        var expanded by remember { mutableStateOf(false) }
+                        FilterChip(
+                            selected = false,
+                            onClick = { expanded = true },
+                            modifier = Modifier.widthIn(max = 112.dp),
+                            label = { Text(creatorDraft.role.toDisplayLabel(), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.labelSmall) },
+                            trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                        )
+                        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                            CreatorRole.values.forEach { role ->
+                                DropdownMenuItem(
+                                    text = { Text(role.toDisplayLabel()) },
+                                    onClick = { onCreatorDraftChange(creatorDraft.copy(role = role)); expanded = false }
+                                )
+                            }
+                        }
+                    }
+                    IconButton(
+                        onClick = onAddCreator,
+                        enabled = creatorDraft.authorId != null || (creatorDraft.createNew && creatorDraft.newAuthorName.isNotBlank())
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = if (editingCreator == null) "Add creator" else "Update creator")
+                    }
+                }
+                Selector(
+                    "Platform",
+                    if (createPlatform) "New: ${newPlatformName.ifBlank { "Enter name below" }}"
+                    else platforms.firstOrNull { it.id == platformId }?.name ?: "Choose platform",
+                    platforms,
+                    { it.name },
+                    onAdd = onAddPlatform
+                ) { onSelectPlatform(it) }
+                if (createPlatform) {
                     OutlinedTextField(
-                        value = row.newAuthorName,
-                        onValueChange = { updatedName ->
-                            onCreatorRowsChange(creatorRows.toMutableList().also {
-                                it[index] = row.copy(newAuthorName = updatedName)
-                            })
-                        },
-                        label = { Text("New creator name") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
+                        newPlatformName, onNewPlatformNameChange,
+                        label = { Text("Platform name") },
+                        modifier = Modifier.fillMaxWidth(), singleLine = true
+                    )
+                    OutlinedTextField(
+                        newPlatformWebsiteUrl, onNewPlatformWebsiteUrlChange,
+                        label = { Text("Website URL (optional)") },
+                        modifier = Modifier.fillMaxWidth(), singleLine = true
                     )
                 }
-
-                StatusButtonGroup(
-                    label = "Role",
-                    selected = row.role,
-                    options = CreatorRole.values.map { it to it.toDisplayLabel() },
-                    compact = true,
-                    onSelected = { newRole ->
-                        onCreatorRowsChange(creatorRows.toMutableList().also {
-                            it[index] = row.copy(role = newRole)
-                        })
-                    }
-                )
             }
-        }
-    }
-    item {
-        TextButton(
-            onClick = { onCreatorRowsChange(creatorRows + CreatorFormRow(role = "illustrator")) }
-        ) {
-            Icon(Icons.Default.Add, contentDescription = null)
-            Text("Add another creator / artist")
-        }
-    }
-    item {
-        Selector(
-            "Platform",
-            platforms.firstOrNull { it.id == platformId }?.name ?: "Choose platform",
-            platforms,
-            { it.name },
-            onAdd = onAddPlatform
-        ) { onSelectPlatform(it) }
-    }
-    if (createPlatform) {
-        item { HorizontalDivider() }
-        item { Text("New platform details", style = MaterialTheme.typography.titleMedium) }
-        item {
-            OutlinedTextField(
-                newPlatformName,
-                onNewPlatformNameChange,
-                label = { Text("Platform name") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
-        }
-        item {
-            OutlinedTextField(
-                newPlatformWebsiteUrl,
-                onNewPlatformWebsiteUrlChange,
-                label = { Text("Website URL (optional)") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
         }
     }
 }
@@ -164,74 +182,63 @@ internal fun LazyListScope.seriesSection(
     onToggle: () -> Unit,
     series: List<SeriesDto>,
     seriesId: String?,
+    seriesTitle: String?,
     createSeries: Boolean,
     onSelectSeries: (SeriesDto) -> Unit,
     onClearSeries: () -> Unit,
     onAddSeries: () -> Unit,
     newSeriesTitle: String,
     onNewSeriesTitleChange: (String) -> Unit,
-    title: String,
     sequence: String,
     onSequenceChange: (String) -> Unit
 ) {
-    item { HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp)) }
     item {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onToggle)
-                .padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
+        val selectedTitle = if (createSeries) newSeriesTitle.ifBlank { "New series" }
+            else series.firstOrNull { it.id == seriesId }?.title ?: seriesTitle ?: "Standalone"
+        val summary = if ((seriesId != null || createSeries) && sequence.isNotBlank()) {
+            "$selectedTitle (#$sequence)"
+        } else selectedTitle
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
         ) {
-            Text(
-                text = "Series details",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.weight(1f)
-            )
-            Icon(
-                imageVector = if (showSeriesDetails) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                contentDescription = if (showSeriesDetails) "Collapse series details" else "Expand series details",
-                tint = MaterialTheme.colorScheme.primary
-            )
-        }
-    }
-    if (showSeriesDetails) {
-        item {
-            Selector(
-                label = "Series (optional)",
-                selected = series.firstOrNull { it.id == seriesId }?.title ?: "None (Standalone)",
-                options = series,
-                text = { it.title },
-                onClear = if (seriesId != null || createSeries) onClearSeries else null,
-                onAdd = onAddSeries
-            ) { onSelectSeries(it) }
-        }
-        if (createSeries) {
-            item {
-                OutlinedTextField(
-                    newSeriesTitle,
-                    onNewSeriesTitleChange,
-                    label = { Text("New series name") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth().height(48.dp).clickable(onClick = onToggle).padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Series · $summary", modifier = Modifier.weight(1f), maxLines = 1,
+                        overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
+                    Icon(
+                        if (showSeriesDetails) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (showSeriesDetails) "Collapse series details" else "Expand series details"
+                    )
+                }
+                if (showSeriesDetails) {
+                    Column(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Selector(
+                            label = "Series (optional)",
+                            selected = if (createSeries) "New: $selectedTitle" else selectedTitle,
+                            options = series,
+                            text = { it.title },
+                            onClear = if (seriesId != null || createSeries) onClearSeries else null,
+                            onAdd = onAddSeries
+                        ) { onSelectSeries(it) }
+                        if (createSeries) {
+                            OutlinedTextField(newSeriesTitle, onNewSeriesTitleChange,
+                                label = { Text("New series name") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                        }
+                        EntryField("Pos. in series (optional)", sequence, onSequenceChange, keyboardType = KeyboardType.Decimal)
+                    }
+                }
             }
-        }
-        item {
-            EntryField(
-                label = "Pos. in series (optional)",
-                value = sequence,
-                onValueChange = onSequenceChange,
-                keyboardType = KeyboardType.Decimal
-            )
         }
     }
 }
 
 internal fun LazyListScope.mediaSection(
-    showMediaDetails: Boolean,
-    onToggle: () -> Unit,
     userStatus: String,
     onUserStatusChange: (String) -> Unit,
     publishingStatus: String,
@@ -243,66 +250,19 @@ internal fun LazyListScope.mediaSection(
     isCanon: Boolean,
     onIsCanonChange: (Boolean) -> Unit
 ) {
-    item { HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp)) }
     item {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onToggle)
-                .padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Media details",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.weight(1f)
-            )
-            Icon(
-                imageVector = if (showMediaDetails) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                contentDescription = if (showMediaDetails) "Collapse media details" else "Expand media details",
-                tint = MaterialTheme.colorScheme.primary
-            )
-        }
-    }
-    if (showMediaDetails) {
-        item {
-            StatusButtonGroup(
-                label = "User status",
-                selected = userStatus,
-                options = UserStatus.entries.map { it.value to it.label },
-                onSelected = onUserStatusChange
-            )
-        }
-        item {
-            StatusButtonGroup(
-                label = "Publishing status",
-                selected = publishingStatus,
-                options = PublishingStatus.values.map { it to it.toDisplayLabel() },
-                onSelected = onPublishingStatusChange
-            )
-        }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                EntryField(
-                    label = "Current ${unitName.trim().lowercase()}",
-                    value = currentUnit,
-                    onValueChange = onCurrentUnitChange,
-                    modifier = Modifier.weight(1f)
-                )
-                EntryField(
-                    label = "Unit name",
-                    value = unitName,
-                    onValueChange = onUnitNameChange,
-                    modifier = Modifier.weight(1f),
-                    keyboardType = KeyboardType.Text
-                )
-            }
-        }
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(isCanon, onIsCanonChange)
-                Text("Canon entry")
+        Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Tracking", style = MaterialTheme.typography.titleMedium)
+                StatusButtonGroup("User status", userStatus, UserStatus.entries.map { it.value to it.label }, onSelected = onUserStatusChange)
+                StatusButtonGroup("Publishing status", publishingStatus,
+                    PublishingStatus.values.map { it to it.toDisplayLabel() }, onSelected = onPublishingStatusChange)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    EntryField("Current ${unitName.trim().lowercase()}", currentUnit, onCurrentUnitChange, Modifier.weight(1f))
+                    EntryField("Unit name", unitName, onUnitNameChange, Modifier.weight(1f), KeyboardType.Text)
+                }
+                FilterChip(selected = isCanon, onClick = { onIsCanonChange(!isCanon) }, label = { Text("Canon") })
             }
         }
     }
@@ -316,42 +276,40 @@ internal fun LazyListScope.publicationCoverSection(
     coverUrl: String,
     onCoverUrlChange: (String) -> Unit
 ) {
-    item { HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp)) }
-    item { Text("Publication and cover", style = MaterialTheme.typography.titleMedium) }
     item {
-        OutlinedTextField(
-            sourceUrl,
-            onSourceUrlChange,
-            label = { Text("Publication URL") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
-    }
-    item {
-        Button(
-            onClick = onFindCover,
-            enabled = sourceUrl.isNotBlank() && !findingCover
-        ) {
-            Text(if (findingCover) "Looking up cover…" else "Find cover from URL")
+        Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Publication and cover", style = MaterialTheme.typography.titleMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.size(width = 72.dp, height = 108.dp)) {
+                        if (coverUrl.isNotBlank()) {
+                            AsyncImage(model = coverUrl, contentDescription = "Cover preview",
+                                modifier = Modifier.fillMaxWidth(), contentScale = ContentScale.Crop)
+                        } else {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text("No cover", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(sourceUrl, onSourceUrlChange, label = { Text("Publication URL") },
+                            modifier = Modifier.fillMaxWidth(), singleLine = true,
+                            trailingIcon = {
+                                IconButton(onClick = onFindCover, enabled = sourceUrl.isNotBlank() && !findingCover) {
+                                    if (findingCover) {
+                                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                    } else {
+                                        Icon(Icons.Default.Search, contentDescription = "Find cover from URL")
+                                    }
+                                }
+                            })
+                        OutlinedTextField(coverUrl, onCoverUrlChange, label = { Text("Cover image URL") },
+                            modifier = Modifier.fillMaxWidth(), singleLine = true)
+                    }
+                }
+            }
         }
-    }
-    if (coverUrl.isNotBlank()) {
-        item {
-            AsyncImage(
-                model = coverUrl,
-                contentDescription = "Cover preview",
-                modifier = Modifier.fillMaxWidth().height(180.dp),
-                contentScale = ContentScale.Fit
-            )
-        }
-    }
-    item {
-        OutlinedTextField(
-            coverUrl,
-            onCoverUrlChange,
-            label = { Text("Cover image URL") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
     }
 }
