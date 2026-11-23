@@ -276,20 +276,4 @@ class SeriesRepositoryImpl(
         }
     }
 
-    override suspend fun getDailyStats(days: Int): List<DailyProgressStats> {
-        val startDate = LocalDate.now().minusDays(days.toLong()).toString()
-        val rows = progressHistoryDao.getActivityFeedSince(startDate)
-
-        return rows
-            .filter { ProgressSource.fromValue(it.source).isActiveConsumption }
-            .groupBy { it.activityDate }
-            .map { (date, items) ->
-                DailyProgressStats(
-                    date = date,
-                    totalUnitsDelta = items.sumOf { (it.newUnit - it.previousUnit).coerceAtLeast(0.0) },
-                    entriesCount = items.map { it.entryId }.distinct().size
-                )
-            }
-            .sortedByDescending { it.date }
-    }
 }

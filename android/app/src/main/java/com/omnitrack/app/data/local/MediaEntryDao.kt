@@ -11,9 +11,6 @@ interface MediaEntryDao {
     @Query("SELECT * FROM media_entries ORDER BY title ASC")
     fun getAllEntries(): Flow<List<MediaEntryEntity>>
 
-    @Query("SELECT * FROM media_entries WHERE seriesId = :seriesId")
-    suspend fun getEntriesForSeries(seriesId: String): List<MediaEntryEntity>
-
     @Query("SELECT * FROM media_entries WHERE id = :id LIMIT 1")
     suspend fun getEntryById(id: String): MediaEntryEntity?
 

@@ -1,11 +1,7 @@
 {
   "name": "@omnitrack/extension",
   "version": "1.0.0",
-  "description": "OmniTrack Chrome / Chromium Manifest V3 browser extension for zero-latency progress logging",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build && node scripts/copy-manifest.cjs"
-  },
+  "description": "Planned OmniTrack Chrome / Chromium Manifest V3 browser extension (in progress)",
   "dependencies": {},
   "devDependencies": {
     "@types/chrome": "^0.0.308",

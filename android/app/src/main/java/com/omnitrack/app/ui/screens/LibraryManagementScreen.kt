@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -33,13 +32,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -57,7 +54,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.dp
@@ -69,10 +65,8 @@ import com.omnitrack.app.data.model.PlatformDto
 import com.omnitrack.app.data.model.SeriesDto
 import com.omnitrack.app.data.model.UpdatePlatformRequest
 import com.omnitrack.app.domain.model.MediaEntry
-import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.model.UserStatus
-import com.omnitrack.app.domain.model.toDisplayLabel
-import com.omnitrack.app.ui.SeriesViewModel
+import com.omnitrack.app.ui.viewmodel.SeriesViewModel
 import com.omnitrack.app.ui.components.DeleteCountdownButton
 import com.omnitrack.app.ui.components.EntityDetailSheet
 import com.omnitrack.app.utils.CoverLookup

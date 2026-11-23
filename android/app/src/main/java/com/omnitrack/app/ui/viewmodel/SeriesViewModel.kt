@@ -1,18 +1,14 @@
-package com.omnitrack.app.ui
+package com.omnitrack.app.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.omnitrack.app.domain.model.DailyProgressStats
 import com.omnitrack.app.domain.model.HistoryTimeframe
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.OverallProgressStats
 import com.omnitrack.app.domain.model.ProgressHistoryItem
 import com.omnitrack.app.domain.model.ProgressSource
 import com.omnitrack.app.domain.repository.SeriesRepository
-import com.omnitrack.app.utils.get30DWeeks
 import com.omnitrack.app.utils.get7DDates
-import com.omnitrack.app.utils.getAllTimeYears
-import com.omnitrack.app.utils.getYearMonths
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.temporal.ChronoUnit
@@ -27,7 +23,7 @@ data class SeriesViewModelState(
     val mediaEntries: List<MediaEntry>,
     val recentActivity: List<ProgressHistoryItem>,
     val progressStats: OverallProgressStats,
-    val selectedPeriodTab: String = "30D",
+    val selectedPeriodTab: HistoryTimeframe = HistoryTimeframe.DAYS_30,
     val periodOffset: Int = 0,
     val canGoPrevious: Boolean = false,
     val canGoNext: Boolean = false
@@ -37,7 +33,7 @@ class SeriesViewModel(
     private val repository: SeriesRepository
 ) : ViewModel() {
 
-    private val selectedPeriodTabFlow = MutableStateFlow("30D")
+    private val selectedPeriodTabFlow = MutableStateFlow(HistoryTimeframe.DAYS_30)
     private val periodOffsetFlow = MutableStateFlow(0)
 
     val mediaEntries: StateFlow<List<MediaEntry>> = repository.getMediaEntriesStream()
@@ -74,11 +70,11 @@ class SeriesViewModel(
         val clampedOffset = offset.coerceIn(minOffset ?: offset, 0)
 
         val canGoPrevious = when (tab) {
-            "All Time" -> false
+            HistoryTimeframe.ALL_TIME -> false
             else -> minOffset != null && clampedOffset > minOffset
         }
         val canGoNext = when (tab) {
-            "All Time" -> false
+            HistoryTimeframe.ALL_TIME -> false
             else -> clampedOffset < 0
         }
         PeriodNavState(tab, clampedOffset, canGoPrevious, canGoNext)
@@ -109,14 +105,14 @@ class SeriesViewModel(
         )
     )
 
-    fun selectPeriodTab(tab: String) {
+    fun selectPeriodTab(tab: HistoryTimeframe) {
         selectedPeriodTabFlow.value = tab
         periodOffsetFlow.value = 0
     }
 
     fun stepPeriod(delta: Int) {
         val tab = selectedPeriodTabFlow.value
-        if (tab == "All Time") return
+        if (tab == HistoryTimeframe.ALL_TIME) return
         val earliestDate: LocalDate? = recentActivity.value
             .mapNotNull { it.toEntryLocalDate() }
             .minOrNull()
@@ -126,23 +122,23 @@ class SeriesViewModel(
         periodOffsetFlow.value = nextOffset
     }
 
-    private fun computeMinOffset(tab: String, earliestDate: LocalDate?, today: LocalDate): Int? {
+    private fun computeMinOffset(tab: HistoryTimeframe, earliestDate: LocalDate?, today: LocalDate): Int? {
         if (earliestDate == null) return 0
         return when (tab) {
-            HistoryTimeframe.DAYS_7.label -> {
+            HistoryTimeframe.DAYS_7 -> {
                 val earliestWeekStart = get7DDates(0, earliestDate).first()
                 val currentWeekStart = get7DDates(0, today).first()
                 -ChronoUnit.WEEKS.between(earliestWeekStart, currentWeekStart).toInt().coerceAtLeast(0)
             }
-            HistoryTimeframe.DAYS_30.label -> {
+            HistoryTimeframe.DAYS_30 -> {
                 val earliestYm = YearMonth.from(earliestDate)
                 val currentYm = YearMonth.from(today)
                 -ChronoUnit.MONTHS.between(earliestYm, currentYm).toInt().coerceAtLeast(0)
             }
-            HistoryTimeframe.YEAR.label -> {
+            HistoryTimeframe.YEAR -> {
                 -(today.year - earliestDate.year).coerceAtLeast(0)
             }
-            else -> 0
+            HistoryTimeframe.ALL_TIME -> 0
         }
     }
 
@@ -176,12 +172,8 @@ class SeriesViewModel(
         }
     }
 
-    suspend fun getDailyStats(days: Int = 30): List<DailyProgressStats> {
-        return repository.getDailyStats(days)
-    }
-
     private data class PeriodNavState(
-        val tab: String,
+        val tab: HistoryTimeframe,
         val offset: Int,
         val canGoPrevious: Boolean,
         val canGoNext: Boolean
@@ -190,6 +182,7 @@ class SeriesViewModel(
     fun refreshData() {
         viewModelScope.launch {
             try {
+                repository.fetchFromSupabase()
             } catch (e: Exception) {
                 e.printStackTrace()
             }

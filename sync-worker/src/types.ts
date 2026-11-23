@@ -10,7 +10,6 @@ export interface ParsedPoFile {
   lastUpdated: Date;
   volumeIndex?: number;
   characterOffset?: number;
-  percentage?: number;
 }
 
 export interface MatchedSeries {
@@ -18,7 +17,6 @@ export interface MatchedSeries {
   seriesTitle: string;
   currentCumulativeUnit: number;
   entryId?: string;
-  entryTitle?: string;
   entryCurrentUnit?: number;
 }
 

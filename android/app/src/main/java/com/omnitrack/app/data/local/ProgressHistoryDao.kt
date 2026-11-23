@@ -52,27 +52,6 @@ interface ProgressHistoryDao {
     """)
     fun getRecentActivityFeed(): Flow<List<ProgressHistoryWithMedia>>
 
-    @Query("""
-        SELECT 
-            h.entryId AS entryId,
-            h.activityDate AS activityDate,
-            h.previousUnit AS previousUnit,
-            h.newUnit AS newUnit,
-            h.source AS source,
-            m.title AS entryTitle,
-            m.type AS mediaType,
-            m.unitName AS unitName,
-            m.coverUrl AS coverUrl
-        FROM progress_history h
-        LEFT JOIN media_entries m ON h.entryId = m.id
-        WHERE h.activityDate >= :startDate
-        ORDER BY h.activityDate DESC, h.newUnit DESC
-    """)
-    suspend fun getActivityFeedSince(startDate: String): List<ProgressHistoryWithMedia>
-
-    @Query("SELECT * FROM progress_history ORDER BY activityDate DESC")
-    fun getAllHistory(): Flow<List<ProgressHistoryEntity>>
-
     @Query("DELETE FROM progress_history WHERE entryId = :entryId")
     suspend fun deleteHistoryForEntry(entryId: String)
 }

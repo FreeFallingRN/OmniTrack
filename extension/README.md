@@ -1,8 +1,10 @@
-# OmniTrack Browser Extension
+# OmniTrack Browser Extension (Planned)
 
-Chrome / Chromium Manifest V3 extension for desktop webnovel and anime progress tracking.
+The Chrome / Chromium Manifest V3 extension is planned and in progress. The extension
+is not implemented yet; the features below are intended specifications, not currently
+available functionality.
 
-## Specifications
+## Planned Specifications
 - **Manifest Version**: 3
 - **Global Shortcut**: `Alt+Shift+Up` (quick-increment chapter)
 - **Scraper Engine**: Content script detecting page headings and OpenGraph metadata (`og:title`).

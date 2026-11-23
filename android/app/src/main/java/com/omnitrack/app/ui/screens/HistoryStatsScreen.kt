@@ -29,7 +29,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.omnitrack.app.domain.model.*
-import com.omnitrack.app.ui.SeriesViewModel
+import com.omnitrack.app.ui.viewmodel.SeriesViewModel
 import com.omnitrack.app.utils.get30DWeeks
 import com.omnitrack.app.utils.get7DDates
 import com.omnitrack.app.utils.getAllTimeYears
@@ -51,10 +51,7 @@ fun HistoryStatsScreen(
     val canGoPrevious = uiState.canGoPrevious
     val canGoNext = uiState.canGoNext
 
-    val selectedTimeframe = remember(uiState.selectedPeriodTab) {
-        HistoryTimeframe.entries.find { it.label == uiState.selectedPeriodTab }
-            ?: HistoryTimeframe.DAYS_30
-    }
+    val selectedTimeframe = uiState.selectedPeriodTab
 
     // Calendar-aligned [start, end] bounds for the active timeframe & offset
     val periodBounds: Pair<LocalDate, LocalDate>? = remember(selectedTimeframe, periodOffset) {
@@ -194,7 +191,7 @@ fun HistoryStatsScreen(
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null,
-                                    onClick = { viewModel.selectPeriodTab(timeframe.label) }
+                                    onClick = { viewModel.selectPeriodTab(timeframe) }
                                 ),
                             shape = CircleShape,
                             color = if (selected) {

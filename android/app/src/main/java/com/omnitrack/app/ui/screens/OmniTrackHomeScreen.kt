@@ -43,7 +43,7 @@ import com.omnitrack.app.domain.model.UserStatus
 import com.omnitrack.app.data.SupabaseService
 import com.omnitrack.app.data.model.CreateSeriesRequest
 import com.omnitrack.app.data.model.CreatePlatformRequest
-import com.omnitrack.app.ui.SeriesViewModel
+import com.omnitrack.app.ui.viewmodel.SeriesViewModel
 import com.omnitrack.app.ui.components.MediaDetailSheet
 import com.omnitrack.app.ui.components.RelatedEntityDetail
 import com.omnitrack.app.ui.components.RelatedEntityDetailSheet
@@ -55,8 +55,6 @@ import com.omnitrack.app.utils.LibrarySortOption
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Link

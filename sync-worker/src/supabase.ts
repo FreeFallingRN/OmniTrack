@@ -102,7 +102,6 @@ export class SupabaseClient {
           seriesTitle,
           currentCumulativeUnit,
           entryId: entry.id,
-          entryTitle: entry.title,
           entryCurrentUnit: parseFloat(entry.current_unit || "0"),
         };
       }
@@ -121,7 +120,6 @@ export class SupabaseClient {
    * Updates current_unit on media_entries and cumulative progress on series, logging to progress_history.
    */
   public updateProgress(match: MatchedSeries, newChapter: number): void {
-    const previousCumulative = match.currentCumulativeUnit;
     let newCumulative = newChapter;
 
     if (match.entryId) {

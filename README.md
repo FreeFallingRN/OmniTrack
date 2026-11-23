@@ -11,25 +11,24 @@
                               │            Supabase Cloud               │
                               │  - PostgreSQL 15+ (Relational Store)    │
                               │  - PostgREST (Auto-generated REST API)  │
-                              │  - Realtime Engine (WebSockets)         │
                               └────────────────────┬────────────────────┘
                                                    │
                 ┌──────────────────────────────────┼──────────────────────────────────┐
-                │ HTTPS (PostgREST API)            │ HTTPS (PostgREST API)            │ HTTPS (PostgREST API)
+                │ HTTPS (Ktor REST)                │ Planned                          │ HTTPS (PostgREST API)
                 ▼                                  ▼                                  ▼
    ┌─────────────────────────┐        ┌─────────────────────────┐        ┌─────────────────────────┐
-   │       Android App       │        │  Desktop Browser Ext.   │        │ Google Apps Script Sync │
-   │  - Kotlin / Compose     │        │  - Chrome / Manifest V3 │        │  - Headless Cron Worker │
-   │  - Room Local Cache     │        │  - DOM/URL Parser       │        │  - Clasp CI/CD via GHA  │
-   │  - Action Notification  │        │  - Global Shortcuts     │        └────────────▲────────────┘
-   │  - Android Share Target │        └─────────────────────────┘                     │
-   └────────────▲────────────┘                                                        │ Google Drive API
-                │                                                                     │
-   ┌────────────┴────────────┐                                           ┌────────────┴────────────┐
-   │ Android System Services │                                           │   Moon+ Reader Pro      │
-   │  - BroadcastReceiver    │                                           │  - Syncs .po position   │
-   │  - WorkManager Sync     │                                           │    files to Drive Cache │
-   └─────────────────────────┘                                           └─────────────────────────┘
+   │       Android App       │        │  Planned Browser Ext.    │        │ Google Apps Script Sync │
+   │  - Kotlin / Compose     │        │  - In progress           │        │  - Headless Cron Worker │
+   │  - Room Local Cache     │        └─────────────────────────┘        │  - Clasp CI/CD via GHA  │
+   │  - Ktor HTTP REST Sync  │                                           └────────────▲────────────┘
+   │  - Android Share Target │                                                        │ Google Drive API
+   └────────────▲────────────┘                                                        │
+                │                                                          ┌────────────┴────────────┐
+   ┌────────────┴────────────┐                                           │   Moon+ Reader Pro      │
+   │ Android System Services │                                           │  - Syncs .po position   │
+   │  - BroadcastReceiver    │                                           │    files to Drive Cache │
+   │  - WorkManager Sync     │                                           └─────────────────────────┘
+   └─────────────────────────┘
 ```
 
 ---
@@ -57,7 +56,7 @@ omnitrack/
 │   ├── package.json             # Database migration tooling dependencies
 │   └── verify_connection.ps1    # PostgREST verification test script
 ├── sync-worker/                 # Google Apps Script syncing Moon+ Reader from Drive
-├── extension/                   # Chrome Manifest V3 Browser Extension (Vite + TS)
+├── extension/                   # Planned Chrome Manifest V3 extension (in progress)
 └── android/                     # Native Android Application (Kotlin + Jetpack Compose)
 ```
 

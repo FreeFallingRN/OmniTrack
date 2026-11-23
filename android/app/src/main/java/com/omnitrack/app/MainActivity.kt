@@ -1,4 +1,4 @@
-package com.omnitrack.app.ui
+package com.omnitrack.app
 
 import android.content.Intent
 import android.os.Bundle
@@ -11,7 +11,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
@@ -21,11 +20,11 @@ import com.omnitrack.app.data.repository.SeriesRepositoryImpl
 import com.omnitrack.app.domain.repository.SeriesRepository
 import com.omnitrack.app.ui.screens.OmniTrackHomeScreen
 import com.omnitrack.app.ui.theme.OmniTrackTheme
-import com.omnitrack.app.utils.GitHubRelease
 import com.omnitrack.app.utils.UpdateChecker
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
+import com.omnitrack.app.ui.viewmodel.SeriesViewModel
 
 class MainActivity : ComponentActivity() {
 

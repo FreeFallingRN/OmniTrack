@@ -1,6 +1,5 @@
 package com.omnitrack.app.domain.repository
 
-import com.omnitrack.app.domain.model.DailyProgressStats
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.OverallProgressStats
 import com.omnitrack.app.domain.model.ProgressHistoryItem
@@ -24,5 +23,4 @@ interface SeriesRepository {
 
     fun getRecentActivityFeed(): Flow<List<ProgressHistoryItem>>
     fun getProgressStats(): Flow<OverallProgressStats>
-    suspend fun getDailyStats(days: Int = 30): List<DailyProgressStats>
 }
