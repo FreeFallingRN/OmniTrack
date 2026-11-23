@@ -69,6 +69,21 @@ fun EntityDetailSheet(
                 }
             }
 
+            if (onEdit != null || onDelete != null) {
+                item {
+                    onEdit?.let {
+                        Button(onClick = it, modifier = Modifier.fillMaxWidth()) {
+                            Text("Edit")
+                        }
+                    }
+                    onDelete?.let {
+                        OutlinedButton(onClick = it, modifier = Modifier.fillMaxWidth()) {
+                            Text("Delete")
+                        }
+                    }
+                }
+            }
+
             if (works.isNotEmpty()) {
                 item {
                     Text("Works", style = MaterialTheme.typography.titleMedium)
@@ -82,18 +97,6 @@ fun EntityDetailSheet(
                 }
             }
 
-            item {
-                onEdit?.let {
-                    Button(onClick = it, modifier = Modifier.fillMaxWidth()) {
-                        Text("Edit")
-                    }
-                }
-                onDelete?.let {
-                    OutlinedButton(onClick = it, modifier = Modifier.fillMaxWidth()) {
-                        Text("Delete")
-                    }
-                }
-            }
         }
     }
 }

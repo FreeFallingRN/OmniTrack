@@ -13,14 +13,23 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
@@ -49,6 +58,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import com.omnitrack.app.data.SupabaseService
 import com.omnitrack.app.data.model.AuthorDto
 import com.omnitrack.app.data.model.CreateSeriesRequest
@@ -104,6 +114,8 @@ fun LibraryManagementScreen(
     var authors by remember { mutableStateOf<List<AuthorDto>>(emptyList()) }
     var platforms by remember { mutableStateOf<List<PlatformDto>>(emptyList()) }
     var selectedSection by remember { mutableIntStateOf(0) }
+    var searchQuery by remember { mutableStateOf("") }
+    val query = searchQuery.trim()
     LaunchedEffect(section) { selectedSection = section }
     var reloadToken by remember { mutableIntStateOf(0) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -128,14 +140,7 @@ fun LibraryManagementScreen(
     var showAuthorEditor by remember { mutableStateOf(false) }
     var showPlatformEditor by remember { mutableStateOf(false) }
     var selectedPlatform by remember { mutableStateOf<PlatformDto?>(null) }
-    var detailTitle by remember { mutableStateOf<String?>(null) }
-    var detailSubtitle by remember { mutableStateOf<String?>(null) }
-    var detailBody by remember { mutableStateOf<String?>(null) }
-    var detailImageUrl by remember { mutableStateOf<String?>(null) }
-    var detailWorks by remember { mutableStateOf<List<MediaEntry>>(emptyList()) }
-    var detailUserStatus by remember { mutableStateOf<String?>(null) }
-    var detailPublishingStatus by remember { mutableStateOf<String?>(null) }
-    var detailEdit by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var showDetail by remember { mutableStateOf(false) }
     var selectedSeries by remember { mutableStateOf<SeriesDto?>(null) }
     var selectedAuthor by remember { mutableStateOf<AuthorDto?>(null) }
     var selectedId by remember { mutableStateOf<String?>(null) }
@@ -147,7 +152,6 @@ fun LibraryManagementScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
                 .padding(innerPadding)
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -175,7 +179,7 @@ fun LibraryManagementScreen(
                 },
                 divider = {}
             ) {
-                listOf("Serie", "Author", "Platform").forEachIndexed { index, label ->
+                listOf("Series", "Author", "Platform").forEachIndexed { index, label ->
                     Box(
                         modifier = Modifier
                             .clickable(
@@ -202,10 +206,34 @@ fun LibraryManagementScreen(
                 }
             }
 
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Search ${listOf("series", "authors", "platforms")[selectedSection]}...") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(Icons.Default.Close, contentDescription = "Clear search")
+                        }
+                    }
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                    unfocusedBorderColor = Color.Transparent
+                )
+            )
+
             HorizontalDivider()
 
             AnimatedContent(
                 targetState = selectedSection,
+                modifier = Modifier.weight(1f),
                 transitionSpec = {
                     if (targetState > initialState) {
                         (slideInHorizontally { it } + fadeIn()) togetherWith
@@ -217,91 +245,79 @@ fun LibraryManagementScreen(
                 },
                 label = "management section transition"
             ) { section ->
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            when (section) {
-            0 -> {
-                series.forEach { item ->
-                    ManagementRow(
-                        title = item.title,
-                        subtitle = seriesEntryCountLabel(entries.filter { it.seriesId == item.id }),
-                        imageUrl = entries
-                            .filter { it.seriesId == item.id && !it.coverUrl.isNullOrBlank() }
-                            .maxByOrNull { it.sequenceNumber ?: Double.NEGATIVE_INFINITY }
-                            ?.coverUrl,
-                        selected = false,
-                        onClick = {
-                            val seriesEntries = entries.filter { it.seriesId == item.id }
-                            detailTitle = item.title
-                            detailSubtitle = null
-                            detailBody = null
-                            detailImageUrl = seriesEntries
-                                .filter { !it.coverUrl.isNullOrBlank() }
-                                .maxByOrNull { it.sequenceNumber ?: Double.NEGATIVE_INFINITY }
-                                ?.coverUrl
-                            detailWorks = seriesEntries
-                            detailUserStatus = UserStatus.fromValue(derivedSeriesStatus(entries, item.id)).label
-                            detailPublishingStatus = derivedSeriesPublishingStatus(entries, item.id)
-                            selectedId = item.id
-                            selectedKind = "series"
-                            detailEdit = {
-                                selectedSeries = item
-                                detailTitle = null
-                                showSeriesEditor = true
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    when (section) {
+                        0 -> {
+                            val matches = series.filter { it.title.contains(query, ignoreCase = true) }
+                            if (matches.isEmpty() && query.isNotEmpty()) {
+                                item { Text("No matching series") }
                             }
-                        },
-                        onLongClick = { }
-                    )
-                }
-            }
-            else -> {
-                if (selectedSection == 1) {
-                authors.forEach { author ->
-                    ManagementRow(
-                        title = author.name,
-                        subtitle = "Author",
-                        selected = false,
-                        onClick = {
-                            selectedId = author.id
-                            selectedKind = "author"
-                            detailTitle = author.name
-                            detailSubtitle = "Author"
-                            detailBody = listOfNotNull(author.nativeName, author.imageUrl, author.bio)
-                                .joinToString("\n")
-                            detailEdit = {
-                                selectedAuthor = author
-                                detailTitle = null
-                                showAuthorEditor = true
+                            items(matches, key = { it.id }) { item ->
+                                val works = entries.filter { it.seriesId == item.id }
+                                ManagementRow(
+                                    title = item.title,
+                                    subtitle = seriesEntryCountLabel(works),
+                                    imageUrl = works
+                                        .filter { !it.coverUrl.isNullOrBlank() }
+                                        .maxByOrNull { it.sequenceNumber ?: Double.NEGATIVE_INFINITY }
+                                        ?.coverUrl,
+                                    selected = false,
+                                    onClick = {
+                                        selectedId = item.id
+                                        selectedKind = "series"
+                                        showDetail = true
+                                    },
+                                    onLongClick = { }
+                                )
                             }
-                        },
-                        onLongClick = { }
-                    )
-                }
-                }
-                if (selectedSection == 2) {
-                    platforms.forEach { platform ->
-                        ManagementRow(
-                            title = platform.name,
-                            subtitle = "Platform",
-                            imageUrl = platform.logoUrl,
-                            selected = false,
-                            onClick = {
-                                selectedId = platform.id
-                                selectedKind = "platform"
-                                detailTitle = platform.name
-                                detailSubtitle = "Platform"
-                                detailBody = null
-                                detailEdit = {
-                                    selectedPlatform = platform
-                                    detailTitle = null
-                                    showPlatformEditor = true
-                                }
-                            },
-                            onLongClick = { }
-                        )
+                        }
+                        1 -> {
+                            val matches = authors.filter {
+                                it.name.contains(query, ignoreCase = true) ||
+                                    it.nativeName?.contains(query, ignoreCase = true) == true
+                            }
+                            if (matches.isEmpty() && query.isNotEmpty()) {
+                                item { Text("No matching authors") }
+                            }
+                            items(matches, key = { it.id }) { author ->
+                                val works = entries.filter { entry -> entry.creators.any { it.id == author.id } }
+                                ManagementRow(
+                                    title = author.name,
+                                    subtitle = "Author · ${seriesEntryCountLabel(works)}",
+                                    imageUrl = author.imageUrl,
+                                    selected = false,
+                                    onClick = {
+                                        selectedId = author.id
+                                        selectedKind = "author"
+                                        showDetail = true
+                                    },
+                                    onLongClick = { }
+                                )
+                            }
+                        }
+                        2 -> {
+                            val matches = platforms.filter { it.name.contains(query, ignoreCase = true) }
+                            if (matches.isEmpty() && query.isNotEmpty()) {
+                                item { Text("No matching platforms") }
+                            }
+                            items(matches, key = { it.id }) { platform ->
+                                val works = entries.filter { it.platformId == platform.id }
+                                ManagementRow(
+                                    title = platform.name,
+                                    subtitle = "Platform · ${seriesEntryCountLabel(works)}",
+                                    imageUrl = platform.logoUrl,
+                                    showPlatformIcon = true,
+                                    selected = false,
+                                    onClick = {
+                                        selectedId = platform.id
+                                        selectedKind = "platform"
+                                        showDetail = true
+                                    },
+                                    onLongClick = { }
+                                )
+                            }
+                        }
                     }
-                }
-            }
-                }
                 }
             }
         }
@@ -346,12 +362,15 @@ fun LibraryManagementScreen(
     if (showSeriesEditor) {
         SeriesEditorDialog(
             existing = selectedSeries,
-            derivedUserStatus = selectedSeries?.let { derivedSeriesStatus(entries, it.id) }
-                ?: UserStatus.PLANNING.value,
-            derivedPublishingStatus = selectedSeries?.let {
+            derivedUserStatus = selectedSeries?.takeIf { series -> entries.any { it.seriesId == series.id } }
+                ?.let { derivedSeriesStatus(entries, it.id) },
+            derivedPublishingStatus = selectedSeries?.takeIf { series -> entries.any { it.seriesId == series.id } }?.let {
                 derivedSeriesPublishingStatus(entries, it.id)
-            } ?: "releasing",
+            },
             onDismiss = { showSeriesEditor = false },
+            onDelete = selectedSeries?.let {
+                { showSeriesEditor = false; showDeleteWarning = true }
+            },
             onSave = { form ->
                 scope.launch {
                     try {
@@ -383,6 +402,9 @@ fun LibraryManagementScreen(
         AuthorEditorDialog(
             existing = selectedAuthor,
             onDismiss = { showAuthorEditor = false },
+            onDelete = selectedAuthor?.let {
+                { showAuthorEditor = false; showDeleteWarning = true }
+            },
             onSave = { form ->
                 scope.launch {
                     try {
@@ -416,6 +438,9 @@ fun LibraryManagementScreen(
         PlatformEditorSheet(
             existing = selectedPlatform,
             onDismiss = { showPlatformEditor = false },
+            onDelete = selectedPlatform?.let {
+                { showPlatformEditor = false; showDeleteWarning = true }
+            },
             onSave = { name, websiteUrl, logoUrl ->
                 scope.launch {
                     try {
@@ -439,22 +464,65 @@ fun LibraryManagementScreen(
         )
     }
 
-    detailTitle?.let { title ->
-        EntityDetailSheet(
-            title = title,
-            subtitle = detailSubtitle,
-            body = detailBody,
-            imageUrl = detailImageUrl,
-            works = detailWorks,
-            userStatus = detailUserStatus,
-            publishingStatus = detailPublishingStatus,
-            onDismiss = { detailTitle = null },
-            onEdit = { detailEdit?.invoke() },
-            onSelectWork = onSelectEntry,
-            onDelete = if (selectedKind != null) {
-                { detailTitle = null; showDeleteWarning = true }
-            } else null
-        )
+    val detailId = selectedId
+    if (showDetail && detailId != null) {
+        val seriesItem = series.firstOrNull { selectedKind == "series" && it.id == detailId }
+        val authorItem = authors.firstOrNull { selectedKind == "author" && it.id == detailId }
+        val platformItem = platforms.firstOrNull { selectedKind == "platform" && it.id == detailId }
+        val title = seriesItem?.title ?: authorItem?.name ?: platformItem?.name
+        val works = when (selectedKind) {
+            "series" -> entries.filter { it.seriesId == detailId }
+            "author" -> entries.filter { entry -> entry.creators.any { it.id == detailId } }
+            "platform" -> entries.filter { it.platformId == detailId }
+            else -> emptyList()
+        }
+        if (title != null) {
+            val count = seriesEntryCountLabel(works)
+            EntityDetailSheet(
+                title = title,
+                subtitle = when (selectedKind) {
+                    "author" -> "Author · $count"
+                    "platform" -> "Platform · $count"
+                    else -> count
+                },
+                body = when (selectedKind) {
+                    "author" -> listOfNotNull(authorItem?.nativeName, authorItem?.bio)
+                        .filter { it.isNotBlank() }.joinToString("\n")
+                    "platform" -> platformItem?.websiteUrl
+                    else -> null
+                },
+                imageUrl = when (selectedKind) {
+                    "series" -> works
+                        .filter { !it.coverUrl.isNullOrBlank() }
+                        .maxByOrNull { it.sequenceNumber ?: Double.NEGATIVE_INFINITY }
+                        ?.coverUrl
+                    "author" -> authorItem?.imageUrl
+                    "platform" -> platformItem?.logoUrl
+                    else -> null
+                },
+                works = works,
+                userStatus = if (seriesItem != null && works.isNotEmpty()) {
+                    UserStatus.fromValue(derivedSeriesStatus(entries, detailId)).label
+                } else null,
+                publishingStatus = if (seriesItem != null && works.isNotEmpty()) {
+                    derivedSeriesPublishingStatus(entries, detailId)
+                } else null,
+                onDismiss = { showDetail = false },
+                onEdit = {
+                    showDetail = false
+                    when (selectedKind) {
+                        "series" -> { selectedSeries = seriesItem; showSeriesEditor = true }
+                        "author" -> { selectedAuthor = authorItem; showAuthorEditor = true }
+                        "platform" -> { selectedPlatform = platformItem; showPlatformEditor = true }
+                    }
+                },
+                onSelectWork = {
+                    showDetail = false
+                    onSelectEntry(it)
+                },
+                onDelete = null
+            )
+        }
     }
 
     error?.let { message ->
@@ -472,6 +540,7 @@ private fun ManagementRow(
     title: String,
     subtitle: String,
     imageUrl: String? = null,
+    showPlatformIcon: Boolean = false,
     selected: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit
@@ -494,13 +563,34 @@ private fun ManagementRow(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (!imageUrl.isNullOrBlank()) {
+            if (showPlatformIcon && !imageUrl.isNullOrBlank()) {
+                SubcomposeAsyncImage(
+                    model = imageUrl,
+                    contentDescription = "$title logo",
+                    modifier = Modifier.size(40.dp),
+                    contentScale = ContentScale.Fit,
+                    loading = {
+                        Icon(Icons.Default.Link, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    },
+                    error = {
+                        Icon(Icons.Default.Link, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                )
+            } else if (!imageUrl.isNullOrBlank()) {
                 AsyncImage(
                     model = imageUrl,
                     contentDescription = "$title logo",
                     modifier = Modifier.size(40.dp),
                     contentScale = ContentScale.Fit
                 )
+            } else if (showPlatformIcon) {
+                Box(modifier = Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Default.Link,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
