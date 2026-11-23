@@ -1,5 +1,6 @@
 package com.omnitrack.app.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,11 +15,13 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -96,7 +99,8 @@ fun MediaEntryEditorSheet(
     prefill: ScrapedMediaDraft? = null,
     entries: List<MediaEntry>,
     onDismiss: () -> Unit,
-    onSave: (MediaEntryEditorData) -> Unit
+    onSave: (MediaEntryEditorData) -> Unit,
+    onDelete: (() -> Unit)? = null
 ) {
     var series by remember { mutableStateOf<List<SeriesDto>>(emptyList()) }
     var authors by remember { mutableStateOf<List<AuthorDto>>(emptyList()) }
@@ -523,6 +527,20 @@ fun MediaEntryEditorSheet(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Save entry")
+                }
+            }
+            if (existing != null && onDelete != null) {
+                item {
+                    OutlinedButton(
+                        onClick = onDelete,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error
+                        ),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+                    ) {
+                        Text("Delete")
+                    }
                 }
             }
         }

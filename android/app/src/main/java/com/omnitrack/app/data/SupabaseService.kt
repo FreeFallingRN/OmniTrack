@@ -98,11 +98,13 @@ object SupabaseService {
 
     suspend fun updateEntryProgress(
         entryId: String,
-        currentUnit: Double,
+        currentUnit: Double?,
         updatedStatus: String? = null
     ): MediaEntryDto {
         val payload = buildJsonObject {
-            put("current_unit", currentUnit)
+            if (currentUnit != null) {
+                put("current_unit", currentUnit)
+            }
             if (updatedStatus != null) {
                 put("user_status", updatedStatus)
             }

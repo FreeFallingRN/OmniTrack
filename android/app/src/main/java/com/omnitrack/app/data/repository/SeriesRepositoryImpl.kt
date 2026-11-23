@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.math.BigDecimal
 import java.time.LocalDate
 
 class SeriesRepositoryImpl(
@@ -136,7 +137,11 @@ class SeriesRepositoryImpl(
                 )
             }
 
-            Triple(nextUnit, targetStatus, prevUnitForHistory)
+            Triple(
+                nextUnit,
+                targetStatus?.takeIf { it != current?.userStatus },
+                prevUnitForHistory
+            )
         }
 
         // Sync to Supabase
@@ -182,7 +187,8 @@ class SeriesRepositoryImpl(
             id = id,
             computeTarget = { current ->
                 val prev = current?.currentUnit ?: 0.0
-                val next = (prev + delta).coerceAtLeast(0.0)
+                val next = BigDecimal.valueOf(prev).add(BigDecimal.valueOf(delta))
+                    .max(BigDecimal.ZERO).toDouble()
                 val shouldAutoResume = delta > 0 &&
                         (current?.userStatus == "paused" || current?.userStatus == "planning")
                 val statusToWrite = if (shouldAutoResume) "in_progress" else current?.userStatus

@@ -249,6 +249,7 @@ internal fun LazyListScope.activityPaceSection(
 
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 internal fun LazyListScope.libraryBreakdownSection(mediaEntries: List<MediaEntry>) {
         // Format & Status Breakdown
         item {
@@ -325,9 +326,10 @@ internal fun LazyListScope.libraryBreakdownSection(mediaEntries: List<MediaEntry
                                 }
                             }
 
-                            Row(
+                            FlowRow(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 LegendItem("Reading: $inProgressCountVal", MaterialTheme.colorScheme.primary)
                                 LegendItem("Completed: $completedCountVal", MaterialTheme.colorScheme.tertiary)
@@ -389,9 +391,10 @@ internal fun LazyListScope.libraryBreakdownSection(mediaEntries: List<MediaEntry
                                 }
                             }
 
-                            Row(
+                            FlowRow(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 if (novels > 0) LegendItem("Novels: $novels", Color(0xFF6750A4))
                                 if (comics > 0) LegendItem("Comics: $comics", Color(0xFF006C50))
@@ -520,7 +523,9 @@ private fun LegendItem(label: String, color: Color) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }

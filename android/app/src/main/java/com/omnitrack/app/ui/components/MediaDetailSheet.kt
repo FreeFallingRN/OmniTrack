@@ -5,32 +5,34 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -40,40 +42,30 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.omnitrack.app.domain.model.EntryCreator
 import com.omnitrack.app.domain.model.MediaEntry
+import com.omnitrack.app.domain.model.UserStatus
 import com.omnitrack.app.domain.model.toDisplayLabel
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun MediaDetailSheet(
     entry: MediaEntry,
     relatedEntries: List<MediaEntry>,
     onDismiss: () -> Unit,
     onUpdateProgress: (Double) -> Unit,
-    onIncrementProgress: (Double) -> Unit,
+    onUpdateStatus: (UserStatus) -> Unit,
+    controlsEnabled: Boolean,
     onSelectEntry: (MediaEntry) -> Unit,
     onOpenRelatedEntity: (RelatedEntityDetail) -> Unit,
     onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onShare: () -> Unit = {}
 ) {
-    var progressText by remember(entry.id) {
-        mutableStateOf(entry.currentUnit.toString())
-    }
-
-    LaunchedEffect(entry.currentUnit) {
-        val displayed = progressText.toDoubleOrNull()
-        if (displayed != entry.currentUnit) {
-            progressText = entry.currentUnit.toString()
-        }
-    }
     var showCover by remember(entry.id) { mutableStateOf(false) }
-    var showDeleteWarning by remember(entry.id) { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -125,11 +117,23 @@ fun MediaDetailSheet(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Text(
-                            text = entry.title,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Text(
+                                text = entry.title,
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                            IconButton(onClick = onEdit, modifier = Modifier.size(40.dp)) {
+                                Icon(Icons.Default.Edit, contentDescription = "Edit")
+                            }
+                            IconButton(onClick = onShare, modifier = Modifier.size(40.dp)) {
+                                Icon(Icons.Default.Share, contentDescription = "Share")
+                            }
+                        }
 
                         val displayCreators = entry.creators.ifEmpty {
                             entry.authors.map { EntryCreator(name = it, role = "author") }
@@ -207,43 +211,49 @@ fun MediaDetailSheet(
             }
 
             item {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "User status",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(
+                            UserStatus.IN_PROGRESS, UserStatus.COMPLETED, UserStatus.PLANNING,
+                            UserStatus.PAUSED, UserStatus.DROPPED
+                        ).forEach { status ->
+                            FilterChip(
+                                selected = entry.userStatus == status,
+                                onClick = { onUpdateStatus(status) },
+                                enabled = controlsEnabled,
+                                label = { Text(status.label) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    disabledSelectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    disabledLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         text = "Update progress",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary
                     )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = progressText,
-                            onValueChange = { value ->
-                                progressText = value
-                                value.toDoubleOrNull()?.let(onUpdateProgress)
-                            },
-                            label = { Text(entry.unitName) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            singleLine = true,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
+                    key(entry.id) {
+                        ProgressWheel(
+                            entryId = entry.id,
+                            currentUnit = entry.currentUnit,
+                            unitName = entry.unitName,
+                            enabled = controlsEnabled,
+                            onUpdateProgress = onUpdateProgress
                         )
-                        FilledTonalButton(
-                            onClick = {
-                                onIncrementProgress(1.0)
-                            }
-                        ) {
-                            Text("+1")
-                        }
-                        FilledTonalButton(
-                            onClick = {
-                                onIncrementProgress(10.0)
-                            }
-                        ) {
-                            Text("+10")
-                        }
                     }
                 }
             }
@@ -263,42 +273,6 @@ fun MediaDetailSheet(
                     )
                 }
             }
-
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Button(onClick = onEdit, modifier = Modifier.weight(1f)) {
-                        Text("Edit")
-                    }
-                    OutlinedButton(
-                        onClick = { showDeleteWarning = true },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Delete")
-                    }
-                }
-            }
-        }
-
-        if (showDeleteWarning) {
-            AlertDialog(
-                onDismissRequest = { showDeleteWarning = false },
-                title = { Text("Delete entry permanently?") },
-                text = { Text("This removes the entry, its author links, progress, and history.") },
-                confirmButton = {
-                    DeleteCountdownButton {
-                        showDeleteWarning = false
-                        onDelete()
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showDeleteWarning = false }) {
-                        Text("Cancel")
-                    }
-                }
-            )
         }
     }
 

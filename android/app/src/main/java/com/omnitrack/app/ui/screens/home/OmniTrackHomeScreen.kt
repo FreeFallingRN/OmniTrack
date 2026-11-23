@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LocalLibrary
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FloatingActionButton
@@ -44,13 +45,16 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -59,7 +63,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import androidx.room.withTransaction
 import com.omnitrack.app.data.SupabaseService
+import com.omnitrack.app.data.local.AppDatabase
 import com.omnitrack.app.data.model.CreateEntryRequest
 import com.omnitrack.app.data.model.CreatePlatformRequest
 import com.omnitrack.app.data.model.CreateSeriesRequest
@@ -67,6 +73,7 @@ import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.model.ProgressSource
 import com.omnitrack.app.domain.model.UserStatus
+import com.omnitrack.app.ui.components.DeleteCountdownButton
 import com.omnitrack.app.ui.components.MediaDetailSheet
 import com.omnitrack.app.ui.components.MediaEntryEditorData
 import com.omnitrack.app.ui.components.MediaEntryEditorSheet
@@ -80,6 +87,7 @@ import com.omnitrack.app.utils.LibrarySortOption
 import com.omnitrack.app.utils.MediaUrlImporter
 import com.omnitrack.app.utils.ScrapedMediaDraft
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -100,6 +108,7 @@ fun OmniTrackHomeScreen(
     var managementSection by remember { mutableIntStateOf(0) }
     var showEntryEditor by remember { mutableStateOf(false) }
     var editorEntry by remember { mutableStateOf<MediaEntry?>(null) }
+    var showDeleteWarning by remember { mutableStateOf(false) }
     val refreshScope = rememberCoroutineScope()
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("omnitrack_prefs", Context.MODE_PRIVATE) }
@@ -329,8 +338,13 @@ fun OmniTrackHomeScreen(
         selectedEntryForDetail?.let { snapshot ->
             // Always resolve the live entry from the stream so the sheet sees the latest currentUnit
             val entry = mediaEntries.firstOrNull { it.id == snapshot.id } ?: snapshot
+            var pendingStatus by remember(entry.id) { mutableStateOf<UserStatus?>(null) }
+            var savingStatus by remember(entry.id) { mutableStateOf(false) }
+            LaunchedEffect(entry.userStatus, pendingStatus, savingStatus) {
+                if (!savingStatus && pendingStatus == entry.userStatus) pendingStatus = null
+            }
             MediaDetailSheet(
-                entry = entry,
+                entry = entry.copy(userStatus = pendingStatus ?: entry.userStatus),
                 relatedEntries = if (!entry.seriesId.isNullOrBlank()) {
                     mediaEntries
                         .filter { it.seriesId == entry.seriesId && it.id != entry.id }
@@ -342,8 +356,34 @@ fun OmniTrackHomeScreen(
                 onUpdateProgress = { newProgress ->
                     viewModel.updateProgress(entry.id, newProgress, ProgressSource.DETAIL_SHEET)
                 },
-                onIncrementProgress = { delta ->
-                    viewModel.incrementUnitCount(entry.id, delta, ProgressSource.INCREMENT)
+                controlsEnabled = !savingStatus && !isRefreshing,
+                onUpdateStatus = { status ->
+                    if (status != (pendingStatus ?: entry.userStatus)) {
+                        pendingStatus = status
+                        savingStatus = true
+                        refreshScope.launch {
+                            try {
+                                SupabaseService.updateEntryProgress(entry.id, null, status.value)
+                                val db = AppDatabase.getInstance(context)
+                                db.withTransaction {
+                                    val current = checkNotNull(db.mediaEntryDao().getEntryById(entry.id))
+                                    db.mediaEntryDao().updateProgressAndStatus(
+                                        entry.id, current.currentUnit, status.value
+                                    )
+                                }
+                                viewModel.refreshData()
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                pendingStatus = null
+                                Log.e("OmniTrackHomeScreen", "Failed to update status", e)
+                                Toast.makeText(context, "Status update failed: ${e.message}", Toast.LENGTH_LONG).show()
+                                viewModel.refreshData()
+                            } finally {
+                                savingStatus = false
+                            }
+                        }
+                    }
                 },
                 onSelectEntry = { selectedEntryForDetail = it },
                 onOpenRelatedEntity = {
@@ -355,10 +395,6 @@ fun OmniTrackHomeScreen(
                     selectedEntryForDetail = null
                     scrapedPrefill = null
                     showEntryEditor = true
-                },
-                onDelete = {
-                    selectedEntryForDetail = null
-                    viewModel.deleteMediaEntry(entry.id)
                 }
             )
         }
@@ -396,6 +432,9 @@ fun OmniTrackHomeScreen(
                     showEntryEditor = false
                     scrapedPrefill = null
                 },
+                onDelete = if (editorEntry != null) {
+                    { showDeleteWarning = true }
+                } else null,
                 onSave = { form: MediaEntryEditorData ->
                     refreshScope.launch {
                         try {
@@ -533,6 +572,31 @@ fun OmniTrackHomeScreen(
                     }
                 }
             )
+        }
+
+        if (showDeleteWarning) {
+            editorEntry?.let { entry ->
+                AlertDialog(
+                    onDismissRequest = { showDeleteWarning = false },
+                    title = { Text("Delete entry permanently?") },
+                    text = { Text("This removes the entry, its author links, progress, and history.") },
+                    confirmButton = {
+                        DeleteCountdownButton {
+                            viewModel.deleteMediaEntry(entry.id)
+                            showDeleteWarning = false
+                            showEntryEditor = false
+                            selectedEntryForDetail = null
+                            editorEntry = null
+                            scrapedPrefill = null
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showDeleteWarning = false }) {
+                            Text("Cancel")
+                        }
+                    }
+                )
+            }
         }
     }
 }
