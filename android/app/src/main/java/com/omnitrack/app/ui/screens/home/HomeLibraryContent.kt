@@ -49,6 +49,8 @@ fun HomeLibraryContent(
     onRefresh: () -> Unit,
     onSelectEntry: (MediaEntry) -> Unit
 ) {
+    val isSearching = searchQuery.isNotBlank()
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -97,40 +99,49 @@ fun HomeLibraryContent(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        ScrollableTabRow(
-            selectedTabIndex = selectedTabMediaType.ordinal,
-            edgePadding = 0.dp,
-            containerColor = Color.Transparent,
-            indicator = { tabPositions ->
-                if (selectedTabMediaType.ordinal < tabPositions.size) {
-                    TabRowDefaults.SecondaryIndicator(
-                        modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTabMediaType.ordinal]),
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-            },
-            divider = {}
-        ) {
-            MediaType.entries.forEach { mediaType ->
-                Tab(
-                    selected = selectedTabMediaType == mediaType,
-                    onClick = { onMediaTypeSelected(mediaType) },
-                    text = {
-                        Text(
-                            text = mediaType.label,
-                            fontWeight = if (selectedTabMediaType == mediaType) {
-                                FontWeight.Bold
-                            } else {
-                                FontWeight.Normal
-                            },
-                            color = if (selectedTabMediaType == mediaType) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
+        if (isSearching) {
+            Text(
+                text = "Searching all types & statuses",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(vertical = 12.dp)
+            )
+        } else {
+            ScrollableTabRow(
+                selectedTabIndex = selectedTabMediaType.ordinal,
+                edgePadding = 0.dp,
+                containerColor = Color.Transparent,
+                indicator = { tabPositions ->
+                    if (selectedTabMediaType.ordinal < tabPositions.size) {
+                        TabRowDefaults.SecondaryIndicator(
+                            modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTabMediaType.ordinal]),
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
-                )
+                },
+                divider = {}
+            ) {
+                MediaType.entries.forEach { mediaType ->
+                    Tab(
+                        selected = selectedTabMediaType == mediaType,
+                        onClick = { onMediaTypeSelected(mediaType) },
+                        text = {
+                            Text(
+                                text = mediaType.label,
+                                fontWeight = if (selectedTabMediaType == mediaType) {
+                                    FontWeight.Bold
+                                } else {
+                                    FontWeight.Normal
+                                },
+                                color = if (selectedTabMediaType == mediaType) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            )
+                        }
+                    )
+                }
             }
         }
 
@@ -157,12 +168,15 @@ fun HomeLibraryContent(
                 label = "library status filter transition"
             ) { status ->
                 val filteredList = mediaEntries.filter { entry ->
-                    val matchesType = entry.type == selectedTabMediaType
-                    val matchesStatus = entry.userStatus == status
-                    val matchesSearch = searchQuery.isBlank() ||
+                    if (isSearching) {
                         entry.title.contains(searchQuery, ignoreCase = true) ||
-                        entry.seriesTitle?.contains(searchQuery, ignoreCase = true) == true
-                    matchesType && matchesStatus && matchesSearch
+                            entry.seriesTitle?.contains(searchQuery, ignoreCase = true) == true ||
+                            entry.alternativeTitles.any { it.contains(searchQuery, ignoreCase = true) } ||
+                            entry.authors.any { it.contains(searchQuery, ignoreCase = true) } ||
+                            entry.creators.any { it.name.contains(searchQuery, ignoreCase = true) }
+                    } else {
+                        entry.type == selectedTabMediaType && entry.userStatus == status
+                    }
                 }.let { list ->
                     when (sortOption) {
                         LibrarySortOption.LAST_UPDATED -> list.sortedByDescending { it.updatedAt }
@@ -188,10 +202,22 @@ fun HomeLibraryContent(
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         items(filteredList, key = { it.id }) { entry ->
-                            TrackedMediaRow(
-                                entry = entry,
-                                onClick = { onSelectEntry(entry) }
-                            )
+                            Column {
+                                TrackedMediaRow(
+                                    entry = entry,
+                                    onClick = { onSelectEntry(entry) }
+                                )
+                                if (isSearching) {
+                                    Text(
+                                        text = "${entry.type.singularLabel} | ${entry.userStatus.label}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier
+                                            .clickable { onSelectEntry(entry) }
+                                            .padding(start = 71.dp, bottom = 8.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }

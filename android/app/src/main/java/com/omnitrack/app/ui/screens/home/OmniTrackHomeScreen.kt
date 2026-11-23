@@ -222,8 +222,8 @@ fun OmniTrackHomeScreen(
                     .padding(vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                // Status filter pills: only render at the bottom when on the Library screen (index 0)
-                if (bottomNavIndex == 0) {
+                // Status filter pills: only render on the Library screen when not searching
+                if (bottomNavIndex == 0 && searchQuery.isBlank()) {
                     HomeLibraryStatusFilter(
                         selectedUserStatus = selectedUserStatus,
                         onStatusSelected = { selectedUserStatus = it }
