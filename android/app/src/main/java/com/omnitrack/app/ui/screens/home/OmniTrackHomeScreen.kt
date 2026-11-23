@@ -99,8 +99,18 @@ fun OmniTrackHomeScreen(
     val mediaEntries by viewModel.mediaEntries.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
 
-    var selectedTabMediaType by remember { mutableStateOf(MediaType.NOVEL) }
-    var selectedUserStatus by remember { mutableStateOf(UserStatus.IN_PROGRESS) }
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("omnitrack_prefs", Context.MODE_PRIVATE) }
+    var selectedTabMediaType by remember {
+        mutableStateOf(MediaType.fromValue(prefs.getString("selected_media_type", null) ?: ""))
+    }
+    var selectedUserStatus by remember {
+        mutableStateOf(UserStatus.fromValue(prefs.getString("selected_user_status", null) ?: ""))
+    }
+    val onStatusSelected: (UserStatus) -> Unit = {
+        selectedUserStatus = it
+        prefs.edit().putString("selected_user_status", it.value).apply()
+    }
     var searchQuery by remember { mutableStateOf("") }
     var selectedEntryForDetail by remember { mutableStateOf<MediaEntry?>(null) }
     var selectedRelatedEntity by remember { mutableStateOf<RelatedEntityDetail?>(null) }
@@ -110,8 +120,6 @@ fun OmniTrackHomeScreen(
     var editorEntry by remember { mutableStateOf<MediaEntry?>(null) }
     var showDeleteWarning by remember { mutableStateOf(false) }
     val refreshScope = rememberCoroutineScope()
-    val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences("omnitrack_prefs", Context.MODE_PRIVATE) }
     var sortOption by remember {
         mutableStateOf(LibrarySortOption.fromKey(prefs.getString("sort_option", "last_updated")))
     }
@@ -226,7 +234,7 @@ fun OmniTrackHomeScreen(
                 if (bottomNavIndex == 0 && searchQuery.isBlank()) {
                     HomeLibraryStatusFilter(
                         selectedUserStatus = selectedUserStatus,
-                        onStatusSelected = { selectedUserStatus = it }
+                        onStatusSelected = onStatusSelected
                     )
                 }
 
@@ -302,8 +310,12 @@ fun OmniTrackHomeScreen(
                             mediaEntries = mediaEntries,
                             isRefreshing = isRefreshing,
                             selectedTabMediaType = selectedTabMediaType,
-                            onMediaTypeSelected = { selectedTabMediaType = it },
+                            onMediaTypeSelected = {
+                                selectedTabMediaType = it
+                                prefs.edit().putString("selected_media_type", it.value).apply()
+                            },
                             selectedUserStatus = selectedUserStatus,
+                            onStatusSelected = onStatusSelected,
                             searchQuery = searchQuery,
                             onSearchQueryChanged = { searchQuery = it },
                             sortOption = sortOption,

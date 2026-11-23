@@ -8,6 +8,8 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -21,11 +23,14 @@ import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -34,6 +39,7 @@ import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.model.UserStatus
 import com.omnitrack.app.ui.components.TrackedMediaRow
 import com.omnitrack.app.utils.LibrarySortOption
+import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -43,6 +49,7 @@ fun HomeLibraryContent(
     selectedTabMediaType: MediaType,
     onMediaTypeSelected: (MediaType) -> Unit,
     selectedUserStatus: UserStatus,
+    onStatusSelected: (UserStatus) -> Unit,
     searchQuery: String,
     onSearchQueryChanged: (String) -> Unit,
     sortOption: LibrarySortOption,
@@ -50,10 +57,75 @@ fun HomeLibraryContent(
     onSelectEntry: (MediaEntry) -> Unit
 ) {
     val isSearching = searchQuery.isNotBlank()
+    val currentMediaType by rememberUpdatedState(selectedTabMediaType)
+    val currentUserStatus by rememberUpdatedState(selectedUserStatus)
+    val selectMediaType by rememberUpdatedState(onMediaTypeSelected)
+    val selectStatus by rememberUpdatedState(onStatusSelected)
 
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .pointerInput(isSearching) {
+                if (!isSearching) {
+                    val thresholdPx = 72.dp.toPx()
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val start = down.position
+                        val upperHalf = start.y < size.height / 2f
+                        var lastPosition = start
+                        var claimed = false
+                        var cancelled = false
+                        do {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.find { it.id == down.id }
+                            if (change == null || event.changes.any { it.id != down.id && it.pressed }) {
+                                cancelled = true
+                                break
+                            }
+                            if (change.isConsumed && !claimed) {
+                                cancelled = true
+                                break
+                            }
+                            lastPosition = change.position
+                            val dx = lastPosition.x - start.x
+                            val dy = lastPosition.y - start.y
+                            if (!claimed && abs(dy) > viewConfiguration.touchSlop &&
+                                abs(dx) <= abs(dy) * 1.5f
+                            ) {
+                                cancelled = true
+                                break
+                            }
+                            if (!claimed && change.pressed &&
+                                abs(dx) > thresholdPx && abs(dx) > abs(dy) * 1.5f
+                            ) {
+                                claimed = true
+                            }
+                            if (claimed) change.consume()
+                        } while (change.pressed)
+
+                        val dx = lastPosition.x - start.x
+                        val dy = lastPosition.y - start.y
+                        if (!cancelled && claimed &&
+                            abs(dx) > thresholdPx && abs(dx) > abs(dy) * 1.5f
+                        ) {
+                            val direction = if (dx < 0f) 1 else -1
+                            if (upperHalf) {
+                                val index = (currentMediaType.ordinal + direction)
+                                    .coerceIn(0, MediaType.entries.lastIndex)
+                                if (index != currentMediaType.ordinal) {
+                                    selectMediaType(MediaType.entries[index])
+                                }
+                            } else {
+                                val index = (currentUserStatus.ordinal + direction)
+                                    .coerceIn(0, UserStatus.entries.lastIndex)
+                                if (index != currentUserStatus.ordinal) {
+                                    selectStatus(UserStatus.entries[index])
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             .statusBarsPadding()
             .padding(horizontal = 16.dp)
     ) {
@@ -155,9 +227,14 @@ fun HomeLibraryContent(
                 .weight(1f)
         ) {
             AnimatedContent(
-                targetState = selectedUserStatus,
+                targetState = selectedTabMediaType to selectedUserStatus,
                 transitionSpec = {
-                    if (targetState.ordinal > initialState.ordinal) {
+                    val forward = if (targetState.first != initialState.first) {
+                        targetState.first.ordinal > initialState.first.ordinal
+                    } else {
+                        targetState.second.ordinal > initialState.second.ordinal
+                    }
+                    if (forward) {
                         slideInHorizontally { it } + fadeIn() togetherWith
                             (slideOutHorizontally { -it } + fadeOut())
                     } else {
@@ -165,8 +242,8 @@ fun HomeLibraryContent(
                             (slideOutHorizontally { it } + fadeOut())
                     }
                 },
-                label = "library status filter transition"
-            ) { status ->
+                label = "library filter transition"
+            ) { (mediaType, status) ->
                 val filteredList = mediaEntries.filter { entry ->
                     if (isSearching) {
                         entry.title.contains(searchQuery, ignoreCase = true) ||
@@ -175,7 +252,7 @@ fun HomeLibraryContent(
                             entry.authors.any { it.contains(searchQuery, ignoreCase = true) } ||
                             entry.creators.any { it.name.contains(searchQuery, ignoreCase = true) }
                     } else {
-                        entry.type == selectedTabMediaType && entry.userStatus == status
+                        entry.type == mediaType && entry.userStatus == status
                     }
                 }.let { list ->
                     when (sortOption) {
