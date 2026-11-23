@@ -1,20 +1,20 @@
 # Copilot instructions
 
-These notes describe verified Android app code. Keep Android changes consistent with the contracts below; verify APIs in source before using them.
+These notes describe verified Android app code and repository conventions for OmniTrack. Keep changes aligned with the contracts below and verify symbols in source before editing.
 
 ## Project overview and stack
 
 - Android app module: `android/app`, package/namespace `com.omnitrack.app`; Kotlin with JVM 17.
-- UI: Jetpack Compose with Material 3.
-- Persistence: Room SQLite cache (`AppDatabase`, `MediaEntryDao`, `ProgressHistoryDao`); remote data uses Supabase REST through Ktor and kotlinx.serialization.
-- Architecture: MVVM with an offline-first repository (`SeriesRepository` / `SeriesRepositoryImpl`). `MainActivity` manually creates the Room database, repository, and `SeriesViewModel` through a `ViewModelProvider.Factory`; no DI framework is used here.
+- UI: Jetpack Compose with Material 3 (`OmniTrackTheme`, dark color scheme).
+- Persistence: Room SQLite cache (`AppDatabase`, `MediaEntryDao`, `ProgressHistoryDao`); remote sync uses Supabase REST through Ktor and `kotlinx.serialization` (not WebSocket realtime).
+- Architecture: MVVM with an offline-first repository (`SeriesRepository` / `SeriesRepositoryImpl`). `MainActivity` manually wires the Room database, repository, and `SeriesViewModel` via a `ViewModelProvider.Factory`; no DI framework is used.
 - Key source directories:
   - `android/app/src/main/java/com/omnitrack/app/domain/model/` — domain models and enums.
   - `.../domain/repository/` — repository interface.
   - `.../data/local/` — Room database, entities, and DAOs.
   - `.../data/repository/` — repository implementation and entity mappers.
   - `.../data/` — Supabase service; `.../data/model/` — network DTOs.
-  - `.../ui/` — `MainActivity`, `SeriesViewModel`, components, screens, and theme.
+  - `.../ui/` — `MainActivity`, `viewmodel/` (`SeriesViewModel`), `components/`, `screens/` (including split screen sections/calculations/editors), and `theme/`.
   - `.../utils/`, `.../worker/` — utilities and worker.
 
 ## Domain and data contracts
@@ -22,8 +22,8 @@ These notes describe verified Android app code. Keep Android changes consistent 
 - `MediaEntry` fields: `id: String`; `seriesId`, `seriesTitle: String?`; `title: String`; `type: MediaType`; `sequenceNumber: Double?`; `userStatus: UserStatus`; `publishingStatus: String`; `isCanon: Boolean`; `authors: List<String>`; `creators: List<EntryCreator>`; `alternativeTitles: List<String>`; `coverUrl`, `sourceUrl`, `platformId`, `platform: String?`; `currentUnit: Double`; `unitName: String`; `createdAt`, `updatedAt: String`.
 - `EntryCreator`: `id: String?`, `name: String`, `role: String` (default `"author"`).
 - `ProgressHistoryItem`: `entryId`, `activityDate`, `source`, `entryTitle`, `unitName: String`; `previousUnit`, `newUnit: Double`; `mediaType: MediaType`; `coverUrl: String?`. Helpers: `toEntryLocalDate(): LocalDate?`, `delta: Double`.
-- `HistoryTimeframe` values/labels: `DAYS_7/"Week"`, `DAYS_30/"Month"`, `YEAR/"Year"`, `ALL_TIME/"All Time"`.
-- `ProgressSource` values: `DETAIL_SHEET/"detail_sheet"`, `INCREMENT/"increment"`, `EDITOR/"editor"`, `IMPORT/"import"`. It exposes `value`, `isActiveConsumption`, and `fromValue(value: String): ProgressSource`.
+- `HistoryTimeframe` values/labels: `DAYS_7/"Week"`, `DAYS_30/"Month"`, `YEAR/"Year"`, `ALL_TIME/"All Time"`. Use `HistoryTimeframe` consistently rather than mixing raw string keys and enum labels.
+- `ProgressSource` values: `DETAIL_SHEET/"detail_sheet"`, `INCREMENT/"increment"`, `EDITOR/"editor"`, `IMPORT/"import"`. Exposes `value`, `isActiveConsumption`, and `fromValue(value: String): ProgressSource`.
 - `MediaType` values: `NOVEL`, `COMIC`, `ANIME`, `MOVIE`; `UserStatus`: `PLANNING`, `IN_PROGRESS`, `COMPLETED`, `PAUSED`, `DROPPED`. Both expose `value`, `label`, and `fromValue(value: String)`.
 - Other progress models: `DailyProgressStats(date: String, totalUnitsDelta: Double, entriesCount: Int)`, `MediaTypeStats(type: MediaType, totalUnits: Double, entriesCount: Int)`, `OverallProgressStats(totalUnitsTracked: Double, activeDaysCount: Int, currentStreakDays: Int, mediaTypeBreakdown: List<MediaTypeStats>)`.
 - `SeriesRepository` contracts:
@@ -36,15 +36,15 @@ These notes describe verified Android app code. Keep Android changes consistent 
 
 ## State and Compose conventions
 
-- `SeriesViewModel` exposes `mediaEntries`, `recentActivity`, `progressStats`, `isRefreshing`, and combined `state` as `StateFlow`s. Repository flows are converted with `stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), initialValue)`.
-- `SeriesViewModelState` contains `mediaEntries`, `recentActivity`, `progressStats`, `selectedPeriodTab`, `periodOffset`, `canGoPrevious`, and `canGoNext`. Public actions include `selectPeriodTab(tab: String)`, `stepPeriod(delta: Int)`, `updateProgress(...)`, `incrementUnitCount(...)`, `deleteMediaEntry(id: String)`, and `refreshData()`.
-- Preserve `refreshData()`: `MainActivity`, `OmniTrackHomeScreen`, and `LibraryManagementScreen` call it to launch a repository refresh.
-- Screens receive `SeriesViewModel` as a parameter and collect its flows with `collectAsState()` (not `collectAsStateWithLifecycle()` in the inspected screens). `HistoryStatsScreen` collects combined `state`; home and library management collect `mediaEntries`.
-- Screens use `@Composable` functions, `MaterialTheme.colorScheme` / `.typography`, Material 3 components (`Scaffold`, `TabRow`, `Card`, `ModalBottomSheet`, dialogs), Compose `remember` state, and effects such as `LaunchedEffect`. Theme entry point is `OmniTrackTheme`, with a dark color scheme.
+- `SeriesViewModel` (in `ui.viewmodel`) exposes `mediaEntries`, `recentActivity`, `progressStats`, `isRefreshing`, and combined `state` as `StateFlow`s. Repository flows use `stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), initialValue)`.
+- `isRefreshing` tracks active sync work (`fetchFromSupabase()`) and resets in `finally` while preserving `CancellationException`; UI refresh indicators such as `PullToRefreshBox` should follow `isRefreshing` rather than resetting immediately on launch.
+- `SeriesViewModelState` contains `mediaEntries`, `recentActivity`, `progressStats`, `selectedPeriodTab`, `periodOffset`, `canGoPrevious`, and `canGoNext`. Public actions include `selectPeriodTab(...)`, `stepPeriod(delta: Int)`, `updateProgress(...)`, `incrementUnitCount(...)`, `deleteMediaEntry(id: String)`, and `refreshData()`.
+- Preserve `refreshData()`: `MainActivity`, `OmniTrackHomeScreen`, and `LibraryManagementScreen` call it to trigger repository sync.
+- Screens receive `SeriesViewModel` as a parameter and collect flows with `collectAsState()`. Large screens may split distinct UI sections, dialogs/editors, or pure calculation helpers into focused companion files in the same package/feature area.
 
-## Guardrails
+## Repo preferences & guardrails
 
-- Do not invent model properties, methods, DAO operations, repository methods, or signatures; check their declarations before use.
-- Keep existing public APIs used by screens, especially `SeriesViewModel.refreshData()`.
-- Do not run Gradle builds, emulators, or tests unless explicitly instructed.
-- Keep changes scoped to the requested Android behavior and update directly related documentation when needed.
+- **Keep the repo simple:** Prefer direct code, small focused files, and deleting dead code over introducing extra abstraction layers, wrappers, use-case classes, or new dependencies.
+- **Strict scope:** Do not invent model properties, methods, DAO operations, repository methods, or signatures; check declarations before use. Keep edits scoped to requested files and update directly related docs when needed.
+- **Builds & tests are manual:** Do not run Gradle builds, emulators, or tests unless explicitly instructed; the developer runs and tests builds directly in Android Studio.
+- **Concise output:** Keep responses brief and scoped to the requested task.

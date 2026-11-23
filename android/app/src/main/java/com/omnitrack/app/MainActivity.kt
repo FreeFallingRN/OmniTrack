@@ -17,7 +17,7 @@ import androidx.lifecycle.lifecycleScope
 import com.omnitrack.app.data.local.AppDatabase
 import com.omnitrack.app.data.repository.SeriesRepositoryImpl
 import com.omnitrack.app.domain.repository.SeriesRepository
-import com.omnitrack.app.ui.screens.OmniTrackHomeScreen
+import com.omnitrack.app.ui.screens.home.OmniTrackHomeScreen
 import com.omnitrack.app.ui.theme.OmniTrackTheme
 import com.omnitrack.app.utils.UpdateChecker
 import kotlinx.coroutines.launch
