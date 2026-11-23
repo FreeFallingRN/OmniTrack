@@ -58,6 +58,7 @@ internal fun StatusButtonGroup(
     selected: String,
     options: List<Pair<String, String>>,
     compact: Boolean = false,
+    enabled: Boolean = true,
     onSelected: (String) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -70,6 +71,7 @@ internal fun StatusButtonGroup(
                 FilterChip(
                     selected = selected == value,
                     onClick = { onSelected(value) },
+                    enabled = enabled,
                     modifier = if (compact) Modifier.height(36.dp) else Modifier,
                     label = {
                         if (compact) {

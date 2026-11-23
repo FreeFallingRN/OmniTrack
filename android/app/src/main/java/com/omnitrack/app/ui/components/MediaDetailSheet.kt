@@ -5,7 +5,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,8 +21,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -211,32 +208,13 @@ fun MediaDetailSheet(
             }
 
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = "User status",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(
-                            UserStatus.IN_PROGRESS, UserStatus.COMPLETED, UserStatus.PLANNING,
-                            UserStatus.PAUSED, UserStatus.DROPPED
-                        ).forEach { status ->
-                            FilterChip(
-                                selected = entry.userStatus == status,
-                                onClick = { onUpdateStatus(status) },
-                                enabled = controlsEnabled,
-                                label = { Text(status.label) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    disabledSelectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    disabledLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            )
-                        }
-                    }
-                }
+                StatusButtonGroup(
+                    label = "User status",
+                    selected = entry.userStatus.value,
+                    options = UserStatus.entries.map { it.value to it.label },
+                    enabled = controlsEnabled,
+                    onSelected = { onUpdateStatus(UserStatus.fromValue(it)) }
+                )
             }
 
             item {
