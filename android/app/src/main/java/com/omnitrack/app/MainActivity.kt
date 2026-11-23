@@ -14,7 +14,6 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.omnitrack.app.data.local.AppDatabase
 import com.omnitrack.app.data.repository.SeriesRepositoryImpl
 import com.omnitrack.app.domain.repository.SeriesRepository
@@ -43,22 +42,15 @@ class MainActivity : ComponentActivity() {
             progressHistoryDao = database.progressHistoryDao()
         )
 
-        // 3. Trigger initial background sync from Supabase to local Room cache
-        lifecycleScope.launch {
-            try {
-                repository.fetchFromSupabase()
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-
-        // 4. Custom ViewModel Factory for supplying the SeriesRepository
+        // Custom ViewModel Factory for supplying the SeriesRepository
         val viewModelFactory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 return SeriesViewModel(repository) as T
             }
         }
+        val seriesViewModel = ViewModelProvider(this, viewModelFactory)[SeriesViewModel::class.java]
+        seriesViewModel.refreshData()
 
         // Check for updates from GitHub releases on app startup
         lifecycleScope.launch {
@@ -73,7 +65,6 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             OmniTrackTheme {
-                val seriesViewModel: SeriesViewModel = viewModel(factory = viewModelFactory)
                 val coroutineScope = rememberCoroutineScope()
                 var isDownloadingUpdate by remember { mutableStateOf(false) }
 

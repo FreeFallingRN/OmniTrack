@@ -9,6 +9,7 @@ import com.omnitrack.app.data.local.ProgressHistoryEntity
 import com.omnitrack.app.domain.model.*
 import com.omnitrack.app.domain.model.ProgressSource
 import com.omnitrack.app.domain.repository.SeriesRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
@@ -80,6 +81,8 @@ class SeriesRepositoryImpl(
                     )
                 }
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e("SeriesRepository", "Failed to sync from Supabase", e)
         }

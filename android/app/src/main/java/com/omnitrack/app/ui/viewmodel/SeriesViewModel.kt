@@ -12,9 +12,11 @@ import com.omnitrack.app.utils.get7DDates
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.temporal.ChronoUnit
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -35,6 +37,9 @@ class SeriesViewModel(
 
     private val selectedPeriodTabFlow = MutableStateFlow(HistoryTimeframe.DAYS_30)
     private val periodOffsetFlow = MutableStateFlow(0)
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+    private var activeRefreshes = 0
 
     val mediaEntries: StateFlow<List<MediaEntry>> = repository.getMediaEntriesStream()
         .stateIn(
@@ -181,10 +186,17 @@ class SeriesViewModel(
 
     fun refreshData() {
         viewModelScope.launch {
+            activeRefreshes++
+            _isRefreshing.value = true
             try {
                 repository.fetchFromSupabase()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 e.printStackTrace()
+            } finally {
+                activeRefreshes--
+                _isRefreshing.value = activeRefreshes > 0
             }
         }
     }

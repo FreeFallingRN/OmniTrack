@@ -71,6 +71,7 @@ fun OmniTrackHomeScreen(
     onSharedUrlConsumed: (() -> Unit)? = null
 ) {
     val mediaEntries by viewModel.mediaEntries.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
 
     var selectedTabMediaType by remember { mutableStateOf(MediaType.NOVEL) }
     var selectedUserStatus by remember { mutableStateOf(UserStatus.IN_PROGRESS) }
@@ -79,7 +80,6 @@ fun OmniTrackHomeScreen(
     var selectedRelatedEntity by remember { mutableStateOf<RelatedEntityDetail?>(null) }
     var bottomNavIndex by remember { mutableIntStateOf(0) }
     var managementSection by remember { mutableIntStateOf(0) }
-    var isRefreshing by remember { mutableStateOf(false) }
     var showEntryEditor by remember { mutableStateOf(false) }
     var editorEntry by remember { mutableStateOf<MediaEntry?>(null) }
     val refreshScope = rememberCoroutineScope()
@@ -385,13 +385,7 @@ fun OmniTrackHomeScreen(
 
                         PullToRefreshBox(
                             isRefreshing = isRefreshing,
-                            onRefresh = {
-                                refreshScope.launch {
-                                    isRefreshing = true
-                                    viewModel.refreshData()
-                                    isRefreshing = false
-                                }
-                            },
+                            onRefresh = { viewModel.refreshData() },
                             modifier = Modifier
                                 .fillMaxSize()
                                 .weight(1f)

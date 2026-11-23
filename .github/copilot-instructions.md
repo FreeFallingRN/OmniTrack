@@ -36,9 +36,9 @@ These notes describe verified Android app code. Keep Android changes consistent 
 
 ## State and Compose conventions
 
-- `SeriesViewModel` exposes `mediaEntries`, `recentActivity`, `progressStats`, and combined `state` as `StateFlow`s. Repository flows are converted with `stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), initialValue)`.
+- `SeriesViewModel` exposes `mediaEntries`, `recentActivity`, `progressStats`, `isRefreshing`, and combined `state` as `StateFlow`s. Repository flows are converted with `stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), initialValue)`.
 - `SeriesViewModelState` contains `mediaEntries`, `recentActivity`, `progressStats`, `selectedPeriodTab`, `periodOffset`, `canGoPrevious`, and `canGoNext`. Public actions include `selectPeriodTab(tab: String)`, `stepPeriod(delta: Int)`, `updateProgress(...)`, `incrementUnitCount(...)`, `deleteMediaEntry(id: String)`, and `refreshData()`.
-- Preserve `refreshData()`: `OmniTrackHomeScreen` and `LibraryManagementScreen` call it. Do not assume it performs a refresh; its current body has no data-fetch operation.
+- Preserve `refreshData()`: `MainActivity`, `OmniTrackHomeScreen`, and `LibraryManagementScreen` call it to launch a repository refresh.
 - Screens receive `SeriesViewModel` as a parameter and collect its flows with `collectAsState()` (not `collectAsStateWithLifecycle()` in the inspected screens). `HistoryStatsScreen` collects combined `state`; home and library management collect `mediaEntries`.
 - Screens use `@Composable` functions, `MaterialTheme.colorScheme` / `.typography`, Material 3 components (`Scaffold`, `TabRow`, `Card`, `ModalBottomSheet`, dialogs), Compose `remember` state, and effects such as `LaunchedEffect`. Theme entry point is `OmniTrackTheme`, with a dark color scheme.
 
