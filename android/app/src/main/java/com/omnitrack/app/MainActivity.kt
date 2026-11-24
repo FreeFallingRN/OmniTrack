@@ -76,11 +76,6 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        override fun onResume() {
-            super.onResume()
-            seriesViewModel.syncMoonReader()
-        }
-
         setContent {
             OmniTrackTheme {
                 val coroutineScope = rememberCoroutineScope()
@@ -133,6 +128,11 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         pendingSharedUrl = extractSharedUrl(intent)
+    }
+    
+    override fun onResume() {
+        super.onResume()
+        seriesViewModel.syncMoonReader()
     }
 
     private fun extractSharedUrl(intent: Intent?): String? {
