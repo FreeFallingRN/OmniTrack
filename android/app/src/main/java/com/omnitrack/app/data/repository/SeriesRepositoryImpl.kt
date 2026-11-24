@@ -99,14 +99,14 @@ class SeriesRepositoryImpl(
      */
     private suspend fun recordProgressInternal(
         id: String,
-        computeTarget: (current: MediaEntryEntity?) -> Pair<Double, String?>,
+        computeTarget: (current: MediaEntryEntity?) -> Pair<Double, String?>?,
         source: ProgressSource
-    ) {
+    ): Boolean {
         val today = LocalDate.now().toString()
 
-        val (newUnit, statusToWrite, previousUnitToLog) = progressMutex.withLock {
+        val result = progressMutex.withLock {
             val current = mediaEntryDao.getEntryById(id)
-            val (nextUnit, targetStatus) = computeTarget(current)
+            val (nextUnit, targetStatus) = computeTarget(current) ?: return@withLock null
 
             // Update MediaEntry in Room
             if (targetStatus != null && targetStatus != current?.userStatus) {
@@ -142,7 +142,8 @@ class SeriesRepositoryImpl(
                 targetStatus?.takeIf { it != current?.userStatus },
                 prevUnitForHistory
             )
-        }
+        } ?: return false
+        val (newUnit, statusToWrite, previousUnitToLog) = result
 
         // Sync to Supabase
         try {
@@ -161,9 +162,12 @@ class SeriesRepositoryImpl(
                     source = source.value
                 )
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e("SeriesRepository", "Failed to sync progress to Supabase", e)
         }
+        return true
     }
 
     override suspend fun updateProgress(
@@ -177,6 +181,19 @@ class SeriesRepositoryImpl(
             source = source
         )
     }
+
+    override suspend fun updateMoonReaderChapterIfHigher(id: String, newProgress: Double): Boolean =
+        recordProgressInternal(
+            id = id,
+            computeTarget = { current ->
+                if (current != null &&
+                    (current.unitName.trim().equals("chapter", ignoreCase = true) ||
+                        current.unitName.trim().equals("chapters", ignoreCase = true)) &&
+                    newProgress > current.currentUnit
+                ) Pair(newProgress, current.userStatus) else null
+            },
+            source = ProgressSource.IMPORT
+        )
 
     override suspend fun incrementProgress(
         id: String,

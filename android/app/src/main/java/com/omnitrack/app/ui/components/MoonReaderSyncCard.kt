@@ -24,6 +24,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,28 +36,42 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import com.omnitrack.app.ui.viewmodel.SeriesViewModel
 import com.omnitrack.app.utils.MoonReaderImport
 import com.omnitrack.app.utils.MoonReaderScan
+import com.omnitrack.app.utils.MoonReaderSync
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-
-private fun isChapterUnit(unitName: String): Boolean =
-    unitName.trim().equals("chapter", ignoreCase = true) ||
-        unitName.trim().equals("chapters", ignoreCase = true)
 
 @Composable
 fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("omnitrack_prefs", Context.MODE_PRIVATE) }
     val entries by viewModel.mediaEntries.collectAsState()
+    val syncing by viewModel.moonReaderBusy.collectAsState()
     val scope = rememberCoroutineScope()
     var folder by remember { mutableStateOf(prefs.getString("moon_reader_folder", null)) }
+    fun hasAccess(value: String?): Boolean = value != null &&
+        context.contentResolver.persistedUriPermissions.any { it.uri == Uri.parse(value) && it.isReadPermission }
+    var folderAccess by remember { mutableStateOf(hasAccess(folder)) }
     var busy by remember { mutableStateOf(false) }
     var preview by remember { mutableStateOf<MoonReaderScan?>(null) }
+    var previewFolder by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableStateOf(emptySet<String>()) }
     var values by remember { mutableStateOf(emptyMap<String, String>()) }
+
+    DisposableEffect(context) {
+        val lifecycle = (context as? LifecycleOwner)?.lifecycle
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) folderAccess = hasAccess(folder)
+        }
+        lifecycle?.addObserver(observer)
+        onDispose { lifecycle?.removeObserver(observer) }
+    }
 
     fun scan(uri: Uri, tree: Boolean) {
         scope.launch {
@@ -67,7 +82,7 @@ fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
                 values = result.matches.associate { match ->
                     val unit = match.entry.unitName.trim().lowercase()
                     val value = when {
-                        isChapterUnit(unit) -> {
+                        MoonReaderSync.isChapterUnit(unit) -> {
                             val key = "moon_reader_chapter_offset_${match.entry.id}"
                             val chapter = match.progress.spineChapterIndex.toDouble() + 1.0
                             val offset = if (prefs.contains(key)) {
@@ -84,6 +99,7 @@ fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
                     }
                     match.entry.id to value
                 }
+                previewFolder = if (tree) uri.toString() else null
                 preview = result
             } catch (e: CancellationException) {
                 throw e
@@ -99,9 +115,13 @@ fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
         if (uri != null) {
             try {
                 context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                check(hasAccess(uri.toString())) { "Folder read permission was not retained" }
                 val previous = folder
+                check(prefs.edit().putString("moon_reader_folder", uri.toString()).commit()) {
+                    "Could not save the selected folder"
+                }
                 folder = uri.toString()
-                prefs.edit().putString("moon_reader_folder", folder).apply()
+                folderAccess = true
                 if (previous != null && previous != folder) {
                     try {
                         context.contentResolver.releasePersistableUriPermission(
@@ -112,7 +132,7 @@ fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
                     }
                 }
                 scan(uri, true)
-            } catch (e: SecurityException) {
+            } catch (e: Exception) {
                 message = "Could not retain folder access: ${e.message}"
             }
         }
@@ -125,20 +145,30 @@ fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Moon+ Reader progress", style = MaterialTheme.typography.titleMedium)
             Text("Import .po sync files or supported backup positions.", style = MaterialTheme.typography.bodyMedium)
+            Text(
+                if (folder == null) "No folder linked"
+                else if (folderAccess) "Folder linked: ${Uri.parse(folder).lastPathSegment}"
+                else "Folder access lost. Change folder to grant access again."
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { folderPicker.launch(null) }, enabled = !busy) {
-                    Text("Choose folder")
+                OutlinedButton(onClick = { folderPicker.launch(null) }, enabled = !busy && !syncing) {
+                    Text(if (folder == null) "Choose folder" else "Change folder")
                 }
-                OutlinedButton(onClick = { filePicker.launch(arrayOf("*/*")) }, enabled = !busy) {
+                OutlinedButton(onClick = { filePicker.launch(arrayOf("*/*")) }, enabled = !busy && !syncing) {
                     Text("Choose file")
                 }
             }
             if (folder != null) {
-                TextButton(onClick = { scan(Uri.parse(folder), true) }, enabled = !busy) {
-                    Text("Scan saved folder")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { viewModel.syncMoonReader(manual = true) }, enabled = !busy && !syncing) {
+                        Text("Sync now")
+                    }
+                    TextButton(onClick = { scan(Uri.parse(folder), true) }, enabled = !busy && !syncing && folderAccess) {
+                        Text("Link books")
+                    }
                 }
             }
-            if (busy) Text("Working…")
+            if (busy || syncing) Text("Working…")
         }
     }
 
@@ -161,6 +191,7 @@ fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
                 ) {
                     Text(result.message)
                     Text("Chapter entries use the Moon+ spine index plus one and a saved per-entry offset. Adjust the chapter to calibrate future imports.")
+                    Text("Applying a chapter match from a folder .po file links it for automatic sync. Backups and individual files are imported only.")
                     result.matches.forEach { match ->
                         val id = match.entry.id
                         val input = values[id].orEmpty()
@@ -178,7 +209,7 @@ fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
                             Column(Modifier.weight(1f)) {
                                 Text(match.entry.title, style = MaterialTheme.typography.titleSmall)
                                 Text("Moon+ spine chapter index: ${match.progress.spineChapterIndex} (${match.progress.title})")
-                                if (!isChapterUnit(match.entry.unitName)) {
+                                if (!MoonReaderSync.isChapterUnit(match.entry.unitName)) {
                                     Text("Moon+: ${match.progress.percent}%")
                                 }
                                 Text("Current: ${match.entry.currentUnit} ${match.entry.unitName}")
@@ -208,23 +239,9 @@ fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
                             var applied = 0
                             try {
                                 for (match in result.matches.filter { it.entry.id in selected }) {
-                                    val current = viewModel.mediaEntries.value.firstOrNull { it.id == match.entry.id }
-                                    check(current != null && current.currentUnit == match.entry.currentUnit &&
-                                        current.unitName == match.entry.unitName) {
-                                        "${match.entry.title} changed since the preview; scan again"
-                                    }
                                     val value = values.getValue(match.entry.id).toDouble()
-                                    viewModel.importMoonReaderProgress(match.entry.id, value)
+                                    viewModel.importMoonReaderProgress(match, value, previewFolder)
                                     applied++
-                                    if (isChapterUnit(match.entry.unitName)) {
-                                        val offset = value - (match.progress.spineChapterIndex.toDouble() + 1.0)
-                                        check(prefs.edit().putLong(
-                                            "moon_reader_chapter_offset_${match.entry.id}",
-                                            offset.toRawBits()
-                                        ).commit()) {
-                                            "Could not save the chapter offset for ${match.entry.title}"
-                                        }
-                                    }
                                 }
                                 preview = null
                                 message = "Applied $applied updates locally; Supabase sync was attempted."

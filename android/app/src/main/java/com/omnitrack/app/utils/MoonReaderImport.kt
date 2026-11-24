@@ -11,16 +11,21 @@ import java.text.Normalizer
 import java.util.Locale
 import java.util.zip.ZipInputStream
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 data class MoonReaderProgress(
     val title: String,
     val spineChapterIndex: Int,
     val percent: Double,
-    val timestamp: Long
+    val timestamp: Long,
+    val fileUri: Uri? = null,
+    val fileName: String? = null
 )
 data class MoonReaderMatch(val entry: MediaEntry, val progress: MoonReaderProgress)
-data class MoonReaderScan(val matches: List<MoonReaderMatch>, val message: String)
+data class MoonReaderScan(val matches: List<MoonReaderMatch>, val message: String, val hasProblems: Boolean)
+data class MoonReaderFile(val uri: String, val name: String)
 
 object MoonReaderImport {
     private const val MAX_FILES = 4000
@@ -29,7 +34,13 @@ object MoonReaderImport {
     private val position = Regex("""^(\d+)\*(\d+)@\d+#\d+:([0-9]+(?:\.[0-9]+)?)%""")
     private val bookExtension = Regex("""\.(epub|pdf|mobi|azw3?|fb2|txt|cbz|cbr)$""", RegexOption.IGNORE_CASE)
 
-    suspend fun scan(context: Context, uri: Uri, tree: Boolean, entries: List<MediaEntry>): MoonReaderScan =
+    suspend fun scan(
+        context: Context,
+        uri: Uri,
+        tree: Boolean,
+        entries: List<MediaEntry>,
+        linkedFiles: Map<String, MoonReaderFile>? = null
+    ): MoonReaderScan =
         withContext(Dispatchers.IO) {
             val resolver = context.contentResolver
             val found = mutableListOf<MoonReaderProgress>()
@@ -37,6 +48,7 @@ object MoonReaderImport {
             var inspected = 0
 
             fun readFile(file: Uri, name: String) {
+                if (linkedFiles != null && !name.endsWith(".po", true)) return
                 if (!name.endsWith(".po", true) &&
                     !name.endsWith(".mrpro", true) && !name.endsWith(".mrstd", true) &&
                     !name.endsWith(".zip", true)) return
@@ -46,7 +58,9 @@ object MoonReaderImport {
                         ?: error("Unable to open $name")
                     stream.use {
                         if (name.endsWith(".po", true)) {
-                            listOfNotNull(parsePosition(name, readLimited(it, MAX_ITEM_BYTES)))
+                            listOfNotNull(parsePosition(name, readLimited(it, MAX_ITEM_BYTES))?.copy(
+                                fileUri = file, fileName = name
+                            ))
                         } else {
                             readArchive(it)
                         }
@@ -63,6 +77,7 @@ object MoonReaderImport {
                 pending.add(root to 0)
                 var count = 0
                 while (pending.isNotEmpty()) {
+                    currentCoroutineContext().ensureActive()
                     val (id, depth) = pending.removeFirst()
                     if (!visited.add(id)) continue
                     val children = DocumentsContract.buildChildDocumentsUriUsingTree(uri, id)
@@ -77,6 +92,7 @@ object MoonReaderImport {
                     ) ?: error("Unable to list the selected folder")
                     cursor.use {
                         while (it.moveToNext()) {
+                            currentCoroutineContext().ensureActive()
                             count++
                             check(count <= MAX_FILES) { "Folder contains more than $MAX_FILES items" }
                             val childId = it.getString(0) ?: continue
@@ -101,7 +117,25 @@ object MoonReaderImport {
             }.filter { it.first.isNotEmpty() }.groupBy({ it.first }, { it.second })
             var ambiguous = 0
             var unmatched = 0
-            val candidates = found.mapNotNull { item ->
+            val candidates = if (linkedFiles != null) {
+                entries.mapNotNull { entry ->
+                    val link = linkedFiles[entry.id] ?: return@mapNotNull null
+                    val exact = found.filter { it.fileUri.toString() == link.uri }
+                    val named = if (linkedFiles.values.count { it.name == link.name } == 1) {
+                        found.filter { item ->
+                            item.fileName == link.name &&
+                                linkedFiles.none { (id, other) ->
+                                    id != entry.id && other.uri == item.fileUri.toString()
+                                }
+                        }
+                    } else emptyList()
+                    val matching = if (exact.isNotEmpty()) exact else named
+                    if (matching.size == 1) MoonReaderMatch(entry, matching.single()) else {
+                        if (matching.isEmpty()) unmatched++ else ambiguous++
+                        null
+                    }
+                }
+            } else found.mapNotNull { item ->
                 val matches = byTitle[normalize(item.title)].orEmpty().distinctBy { it.id }
                 when (matches.size) {
                     0 -> { unmatched++; null }
@@ -110,9 +144,12 @@ object MoonReaderImport {
                 }
             }
             val matches = candidates.groupBy { it.entry.id }.values.mapNotNull { group ->
-                val latest = group.maxOf { it.progress.timestamp }
-                val newest = group.filter { it.progress.timestamp == latest }
-                if (newest.map { it.progress.spineChapterIndex to it.progress.percent }.distinct().size > 1) {
+                val directFiles = if (tree) group.filter { it.progress.fileUri != null } else emptyList()
+                val preferred = directFiles.ifEmpty { group }
+                val latest = preferred.maxOf { it.progress.timestamp }
+                val newest = preferred.filter { it.progress.timestamp == latest }
+                if (newest.map { it.progress.spineChapterIndex to it.progress.percent }.distinct().size > 1 ||
+                    (tree && newest.mapNotNull { it.progress.fileUri }.distinct().size > 1)) {
                     ambiguous++
                     null
                 } else newest.first()
@@ -120,7 +157,8 @@ object MoonReaderImport {
             MoonReaderScan(
                 matches,
                 "Found ${found.size} positions in $inspected files; $unmatched unmatched, " +
-                    "$ambiguous ambiguous, $problems unreadable or unsupported."
+                    "$ambiguous ambiguous, $problems unreadable or unsupported.",
+                unmatched > 0 || ambiguous > 0 || problems > 0
             )
         }
 

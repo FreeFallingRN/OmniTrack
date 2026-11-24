@@ -14,6 +14,7 @@ interface SeriesRepository {
         newProgress: Double,
         source: ProgressSource = ProgressSource.DETAIL_SHEET
     )
+    suspend fun updateMoonReaderChapterIfHigher(id: String, newProgress: Double): Boolean
     suspend fun incrementProgress(
         id: String,
         delta: Double,

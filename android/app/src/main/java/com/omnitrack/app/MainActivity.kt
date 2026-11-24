@@ -2,6 +2,7 @@ package com.omnitrack.app
 
 import android.content.Intent
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -30,6 +31,7 @@ class MainActivity : ComponentActivity() {
 
     var availableUpdate by mutableStateOf<Triple<String, String, String>?>(null)
     var pendingSharedUrl by mutableStateOf<String?>(null)
+    private lateinit var seriesViewModel: SeriesViewModel
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,11 +54,16 @@ class MainActivity : ComponentActivity() {
         val viewModelFactory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                return SeriesViewModel(repository) as T
+                return SeriesViewModel(repository, applicationContext) as T
             }
         }
-        val seriesViewModel = ViewModelProvider(this, viewModelFactory)[SeriesViewModel::class.java]
+        seriesViewModel = ViewModelProvider(this, viewModelFactory)[SeriesViewModel::class.java]
         seriesViewModel.refreshData()
+        lifecycleScope.launch {
+            seriesViewModel.moonReaderMessages.collect { message ->
+                Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show()
+            }
+        }
 
         // Check for updates from GitHub releases on app startup
         lifecycleScope.launch {
@@ -67,6 +74,11 @@ class MainActivity : ComponentActivity() {
             } catch (e: Exception) {
                 e.printStackTrace()
             }
+        }
+
+        override fun onResume() {
+            super.onResume()
+            seriesViewModel.syncMoonReader()
         }
 
         setContent {

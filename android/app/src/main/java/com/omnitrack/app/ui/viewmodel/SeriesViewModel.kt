@@ -1,5 +1,8 @@
 package com.omnitrack.app.ui.viewmodel
 
+import android.content.Context
+import android.os.SystemClock
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.omnitrack.app.domain.model.HistoryTimeframe
@@ -9,15 +12,20 @@ import com.omnitrack.app.domain.model.ProgressHistoryItem
 import com.omnitrack.app.domain.model.ProgressSource
 import com.omnitrack.app.domain.repository.SeriesRepository
 import com.omnitrack.app.utils.get7DDates
+import com.omnitrack.app.utils.MoonReaderMatch
+import com.omnitrack.app.utils.MoonReaderSync
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.temporal.ChronoUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -32,9 +40,16 @@ data class SeriesViewModelState(
 )
 
 class SeriesViewModel(
-    private val repository: SeriesRepository
+    private val repository: SeriesRepository,
+    context: Context
 ) : ViewModel() {
 
+    private val moonReaderSync = MoonReaderSync(context, repository)
+    private val _moonReaderBusy = MutableStateFlow(false)
+    val moonReaderBusy: StateFlow<Boolean> = _moonReaderBusy.asStateFlow()
+    private val _moonReaderMessages = MutableSharedFlow<String>(extraBufferCapacity = 16)
+    val moonReaderMessages = _moonReaderMessages.asSharedFlow()
+    private var lastMoonReaderCheck: Long? = null
     private val selectedPeriodTabFlow = MutableStateFlow(HistoryTimeframe.DAYS_30)
     private val periodOffsetFlow = MutableStateFlow(0)
     private val _isRefreshing = MutableStateFlow(false)
@@ -157,8 +172,30 @@ class SeriesViewModel(
         }
     }
 
-    suspend fun importMoonReaderProgress(id: String, newProgress: Double) {
-        repository.updateProgress(id, newProgress, ProgressSource.IMPORT)
+    suspend fun importMoonReaderProgress(match: MoonReaderMatch, newProgress: Double, folder: String?) {
+        moonReaderSync.apply(match, newProgress, folder)
+    }
+
+    fun syncMoonReader(manual: Boolean = false) {
+        if (_moonReaderBusy.value) return
+        val now = SystemClock.elapsedRealtime()
+        val lastCheck = lastMoonReaderCheck
+        if (!manual && lastCheck != null && now - lastCheck < 60_000L) return
+        lastMoonReaderCheck = now
+        _moonReaderBusy.value = true
+        viewModelScope.launch {
+            try {
+                isRefreshing.first { !it }
+                moonReaderSync.sync(manual) { _moonReaderMessages.emit(it) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("MoonReaderSync", "Moon+ Reader sync failed", e)
+                _moonReaderMessages.emit("Moon+ Reader sync failed: ${e.message ?: "Unknown error"}")
+            } finally {
+                _moonReaderBusy.value = false
+            }
+        }
     }
 
     fun incrementUnitCount(
