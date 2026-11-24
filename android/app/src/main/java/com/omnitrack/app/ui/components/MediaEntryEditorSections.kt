@@ -190,7 +190,8 @@ internal fun LazyListScope.seriesSection(
     newSeriesTitle: String,
     onNewSeriesTitleChange: (String) -> Unit,
     sequence: String,
-    onSequenceChange: (String) -> Unit
+    onSequenceChange: (String) -> Unit,
+    positionError: String?
 ) {
     item {
         val selectedTitle = if (createSeries) newSeriesTitle.ifBlank { "New series" }
@@ -232,6 +233,14 @@ internal fun LazyListScope.seriesSection(
                         }
                         EntryField("Pos. in series (optional)", sequence, onSequenceChange, keyboardType = KeyboardType.Decimal)
                     }
+                }
+                if (positionError != null) {
+                    Text(
+                        text = positionError,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp)
+                    )
                 }
             }
         }

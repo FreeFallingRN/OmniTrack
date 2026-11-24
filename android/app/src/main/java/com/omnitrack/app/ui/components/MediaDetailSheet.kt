@@ -170,9 +170,11 @@ fun MediaDetailSheet(
                             )
                         }
 
-                        entry.seriesTitle?.let {
+                        entry.seriesTitle?.takeIf { it.isNotBlank() }?.let {
                             Text(
-                                text = it,
+                                text = it + (entry.sequenceNumber?.let { position ->
+                                    " #${formatUnit(position)}"
+                                } ?: ""),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.clickable {

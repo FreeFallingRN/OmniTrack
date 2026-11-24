@@ -22,6 +22,7 @@ import io.ktor.client.request.header
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -30,9 +31,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.json.JSONTokener
-import java.net.HttpURLConnection
 import java.net.URI
-import java.net.URL
 import kotlin.coroutines.resume
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -83,6 +82,9 @@ object ExternalMediaScraper {
 
     suspend fun scrape(context: Context, rawUrl: String): ScrapedMediaDraft {
         val url = normalizeInputUrl(rawUrl)
+        val originalUrl = rawUrl.trim().let {
+            if (it.startsWith("http://", true) || it.startsWith("https://", true)) it else "https://$it"
+        }
         val host = runCatching { URI(url).host.orEmpty().lowercase() }.getOrDefault("")
         val matchedAdapter = adapters.firstOrNull { it.canHandle(host, url) }
         val trace = ScrapeTrace(url = url, adapterName = matchedAdapter?.name ?: "None")
@@ -111,7 +113,7 @@ object ExternalMediaScraper {
                         sourceUrl = url
                     )
                     trace.log(
-                        "fastPath: hit title=\"${finalDraft.title}\" creators=${finalDraft.creators.size} cover=${finalDraft.coverUrl != null}"
+                        "fastPath: hit title=\"${finalDraft.title}\" creators=${finalDraft.creators.size} cover=${finalDraft.coverUrl != null} publishingStatus=${finalDraft.publishingStatus}"
                     )
                     resultTitle = finalDraft.title
                     resultCover = finalDraft.coverUrl
@@ -122,9 +124,15 @@ object ExternalMediaScraper {
             }
 
             // 2. Fetch HTML (HTTP first, WebView fallback on bot challenge)
-            val html = runCatching { fetcher.getHtml(url) }
-                .onFailure { e -> trace.log("getHtml: error=${e.message}") }
-                .getOrDefault("")
+            val html = try {
+                fetcher.getHtml(url)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                trace.log("getHtml: error=${e.message}")
+                Log.w(TAG, "HTML fetch failed for $url", e)
+                ""
+            }
             trace.log("html: finalLen=${html.length} blank=${html.isBlank()}")
 
             // 3. Let matched adapter parse HTML, then enrich missing fields with GenericFallbackAdapter
@@ -138,7 +146,7 @@ object ExternalMediaScraper {
 
                 if (rawDraft != null) {
                     trace.log(
-                        "adapterParse: raw title=\"${rawDraft.title}\" creators=${rawDraft.creators.map { "${it.name}(${it.role})" }} cover=${rawDraft.coverUrl != null}"
+                        "adapterParse: raw title=\"${rawDraft.title}\" creators=${rawDraft.creators.map { "${it.name}(${it.role})" }} cover=${rawDraft.coverUrl != null} publishingStatus=${rawDraft.publishingStatus}"
                     )
                     matchedAdapter.normalizeDraft(rawDraft)
                 } else {
@@ -148,6 +156,15 @@ object ExternalMediaScraper {
             } else {
                 trace.log("adapterParse: skipped (adapter=${matchedAdapter != null}, htmlNonBlank=${html.isNotBlank()})")
                 null
+            }
+
+            if (matchedAdapter === AmazonAdapter) {
+                val finalDraft = AmazonAdapter.completeMetadata(
+                    url, HtmlMetadataParser.extractAmazonTitleSlug(originalUrl), adapterDraft, fetcher
+                )
+                resultTitle = finalDraft.title
+                resultCover = finalDraft.coverUrl
+                return finalDraft
             }
 
             val fallbackDraft = GenericFallbackAdapter.scrapeFromHtml(url, html)
@@ -229,28 +246,18 @@ object ExternalMediaScraper {
     }
 
     private fun createFastFetchClient(trace: ScrapeTrace? = null): HtmlFetchClient = object : HtmlFetchClient {
-        override suspend fun getJson(url: String): String = withContext(Dispatchers.IO) {
-            val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 6_000
-                readTimeout = 6_000
-                setRequestProperty("Accept", "application/json")
-                setRequestProperty("User-Agent", "OmniTrack-Android/1.0")
-            }
-            try {
-                val code = conn.responseCode
-                trace?.log("json: status=$code url=$url")
-                if (code !in 200..299) throw IllegalStateException("HTTP $code")
-                conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
-            } finally {
-                conn.disconnect()
-            }
-        }
+        override suspend fun getJson(url: String): String = fetchJson(url, trace)
 
         override suspend fun getHtml(url: String): String {
-            return runCatching { fetchHtmlFast(url, trace) }
-                .onFailure { e -> trace?.log("httpFast: exception=${e.message}") }
-                .getOrDefault("")
+            return try {
+                fetchHtmlFast(url, trace)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                trace?.log("httpFast: exception=${e.message}")
+                Log.w(TAG, "HTML fetch failed for $url", e)
+                ""
+            }
         }
     }
 
@@ -293,37 +300,38 @@ object ExternalMediaScraper {
 
     private fun normalizeInputUrl(rawUrl: String): String {
         val trimmed = rawUrl.trim()
-        return if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) trimmed
+        val url = if (trimmed.startsWith("http://", true) || trimmed.startsWith("https://", true)) trimmed
         else "https://$trimmed"
+        return HtmlMetadataParser.normalizeAmazonUrl(url)
     }
 
     private fun createFetchClient(context: Context, trace: ScrapeTrace): HtmlFetchClient = object : HtmlFetchClient {
-        override suspend fun getJson(url: String): String = withContext(Dispatchers.IO) {
-            val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 6_000
-                readTimeout = 6_000
-                setRequestProperty("Accept", "application/json")
-                setRequestProperty("User-Agent", "OmniTrack-Android/1.0")
-            }
-            try {
-                val code = conn.responseCode
-                trace.log("json: status=$code url=$url")
-                if (code !in 200..299) throw IllegalStateException("HTTP $code")
-                conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
-            } finally {
-                conn.disconnect()
-            }
-        }
+        override suspend fun getJson(url: String): String = fetchJson(url, trace)
 
         override suspend fun getHtml(url: String): String {
-            val fastHtml = runCatching { fetchHtmlFast(url, trace) }
-                .onFailure { e -> trace.log("httpFast: exception=${e.message}") }
-                .getOrDefault("")
+            val fastHtml = try {
+                fetchHtmlFast(url, trace)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                trace.log("httpFast: exception=${e.message}")
+                Log.w(TAG, "HTML fetch failed for $url", e)
+                ""
+            }
             if (fastHtml.isNotBlank()) return fastHtml
             trace.log("httpFast: empty -> starting WebView fallback")
             return fetchHtmlWithWebView(context, url, trace)
         }
+    }
+
+    private suspend fun fetchJson(url: String, trace: ScrapeTrace?): String {
+        val response = client.get(url) {
+            header("Accept", "application/json")
+            header("User-Agent", "OmniTrack-Android/1.0")
+        }
+        trace?.log("json: status=${response.status.value} url=$url")
+        check(response.status.isSuccess()) { "HTTP ${response.status.value}" }
+        return response.bodyAsText()
     }
 
     private suspend fun fetchHtmlFast(url: String, trace: ScrapeTrace? = null): String {
@@ -417,6 +425,8 @@ object ExternalMediaScraper {
     private fun isBotChallenge(html: String): Boolean {
         return html.contains("<title>Just a moment...</title>", ignoreCase = true) ||
                 html.contains("cf-browser-verification", ignoreCase = true) ||
-                html.contains("challenge-platform", ignoreCase = true)
+                html.contains("challenge-platform", ignoreCase = true) ||
+                html.contains("validateCaptcha", ignoreCase = true) ||
+                html.contains("<title>Robot Check</title>", ignoreCase = true)
     }
 }

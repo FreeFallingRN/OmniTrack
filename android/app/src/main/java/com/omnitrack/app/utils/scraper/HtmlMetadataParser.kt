@@ -86,6 +86,39 @@ object HtmlMetadataParser {
             .joinToString(" ") { word -> word.replaceFirstChar { it.uppercase() } }
     }
 
+    fun normalizeAmazonUrl(sourceUrl: String): String {
+        val trimmed = sourceUrl.trim()
+        val input = if (trimmed.startsWith("http://", true) || trimmed.startsWith("https://", true)) {
+            trimmed
+        } else {
+            "https://$trimmed"
+        }
+        val uri = runCatching { URI(input) }.getOrNull() ?: return trimmed
+        if (!uri.host.orEmpty().contains("amazon.", ignoreCase = true)) return trimmed
+
+        val asin = extractAmazonAsin(input)
+        if (asin != null) return "${uri.scheme ?: "https"}://${uri.rawAuthority}/dp/$asin"
+
+        return input.substringBefore('#').substringBefore('?')
+    }
+
+    fun extractAmazonAsin(url: String): String? =
+        Regex("""(?:^|/)(?:dp|gp/product|gp/aw/d|product|exec/obidos/ASIN)/([A-Z0-9]{10})(?:/|$)""", RegexOption.IGNORE_CASE)
+            .find(runCatching { URI(url).rawPath.orEmpty() }.getOrDefault(""))
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.uppercase()
+
+    fun extractAmazonTitleSlug(url: String): String? {
+        val path = runCatching { URI(url).path.orEmpty() }.getOrDefault("")
+        val match = Regex("""/(?:dp|gp)/""", RegexOption.IGNORE_CASE).find(path) ?: return null
+        val slug = path.substring(0, match.range.first).trimEnd('/').substringAfterLast('/')
+        if (slug.isBlank() || slug.equals("product", ignoreCase = true) ||
+            slug.equals(extractAmazonAsin(url), ignoreCase = true)
+        ) return null
+        return slug.replace('-', ' ').replace('_', ' ').trim().takeIf { it.isNotBlank() }
+    }
+
     fun decodeHtmlEntities(input: String): String {
         return input
             .replace("&amp;", "&")

@@ -75,6 +75,18 @@ fun TrackedMediaRow(
                 color = MaterialTheme.colorScheme.onBackground
             )
 
+            val seriesMetadata = listOfNotNull(
+                entry.seriesTitle?.takeIf { it.isNotBlank() },
+                entry.sequenceNumber?.let { "#${formatUnit(it)}" }
+            ).joinToString(" · ")
+            if (seriesMetadata.isNotBlank()) {
+                Text(
+                    text = seriesMetadata,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
             Spacer(modifier = Modifier.height(4.dp))
 
             Text(

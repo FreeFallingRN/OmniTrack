@@ -321,7 +321,11 @@ fun HomeLibraryContent(
                             items(filteredList, key = { it.id }) { entry ->
                                 Column {
                                     TrackedMediaRow(
-                                        entry = entry,
+                                        entry = if (entry.seriesId.isNullOrBlank() && entry.seriesTitle.isNullOrBlank()) {
+                                            entry.copy(sequenceNumber = null)
+                                        } else {
+                                            entry
+                                        },
                                         onClick = { onSelectEntry(entry) }
                                     )
                                     if (isSearching) {

@@ -1,5 +1,6 @@
 package com.omnitrack.app.ui.components
 
+import android.util.Log
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -61,6 +62,8 @@ import com.omnitrack.app.utils.ScrapedMediaDraft
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.math.BigDecimal
+import java.math.RoundingMode
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -149,7 +152,9 @@ fun MediaEntryEditorSheet(
     var publishingStatus by remember {
         mutableStateOf(existing?.publishingStatus ?: prefill?.publishingStatus ?: "releasing")
     }
-    var sequence by remember { mutableStateOf(existing?.sequenceNumber?.toInt()?.toString().orEmpty()) }
+    var sequence by remember {
+        mutableStateOf((existing?.sequenceNumber ?: prefill?.sequenceNumber)?.toString().orEmpty())
+    }
     var currentUnit by remember { mutableStateOf(existing?.currentUnit?.toString() ?: "0") }
     var unitName by remember { mutableStateOf(existing?.unitName ?: prefill?.unitName ?: "Chapter") }
     var sourceUrl by remember { mutableStateOf(existing?.sourceUrl ?: prefill?.sourceUrl.orEmpty()) }
@@ -217,6 +222,20 @@ fun MediaEntryEditorSheet(
         }
     }
 
+    LaunchedEffect(existing?.id, prefill, metadataLoaded) {
+        if (!metadataLoaded || existing != null) return@LaunchedEffect
+        val seriesTitle = prefill?.seriesTitle?.trim()?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+        val matched = series.firstOrNull { it.title.trim().equals(seriesTitle, ignoreCase = true) }
+        if (matched != null) {
+            seriesId = matched.id
+            createSeries = false
+        } else {
+            seriesId = null
+            createSeries = true
+            newSeriesTitle = seriesTitle
+        }
+    }
+
     // Duplicate detection against existing library entries
     fun normalizeTitleKey(raw: String): String =
         raw.lowercase()
@@ -259,6 +278,33 @@ fun MediaEntryEditorSheet(
     var mergeTargetEntry by remember { mutableStateOf<MediaEntry?>(null) }
     var groupWithEntry by remember { mutableStateOf<MediaEntry?>(null) }
 
+    val targetEntryId = existing?.id ?: mergeTargetEntry?.id
+    val position = sequence.toDoubleOrNull()?.takeIf { it.isFinite() }?.let {
+        BigDecimal.valueOf(it).setScale(2, RoundingMode.HALF_UP).toDouble()
+    }
+    val groupedEntry = groupWithEntry?.let { selected ->
+        entries.firstOrNull { it.id == selected.id && it.seriesId == null }
+    }?.takeIf { seriesId != null || createSeries }
+    val groupedPosition = groupedEntry?.let { it.sequenceNumber ?: 1.0 }
+    val positionConflict = if (seriesId != null && position != null) {
+        entries.firstOrNull {
+            it.seriesId == seriesId && it.id != targetEntryId && it.sequenceNumber == position
+        }
+    } else null
+    val groupedPositionConflict = if (seriesId != null && groupedPosition != null) {
+        entries.firstOrNull {
+            it.seriesId == seriesId && it.id != targetEntryId && it.sequenceNumber == groupedPosition
+        }
+    } else null
+    val positionError = when {
+        positionConflict != null -> "This position is already used by \"${positionConflict.title}\"."
+        position != null && groupedPosition == position ->
+            "This position will be used by \"${groupedEntry?.title}\" when it is added to the series."
+        groupedPositionConflict != null ->
+            "\"${groupedEntry?.title}\" cannot be added: its position is already used by \"${groupedPositionConflict.title}\"."
+        else -> null
+    }
+
     fun addAlias() {
         val cleaned = newAltTitle.trim()
         if (cleaned.isNotBlank() && altTitles.none { it.equals(cleaned, ignoreCase = true) }) {
@@ -283,6 +329,9 @@ fun MediaEntryEditorSheet(
         ) {
             error = if (missingNewSeriesTitle) "Please enter a name for the new series or clear it."
                 else "Title, at least one creator, and platform are required."
+        } else if (positionError != null) {
+            showSeriesDetails = true
+            error = positionError
         } else {
             val pendingAlias = newAltTitle.trim()
             val aliases = if (pendingAlias.isNotBlank() && altTitles.none { it.equals(pendingAlias, ignoreCase = true) }) {
@@ -561,7 +610,8 @@ fun MediaEntryEditorSheet(
                 newSeriesTitle = newSeriesTitle,
                 onNewSeriesTitleChange = { newSeriesTitle = it },
                 sequence = sequence,
-                onSequenceChange = { sequence = it }
+                onSequenceChange = { sequence = it },
+                positionError = positionError
             )
             mediaSection(
                 userStatus = userStatus,

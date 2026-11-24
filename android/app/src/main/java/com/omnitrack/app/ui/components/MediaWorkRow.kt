@@ -34,7 +34,10 @@ fun MediaWorkRow(
             Column(modifier = Modifier.weight(1f)) {
                 Text(work.title, fontWeight = FontWeight.Medium)
                 Text(
-                    "${work.type.singularLabel} • ${work.userStatus.label}",
+                    buildString {
+                        append("${work.type.singularLabel} • ${work.userStatus.label}")
+                        work.sequenceNumber?.let { append(" • #${formatUnit(it)}") }
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

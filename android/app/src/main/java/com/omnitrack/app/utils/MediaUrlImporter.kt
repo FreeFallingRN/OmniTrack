@@ -18,7 +18,9 @@ data class ScrapedMediaDraft(
     val publishingStatus: String = "releasing",
     val unitName: String = "Chapter",
     val coverUrl: String? = null,
-    val sourceUrl: String = ""
+    val sourceUrl: String = "",
+    val seriesTitle: String? = null,
+    val sequenceNumber: Double? = null
 )
 
 object MediaUrlImporter {
