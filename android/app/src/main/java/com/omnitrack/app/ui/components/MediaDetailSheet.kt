@@ -1,6 +1,13 @@
 package com.omnitrack.app.ui.components
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import coil.compose.SubcomposeAsyncImage
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -81,6 +88,10 @@ fun MediaDetailSheet(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Column(
+                        horizontalAlignment = Alignment.Start,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                     Box(
                         modifier = Modifier
                             .width(64.dp)
@@ -108,6 +119,10 @@ fun MediaDetailSheet(
                                     .clickable { showCover = true }
                             )
                         }
+                    }
+                    if (!entry.sourceUrl.isNullOrBlank()) {
+                        PlatformLinkButton(url = entry.sourceUrl, platform = entry.platform)
+                    }
                     }
 
                     Column(
@@ -279,6 +294,78 @@ fun MediaDetailSheet(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(20.dp)
+                )
+            }
+        }
+    }
+}
+
+private val knownPlatformMonograms = listOf(
+    "amazon" to "A",
+    "mangadex" to "MD",
+    "myanimelist" to "MAL",
+    "anilist" to "AL",
+    "royalroad" to "RR",
+    "webnovel" to "W",
+    "novelpia" to "N"
+)
+
+@Composable
+private fun PlatformLinkButton(url: String, platform: String?) {
+    val context = LocalContext.current
+    val link = remember(url) {
+        val trimmed = url.trim()
+        if (trimmed.startsWith("http://", true) || trimmed.startsWith("https://", true)) trimmed
+        else "https://$trimmed"
+    }
+    val host = remember(link) { runCatching { Uri.parse(link).host }.getOrNull().orEmpty() }
+    val monogram = remember(host, platform) {
+        val key = "${platform.orEmpty()} $host".lowercase().replace(Regex("[^a-z]"), "")
+        knownPlatformMonograms.firstOrNull { key.contains(it.first) }?.second
+    }
+    val fallback: @Composable () -> Unit = {
+        if (monogram != null) {
+            Text(
+                text = monogram,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+        } else {
+            Icon(
+                Icons.Default.Language,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+        }
+    }
+
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        modifier = Modifier
+            .size(28.dp)
+            .clickable {
+                runCatching {
+                    context.startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse(link)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }
+            }
+    ) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.semantics {
+            contentDescription = "Open ${platform?.takeIf { it.isNotBlank() } ?: host.ifBlank { "link" }} in browser"
+        }) {
+            if (host.isBlank()) {
+                fallback()
+            } else {
+                SubcomposeAsyncImage(
+                    model = "https://www.google.com/s2/favicons?domain=$host&sz=64",
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp).clip(RoundedCornerShape(4.dp)),
+                    loading = { fallback() },
+                    error = { fallback() }
                 )
             }
         }
