@@ -45,7 +45,7 @@ import coil.request.SuccessResult
 import coil.size.Size
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.toDisplayLabel
-import com.omnitrack.app.ui.screens.ShareFormatStyle
+import com.omnitrack.app.ui.screens.settings.ShareFormatStyle
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest

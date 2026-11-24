@@ -41,6 +41,10 @@ import com.omnitrack.app.utils.MoonReaderScan
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
+private fun isChapterUnit(unitName: String): Boolean =
+    unitName.trim().equals("chapter", ignoreCase = true) ||
+        unitName.trim().equals("chapters", ignoreCase = true)
+
 @Composable
 fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
     val context = LocalContext.current
@@ -62,9 +66,23 @@ fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
                 selected = emptySet()
                 values = result.matches.associate { match ->
                     val unit = match.entry.unitName.trim().lowercase()
-                    match.entry.id to if (unit in setOf("%", "percent", "percentage")) {
-                        match.progress.percent.toString()
-                    } else ""
+                    val value = when {
+                        isChapterUnit(unit) -> {
+                            val key = "moon_reader_chapter_offset_${match.entry.id}"
+                            val chapter = match.progress.spineChapterIndex.toDouble() + 1.0
+                            val offset = if (prefs.contains(key)) {
+                                Double.fromBits(prefs.getLong(key, 0L)).also {
+                                    check(it.isFinite()) { "Invalid saved chapter offset for ${match.entry.title}" }
+                                }
+                            } else if (match.entry.currentUnit > 0.0) {
+                                (match.entry.currentUnit - chapter).coerceAtLeast(0.0)
+                            } else 0.0
+                            (offset + chapter).toString()
+                        }
+                        unit in setOf("%", "percent", "percentage") -> match.progress.percent.toString()
+                        else -> ""
+                    }
+                    match.entry.id to value
                 }
                 preview = result
             } catch (e: CancellationException) {
@@ -142,7 +160,7 @@ fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(result.message)
-                    Text("Percentages cannot be converted to chapters automatically. Enter the desired value in the entry's unit.")
+                    Text("Chapter entries use the Moon+ spine index plus one and a saved per-entry offset. Adjust the chapter to calibrate future imports.")
                     result.matches.forEach { match ->
                         val id = match.entry.id
                         val input = values[id].orEmpty()
@@ -159,7 +177,10 @@ fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
                             )
                             Column(Modifier.weight(1f)) {
                                 Text(match.entry.title, style = MaterialTheme.typography.titleSmall)
-                                Text("Moon+: ${match.progress.percent}% (${match.progress.title})")
+                                Text("Moon+ spine chapter index: ${match.progress.spineChapterIndex} (${match.progress.title})")
+                                if (!isChapterUnit(match.entry.unitName)) {
+                                    Text("Moon+: ${match.progress.percent}%")
+                                }
                                 Text("Current: ${match.entry.currentUnit} ${match.entry.unitName}")
                                 OutlinedTextField(
                                     value = input,
@@ -195,6 +216,15 @@ fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
                                     val value = values.getValue(match.entry.id).toDouble()
                                     viewModel.importMoonReaderProgress(match.entry.id, value)
                                     applied++
+                                    if (isChapterUnit(match.entry.unitName)) {
+                                        val offset = value - (match.progress.spineChapterIndex.toDouble() + 1.0)
+                                        check(prefs.edit().putLong(
+                                            "moon_reader_chapter_offset_${match.entry.id}",
+                                            offset.toRawBits()
+                                        ).commit()) {
+                                            "Could not save the chapter offset for ${match.entry.title}"
+                                        }
+                                    }
                                 }
                                 preview = null
                                 message = "Applied $applied updates locally; Supabase sync was attempted."

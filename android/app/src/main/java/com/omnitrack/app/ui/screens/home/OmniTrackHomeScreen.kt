@@ -80,7 +80,7 @@ import com.omnitrack.app.ui.components.MediaEntryEditorSheet
 import com.omnitrack.app.ui.components.RelatedEntityDetail
 import com.omnitrack.app.ui.components.RelatedEntityDetailSheet
 import com.omnitrack.app.ui.screens.library.LibraryManagementScreen
-import com.omnitrack.app.ui.screens.OmniTrackSettingsScreen
+import com.omnitrack.app.ui.screens.settings.OmniTrackSettingsScreen
 import com.omnitrack.app.ui.screens.stats.HistoryStatsScreen
 import com.omnitrack.app.ui.viewmodel.SeriesViewModel
 import com.omnitrack.app.utils.LibrarySortOption

@@ -1,4 +1,4 @@
-package com.omnitrack.app.ui.screens
+package com.omnitrack.app.ui.screens.settings
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -44,7 +44,6 @@ import com.omnitrack.app.data.local.ScrapeIssueReport
 import com.omnitrack.app.worker.ScrapeIssueSyncWorker
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 

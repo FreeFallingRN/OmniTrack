@@ -13,7 +13,12 @@ import java.util.zip.ZipInputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-data class MoonReaderProgress(val title: String, val percent: Double, val timestamp: Long)
+data class MoonReaderProgress(
+    val title: String,
+    val spineChapterIndex: Int,
+    val percent: Double,
+    val timestamp: Long
+)
 data class MoonReaderMatch(val entry: MediaEntry, val progress: MoonReaderProgress)
 data class MoonReaderScan(val matches: List<MoonReaderMatch>, val message: String)
 
@@ -21,7 +26,7 @@ object MoonReaderImport {
     private const val MAX_FILES = 4000
     private const val MAX_ARCHIVE_BYTES = 32 * 1024 * 1024
     private const val MAX_ITEM_BYTES = 64 * 1024
-    private val position = Regex("""^(\d+)\*\d+@\d+#\d+:([0-9]+(?:\.[0-9]+)?)%""")
+    private val position = Regex("""^(\d+)\*(\d+)@\d+#\d+:([0-9]+(?:\.[0-9]+)?)%""")
     private val bookExtension = Regex("""\.(epub|pdf|mobi|azw3?|fb2|txt|cbz|cbr)$""", RegexOption.IGNORE_CASE)
 
     suspend fun scan(context: Context, uri: Uri, tree: Boolean, entries: List<MediaEntry>): MoonReaderScan =
@@ -107,7 +112,7 @@ object MoonReaderImport {
             val matches = candidates.groupBy { it.entry.id }.values.mapNotNull { group ->
                 val latest = group.maxOf { it.progress.timestamp }
                 val newest = group.filter { it.progress.timestamp == latest }
-                if (newest.map { it.progress.percent }.distinct().size > 1) {
+                if (newest.map { it.progress.spineChapterIndex to it.progress.percent }.distinct().size > 1) {
                     ambiguous++
                     null
                 } else newest.first()
@@ -129,11 +134,14 @@ object MoonReaderImport {
         val text = data.toString(Charsets.UTF_8).trim()
         val match = position.find(text) ?: return null
         val timestamp = match.groupValues[1].toLongOrNull() ?: return null
-        val percent = match.groupValues[2].toDoubleOrNull()?.takeIf { it.isFinite() && it in 0.0..100.0 }
+        val spineChapterIndex = match.groupValues[2].toIntOrNull() ?: return null
+        val percent = match.groupValues[3].toDoubleOrNull()?.takeIf { it.isFinite() && it in 0.0..100.0 }
             ?: return null
         val filename = name.substringAfterLast('/').substringAfterLast('\\')
         val title = bookExtension.replace(filename.dropLast(3), "").trim()
-        return title.takeIf { it.isNotEmpty() }?.let { MoonReaderProgress(it, percent, timestamp) }
+        return title.takeIf { it.isNotEmpty() }?.let {
+            MoonReaderProgress(it, spineChapterIndex, percent, timestamp)
+        }
     }
 
     private fun readLimited(stream: InputStream, limit: Int): ByteArray {
