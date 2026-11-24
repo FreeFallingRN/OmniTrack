@@ -1,5 +1,6 @@
 package com.omnitrack.app.utils.scraper
 
+import android.text.Html
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.utils.ScrapedCreator
 import com.omnitrack.app.utils.ScrapedMediaDraft
@@ -35,10 +36,10 @@ object HtmlMetadataParser {
         ).ifBlank { extractTitleFromSlug(url) }
 
         val coverUrl = CoverNormalizer.normalize(
-            jsonLd?.coverUrl
+            (jsonLd?.coverUrl
                 ?: meta(html, "og:image")
                 ?: meta(html, "twitter:image")
-                ?: extractCoverImageHeuristic(html, url)
+                ?: extractCoverImageHeuristic(html, url))?.let(::decodeHtmlEntities)
         )
 
         val creators = jsonLd?.creators.orEmpty().ifEmpty {
@@ -52,7 +53,7 @@ object HtmlMetadataParser {
 
         return ScrapedMediaDraft(
             title = title,
-            alternativeTitles = jsonLd?.alternativeTitles.orEmpty(),
+            alternativeTitles = jsonLd?.alternativeTitles.orEmpty().map(::decodeHtmlEntities),
             type = jsonLd?.type ?: MediaType.NOVEL,
             creators = creators,
             coverUrl = coverUrl,
@@ -67,7 +68,8 @@ object HtmlMetadataParser {
             """<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']$escaped["']"""
         )
         return patterns.firstNotNullOfOrNull { pattern ->
-            Regex(pattern, RegexOption.IGNORE_CASE).find(html)?.groupValues?.getOrNull(1)?.trim()
+            Regex(pattern, RegexOption.IGNORE_CASE).find(html)?.groupValues?.getOrNull(1)
+                ?.let(::decodeHtmlEntities)?.trim()
         }
     }
 
@@ -120,14 +122,32 @@ object HtmlMetadataParser {
     }
 
     fun decodeHtmlEntities(input: String): String {
-        return input
-            .replace("&amp;", "&")
-            .replace("&quot;", "\"")
-            .replace("&#039;", "'")
-            .replace("&#39;", "'")
-            .replace("&apos;", "'")
-            .replace("&lt;", "<")
-            .replace("&gt;", ">")
+        val entities = Regex("""&(?:#(?:[xX][0-9a-fA-F]+|\d+)|[a-zA-Z][a-zA-Z0-9]+);""")
+        var decoded = input
+        while (true) {
+            val next = entities.replace(decoded) { match ->
+                val entity = match.value
+                if (entity.startsWith("&#")) {
+                    val number = entity.substring(2, entity.length - 1)
+                    val codePoint = if (number.startsWith("x", ignoreCase = true)) {
+                        number.substring(1).toIntOrNull(16)
+                    } else {
+                        number.toIntOrNull()
+                    }
+                    if (codePoint != null && codePoint in 1..0x10FFFF && codePoint !in 0xD800..0xDFFF) {
+                        String(Character.toChars(codePoint))
+                    } else {
+                        entity
+                    }
+                } else if (entity == "&apos;") {
+                    "'"
+                } else {
+                    Html.fromHtml(entity, Html.FROM_HTML_MODE_LEGACY).toString()
+                }
+            }
+            if (next == decoded) return decoded
+            decoded = next
+        }
     }
 
     private fun extractCoverImageHeuristic(html: String, baseUrl: String): String? {

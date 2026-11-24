@@ -69,7 +69,7 @@ object AmazonAdapter : MediaSourceAdapter {
         val publishingStatus = if (isPreOrderOrFuturePublication(html)) "announced" else "completed"
         return generic.copy(
             title = cleanTitle,
-            seriesTitle = seriesTitle ?: generic.seriesTitle,
+            seriesTitle = seriesTitle ?: generic.seriesTitle ?: extractAmazonSeriesTitle(html),
             sequenceNumber = sequenceNumber ?: generic.sequenceNumber,
             type = MediaType.NOVEL,
             creators = creators,
@@ -164,7 +164,8 @@ object AmazonAdapter : MediaSourceAdapter {
             result.copy(
                 title = cleanTitle,
                 seriesTitle = result.seriesTitle ?: seriesTitle,
-                sequenceNumber = result.sequenceNumber ?: sequenceNumber
+                sequenceNumber = result.sequenceNumber ?: sequenceNumber,
+                publishingStatus = draft?.publishingStatus ?: result.publishingStatus
             )
         )
     }
@@ -188,38 +189,71 @@ object AmazonAdapter : MediaSourceAdapter {
     )
 
     private fun isPreOrderOrFuturePublication(html: String): Boolean {
-        val decodedHtml = HtmlMetadataParser.decodeHtmlEntities(html)
-        val plainText = decodedHtml.replace(Regex("""<[^>]*>"""), " ").replace(Regex("""\s+"""), " ")
+        val productDetails = amazonRegionText(
+            html,
+            """detailBullets_feature_div|detailBulletsWrapper_feature_div|productDetails_detailBullets_sections1|productDetails_techSpec_section_1|productDetails_db_sections|bookDetails_feature_div|rpi-attribute-book_details-publication_date"""
+        )
+        val dateLabel = Regex(
+            """(?:publication\s*date|release\s*date|publicatiedatum|verschijningsdatum|verschijnt)\s*[:：]?\s*(${publicationDatePattern.pattern})""",
+            RegexOption.IGNORE_CASE
+        )
+        val publicationDate = dateLabel.findAll(productDetails)
+            .mapNotNull { parsePublicationDate(it.groupValues[1]) }
+            .firstOrNull()
+            ?: listOf("book:release_date", "datePublished", "releaseDate")
+                .firstNotNullOfOrNull { property ->
+                    HtmlMetadataParser.meta(html, property)
+                        ?.let { publicationDatePattern.find(it)?.value }
+                        ?.let(::parsePublicationDate)
+                }
+        if (publicationDate != null) return publicationDate.after(java.util.Date())
+
+        val buyBoxText = amazonRegionText(
+            html,
+            """buybox|desktop_buybox|tmmSwatches|buyBoxAccordion|kindleBuyBox"""
+        )
         val preOrderMatch = Regex(
             """\bpre[\s-]?order\b|\bvoorbestel\w*|\bauto[\s-]?delivered\b[\s\S]{0,120}\b(?:on|op)\b""",
             RegexOption.IGNORE_CASE
-        ).find(plainText) ?: Regex(
+        ).find(buyBoxText) ?: Regex(
             """\bautomatisch\s+geleverd\b[\s\S]{0,120}\bop\b""",
             RegexOption.IGNORE_CASE
-        ).find(plainText)
-        val futureInHtml = hasFuturePublicationDate(html, "html")
-        val futureInText = hasFuturePublicationDate(plainText, "text")
-        return preOrderMatch != null || futureInHtml || futureInText
+        ).find(buyBoxText)
+        return preOrderMatch != null
     }
 
-    private fun hasFuturePublicationDate(source: String, sourceName: String): Boolean {
-        val labels = Regex(
-            """(?:publication\s*date|release\s*date|releaseDate|datePublished|book:release_date|publicatiedatum|verschijningsdatum|verschijnt|available\s+on)\s*[:=]?\s*["']?([\s\S]{0,120})""",
+    private fun amazonRegionText(html: String, ids: String): String {
+        val source = html.replace(
+            Regex("""(?is)<!--.*?-->|<script\b[^>]*>.*?</script\s*>|<style\b[^>]*>.*?</style\s*>"""),
+            " "
+        )
+        val opening = Regex(
+            """<([a-z][\w:-]*)\b[^>]*\s+id\s*=\s*["'](?:$ids)["'][^>]*>""",
             RegexOption.IGNORE_CASE
         )
-        val matches = labels.findAll(source).toList()
-        if (matches.isEmpty()) {
-            return false
-        }
-        return matches.any { label ->
-            val date = publicationDatePattern.find(label.groupValues[1])?.value
-            if (date == null) {
-                false
-            } else isFuturePublicationDate(date, sourceName)
+        return opening.findAll(source).mapNotNull { region ->
+            val tag = Regex.escape(region.groupValues[1])
+            val tags = Regex("""</?$tag\b[^>]*>""", RegexOption.IGNORE_CASE)
+            var depth = 1
+            val end = tags.findAll(source, region.range.last + 1).firstOrNull { match ->
+                if (match.value.startsWith("</")) depth--
+                else if (!match.value.endsWith("/>")) depth++
+                depth == 0
+            } ?: return@mapNotNull null
+            source.substring(region.range.last + 1, end.range.first)
+        }.joinToString(" ") { region ->
+            val withButtonValues = region.replace(
+                Regex("""<input\b[^>]*\bvalue\s*=\s*["']([^"']*)["'][^>]*>""", RegexOption.IGNORE_CASE),
+                " $1 "
+            )
+            HtmlMetadataParser.decodeHtmlEntities(
+                withButtonValues.replace(Regex("""<[^>]*>"""), " ")
+                    .replace(Regex("""&(?:nbsp|lrm|rlm);|&#(?:160|8206|8207);""", RegexOption.IGNORE_CASE), " ")
+            ).replace(Regex("""[\s\u00a0\u200e\u200f]+"""), " ")
         }
     }
 
-    private fun isFuturePublicationDate(value: String, sourceName: String = "fallback metadata"): Boolean {
+    private fun isFuturePublicationDate(value: String): Boolean {
         val parsed = parsePublicationDate(value)
         val now = java.util.Date()
         val isFuture = parsed?.after(now) == true
@@ -271,11 +305,13 @@ object AmazonAdapter : MediaSourceAdapter {
     private fun cleanAmazonPageTitle(raw: String): String {
         return raw
             .replace(Regex("""^Amazon\.[a-z.]+\s*:\s*""", RegexOption.IGNORE_CASE), "")
-            .replace(Regex("""\s*:\s*[^:]+:\s*Amazon\.[a-z.]+\s*:\s*(?:Kindle Store|Audible\.com|Books)\s*$""", RegexOption.IGNORE_CASE), "")
-            .replace(Regex("""\s*:\s*[^:]+:\s*(?:Kindle Store|Audible\.com|Books)\s*$""", RegexOption.IGNORE_CASE), "")
+            .replace(
+                Regex("""\s*:\s*([^:]+):\s*(?:Amazon\.[a-z.]+\s*:\s*)?(?:Kindle Store|Audible\.com|Books)\s*$""", RegexOption.IGNORE_CASE)
+            ) { match ->
+                val subtitle = match.groupValues[1].trim()
+                if (extractSeriesMetadata("Title: $subtitle").second != null) ": $subtitle" else ""
+            }
             .replace(Regex("""\s*:\s*(?:Kindle Store|Audible\.com|Books)\s*$""", RegexOption.IGNORE_CASE), "")
-            // Strip trailing " : Author1, Author2..." suffix from Amazon titles/og:title
-            .replace(Regex("""\s+:\s+[^:]+$"""), "")
             .replace(Regex("""\s*[-–|]\s*Amazon\.[a-z.]+\s*$""", RegexOption.IGNORE_CASE), "")
             // Strip format/edition tags like "(English Edition)", "(Kindle Edition)", "eBook", etc.
             .replace(Regex("""\s*\((?:[^()]*(?:Edition|Kindle|eBook|Paperback|Hardcover|Audiobook|Large Print|Box Set|Omnibus)[^()]*)\)\s*""", RegexOption.IGNORE_CASE), " ")
@@ -285,7 +321,7 @@ object AmazonAdapter : MediaSourceAdapter {
     }
 
     private fun extractSeriesMetadata(rawTitle: String): Triple<String, String?, Double?> {
-        var title = rawTitle.trim()
+        var title = HtmlMetadataParser.decodeHtmlEntities(rawTitle).trim()
         var seriesTitle: String? = null
         var sequenceNumber: Double? = null
         val trailingParenthetical = Regex("""\s*\(([^()]*)\)\s*$""")
@@ -320,7 +356,83 @@ object AmazonAdapter : MediaSourceAdapter {
             }
         }
 
+        val colonSegments = Regex(""":\s*([^:]+)""").findAll(title).toList()
+        for (match in colonSegments.asReversed()) {
+            if (match.range.first == 0) continue
+            val subtitle = match.groupValues[1].trim()
+            val hasPositionLabel = Regex(
+                """(?:(?:,?\s+)(?:Book|Vol(?:ume)?\.?|Issue)\s*#?\s*|#\s*)(?:\d+(?:\.\d+)?|[IVXLCDM]+)\s*$""",
+                RegexOption.IGNORE_CASE
+            ).containsMatchIn(subtitle)
+            val parsed = if (hasPositionLabel) parseSeriesPosition(subtitle) else null
+            if (parsed != null) {
+                seriesTitle = seriesTitle ?: parsed.first
+                sequenceNumber = sequenceNumber ?: parsed.second
+                title = title.removeRange(match.range)
+            }
+        }
+
+        val trailingPosition = Regex(
+            """(?:\s+(?:Book|Vol(?:ume)?\.?)\s*|\s*#\s*)(\d+(?:\.\d+)?|[IVXLCDM]+)(?=\s*(?::|$))""",
+            RegexOption.IGNORE_CASE
+        ).find(title)
+        if (trailingPosition != null && trailingPosition.range.first > 0) {
+            val number = trailingPosition.groupValues[1]
+            val position = number.toDoubleOrNull()?.takeIf { it.isFinite() }
+                ?: romanNumeralValue(number)?.toDouble()
+            if (position != null) {
+                sequenceNumber = sequenceNumber ?: position
+                title = title.removeRange(trailingPosition.range)
+            }
+        }
+
+        val marketingSubtitle = Regex(
+            """\b(?:best[\s-]?sell(?:er|ers|ing)?|nyt|new\s+york\s+times|sunday\s+times|award(?:s|[\s-]winning)?|prize(?:s|[\s-]winning)?|winner|praise|reviews?|acclaimed|unputdownable|gripping|page[\s-]turner|edition|kindle|ebook|paperback|hardcover|audiobook|large\s+print|litrpg|game[\s-]?lit|kingdom[\s-]?builder|progression\s+fantasy|cultivation\s+fantasy|portal\s+fantasy|(?:epic|dark|cozy|cosy)\s+fantasy|fantasy\s+(?:novel|adventure|saga))\b""",
+            RegexOption.IGNORE_CASE
+        )
+        for (match in Regex(""":\s*([^:]+)""").findAll(title)) {
+            if (match.range.first == 0) continue
+            val subtitle = match.groupValues[1].trim()
+            if (marketingSubtitle.containsMatchIn(subtitle) ||
+                subtitle.length >= 100 || subtitle.split(Regex("""\s+""")).size >= 12
+            ) {
+                title = title.substring(0, match.range.first).trimEnd()
+                break
+            }
+        }
+
         return Triple(title.replace(Regex("""\s{2,}"""), " ").trim(), seriesTitle, sequenceNumber)
+    }
+
+    private fun extractAmazonSeriesTitle(html: String): String? {
+        HtmlMetadataParser.meta(html, "book:series")?.takeIf { it.isNotBlank() }?.let { return it }
+        val seriesBlock = Regex(
+            """<(div|span|section|a)\b[^>]*\bid\s*=\s*["'](?:series-title|seriesTitle|seriesTitle_feature_div|rpi-attribute-book_details-series)["'][^>]*>([\s\S]{0,4000}?)</\1\s*>""",
+            RegexOption.IGNORE_CASE
+        ).find(html)?.groupValues?.get(2)
+        val breadcrumb = Regex(
+            """<(div|nav|ul)\b[^>]*\bid\s*=\s*["'](?:wayfinding-breadcrumbs_feature_div|breadcrumbs|breadcrumb)["'][^>]*>([\s\S]{0,4000}?)</\1\s*>""",
+            RegexOption.IGNORE_CASE
+        ).find(html)?.groupValues?.get(2)
+        val breadcrumbLinks = breadcrumb?.let {
+            Regex("""<a\b[^>]*\bhref\s*=\s*["'][^"']*/(?:dp/)?series/[^"']*["'][^>]*>([\s\S]*?)</a\s*>""", RegexOption.IGNORE_CASE)
+                .findAll(it).map { match -> match.groupValues[1] }.toList()
+        }.orEmpty()
+        val links = Regex("""<a\b[^>]*>([\s\S]*?)</a\s*>""", RegexOption.IGNORE_CASE)
+            .findAll(seriesBlock.orEmpty())
+            .map { it.groupValues[1] }
+            .toList()
+        val candidates = links + listOfNotNull(seriesBlock)
+        return (candidates + breadcrumbLinks).firstNotNullOfOrNull { text ->
+            val name = HtmlMetadataParser.decodeHtmlEntities(text.replace(Regex("""<[^>]*>"""), " "))
+                .replace(Regex("""\s+"""), " ").trim()
+                .replace(Regex("""^(?:book\s+\d+\s+of\s+\d+|series)\s*:\s*""", RegexOption.IGNORE_CASE), "")
+                .trim()
+            name.takeIf {
+                it.isNotBlank() &&
+                    !Regex("""^(?:book\s+\d+\s+of\s+\d+\b.*|see\s+(?:all|the\s+series).*|series)$""", RegexOption.IGNORE_CASE).matches(it)
+            }
+        }
     }
 
     private fun parseSeriesPosition(raw: String): Pair<String, Double>? {
@@ -332,7 +444,7 @@ object AmazonAdapter : MediaSourceAdapter {
             ?: romanNumeralValue(positionText)?.toDouble()
             ?: return null
         var name = value.substring(0, match.range.first).trim().trimEnd(',', ':')
-        name = name.replace(Regex("""[,]?\s*(?:Book|Vol(?:ume)?|Part)\s*$""", RegexOption.IGNORE_CASE), "").trim()
+        name = name.replace(Regex("""[,]?\s*(?:Book|Vol(?:ume)?\.?|Part|Issue)\s*$""", RegexOption.IGNORE_CASE), "").trim()
         if (name.isBlank() || name.equals("book", true) || name.equals("volume", true) ||
             name.equals("vol", true) || name.equals("part", true)
         ) return null
@@ -444,8 +556,15 @@ object AmazonAdapter : MediaSourceAdapter {
 
     override fun normalizeDraft(draft: ScrapedMediaDraft): ScrapedMediaDraft {
         val normalizedUrl = HtmlMetadataParser.normalizeAmazonUrl(draft.sourceUrl)
-        val normalized = CoverNormalizer.normalize(draft.coverUrl, baseUrl = normalizedUrl)
+        val normalized = CoverNormalizer.normalize(
+            draft.coverUrl?.let(HtmlMetadataParser::decodeHtmlEntities),
+            baseUrl = normalizedUrl
+        )
         val result = draft.copy(
+            title = HtmlMetadataParser.decodeHtmlEntities(draft.title),
+            alternativeTitles = draft.alternativeTitles.map(HtmlMetadataParser::decodeHtmlEntities),
+            creators = draft.creators.map { it.copy(name = HtmlMetadataParser.decodeHtmlEntities(it.name)) },
+            seriesTitle = draft.seriesTitle?.let(HtmlMetadataParser::decodeHtmlEntities),
             coverUrl = normalized ?: asinCoverUrl(normalizedUrl),
             sourceUrl = normalizedUrl
         )
