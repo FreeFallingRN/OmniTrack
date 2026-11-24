@@ -19,6 +19,8 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import com.omnitrack.app.data.local.ScrapeIssueReport
+import io.ktor.http.isSuccess
 
 object SupabaseService {
 
@@ -330,5 +332,30 @@ object SupabaseService {
                 setBody(rows)
             }
         }
+    }
+
+    suspend fun uploadScrapeIssueReport(report: ScrapeIssueReport) {
+        val payload = buildJsonObject {
+            put("id", report.id)
+            put("source_url", report.sourceUrl)
+            put("normalized_url", report.normalizedUrl)
+            put("adapter_name", report.adapterName)
+            put("scraped_snapshot", Json.parseToJsonElement(report.scrapedSnapshotJson))
+            put("issue_tags", Json.parseToJsonElement(report.issueTagsJson))
+            put("note", report.note)
+            put("created_at", report.createdAt)
+            put("synced", true)
+        }
+        val response = client.post("$supabaseUrl/rest/v1/scrape_issue_reports?on_conflict=id") {
+            contentType(ContentType.Application.Json)
+            header("Prefer", "resolution=merge-duplicates,return=minimal")
+            setBody(payload)
+        }
+        check(response.status.isSuccess()) { "Report upload failed: HTTP ${response.status.value}" }
+    }
+
+    suspend fun deleteScrapeIssueReport(id: String) {
+        val response = client.delete("$supabaseUrl/rest/v1/scrape_issue_reports?id=eq.$id")
+        check(response.status.isSuccess()) { "Report deletion failed: HTTP ${response.status.value}" }
     }
 }

@@ -95,6 +95,18 @@ erDiagram
         text source "android_notification | moon_reader_sync | extension"
         timestamptz logged_at "Last event timestamp"
     }
+
+    SCRAPE_ISSUE_REPORTS {
+        uuid id PK "Client-generated report ID"
+        text source_url "Original URL"
+        text normalized_url "URL used for scraping"
+        text adapter_name "Selected scraper adapter"
+        jsonb scraped_snapshot "Original scraped draft"
+        jsonb issue_tags "Selected reasons"
+        text note "Optional note"
+        timestamptz created_at "Capture time"
+        boolean synced "Uploaded report"
+    }
 ```
 
 ### Table Definitions in Code:
@@ -106,5 +118,6 @@ erDiagram
 - [`alternate_titles`](file:///c:/Users/benjv/Dev/OmniTrack/database/src/schema/titles.ts)
 - [`authors`](file:///c:/Users/benjv/Dev/OmniTrack/database/src/schema/authors.ts)
 - [`progress_history`](file:///c:/Users/benjv/Dev/OmniTrack/database/src/schema/history.ts)
+- [`scrape_issue_reports`](./src/schema/scrape-issues.ts)
 - [`enums`](file:///c:/Users/benjv/Dev/OmniTrack/database/src/schema/enums.ts)
 - [`helpers`](file:///c:/Users/benjv/Dev/OmniTrack/database/src/schema/helpers.ts)

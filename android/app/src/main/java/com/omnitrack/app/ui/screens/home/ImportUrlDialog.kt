@@ -17,14 +17,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.rememberCoroutineScope
-import com.omnitrack.app.utils.ScrapedMediaDraft
+import com.omnitrack.app.utils.ImportedMediaDraft
 import kotlinx.coroutines.launch
 
 @Composable
 fun ImportUrlDialog(
     onDismiss: () -> Unit,
-    onImport: suspend (String) -> ScrapedMediaDraft,
-    onImported: (ScrapedMediaDraft) -> Unit
+    onImport: suspend (String) -> ImportedMediaDraft,
+    onImported: (ImportedMediaDraft) -> Unit
 ) {
     var importUrl by remember { mutableStateOf("") }
     var isImporting by remember { mutableStateOf(false) }

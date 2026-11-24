@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -59,6 +60,7 @@ import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.model.UserStatus
 import com.omnitrack.app.utils.CoverLookup
 import com.omnitrack.app.utils.ScrapedMediaDraft
+import com.omnitrack.app.utils.ImportedMediaDraft
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -114,6 +116,7 @@ data class NewPlatformData(
 fun MediaEntryEditorSheet(
     existing: MediaEntry?,
     prefill: ScrapedMediaDraft? = null,
+    reportDraft: ImportedMediaDraft? = null,
     entries: List<MediaEntry>,
     onDismiss: () -> Unit,
     onSave: (MediaEntryEditorData) -> Unit,
@@ -176,6 +179,7 @@ fun MediaEntryEditorSheet(
     var newPlatformLogoUrl by remember { mutableStateOf("") }
 
     var showSeriesDetails by remember { mutableStateOf(false) }
+    var showReportDialog by remember { mutableStateOf(false) }
 
     // Populate multi-creator rows once authors finish loading
     LaunchedEffect(existing?.id, prefill, metadataLoaded) {
@@ -384,6 +388,11 @@ fun MediaEntryEditorSheet(
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.weight(1f)
             )
+            if (reportDraft != null) {
+                IconButton(onClick = { showReportDialog = true }) {
+                    Icon(Icons.Default.Flag, contentDescription = "Report issue")
+                }
+            }
             Button(onClick = ::saveEntry, contentPadding = PaddingValues(horizontal = 16.dp)) {
                 Text("Save")
             }
@@ -671,6 +680,10 @@ fun MediaEntryEditorSheet(
                 }
             }
         }
+    }
+
+    if (showReportDialog && reportDraft != null) {
+        ScrapeIssueReportDialog(reportDraft) { showReportDialog = false }
     }
 
     error?.let {

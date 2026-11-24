@@ -1,5 +1,8 @@
 package com.omnitrack.app.domain.model
 
+import kotlinx.serialization.Serializable
+
+@Serializable
 enum class MediaType(val value: String, val label: String) {
     NOVEL("novel", "Novels"),
     COMIC("comic", "Comics"),

@@ -8,3 +8,4 @@ export * from "./platforms";
 export * from "./history";
 export * from "./links";
 export * from "./relations";
+export * from "./scrape-issues";

@@ -20,7 +20,8 @@ import com.omnitrack.app.utils.LibrarySortOption
 
 enum class SettingsPage {
     MAIN,
-    SORT_ORDER
+    SORT_ORDER,
+    SCRAPE_REPORTS
 }
 
 @Composable
@@ -36,7 +37,7 @@ fun OmniTrackSettingsScreen() {
     AnimatedContent(
         targetState = currentRoute,
         transitionSpec = {
-            if (targetState == SettingsPage.SORT_ORDER) {
+            if (targetState != SettingsPage.MAIN) {
                 // Slide in from right when going forward
                 (slideInHorizontally { width -> width } + fadeIn()) togetherWith
                         (slideOutHorizontally { width -> -width } + fadeOut())
@@ -59,6 +60,19 @@ fun OmniTrackSettingsScreen() {
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     UpdateSettingsCard()
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth().clickable { currentRoute = SettingsPage.SCRAPE_REPORTS }
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(20.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Scrape reports", style = MaterialTheme.typography.titleMedium)
+                            Icon(Icons.Default.ChevronRight, contentDescription = "Open scrape reports")
+                        }
+                    }
 
                     // Clickable Summary Card that triggers the slide transition
                     Card(
@@ -97,6 +111,7 @@ fun OmniTrackSettingsScreen() {
                     }
                 }
             }
+            SettingsPage.SCRAPE_REPORTS -> ScrapeIssueReportsScreen(onBack = { currentRoute = SettingsPage.MAIN })
             SettingsPage.SORT_ORDER -> {
                 Column(
                     modifier = Modifier

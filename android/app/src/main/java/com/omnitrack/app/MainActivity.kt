@@ -24,6 +24,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import com.omnitrack.app.ui.viewmodel.SeriesViewModel
+import com.omnitrack.app.worker.ScrapeIssueSyncWorker
 
 class MainActivity : ComponentActivity() {
 
@@ -37,6 +38,11 @@ class MainActivity : ComponentActivity() {
         pendingSharedUrl = extractSharedUrl(intent)
 
         val database = AppDatabase.getInstance(applicationContext)
+        lifecycleScope.launch {
+            database.scrapeIssueReportDao().pendingIds().forEach {
+                ScrapeIssueSyncWorker.enqueue(applicationContext, it)
+            }
+        }
         val repository: SeriesRepository = SeriesRepositoryImpl(
             mediaEntryDao = database.mediaEntryDao(),
             progressHistoryDao = database.progressHistoryDao()

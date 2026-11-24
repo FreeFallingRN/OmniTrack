@@ -91,6 +91,7 @@ async function runMigrations() {
               'authors',
               'entry_authors',
               'progress_history',
+              'scrape_issue_reports',
               'external_links'
           ];
       BEGIN

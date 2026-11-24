@@ -8,14 +8,15 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [MediaEntryEntity::class, ProgressHistoryEntity::class],
-    version = 21,
+    entities = [MediaEntryEntity::class, ProgressHistoryEntity::class, ScrapeIssueReport::class],
+    version = 22,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun mediaEntryDao(): MediaEntryDao
     abstract fun progressHistoryDao(): ProgressHistoryDao
+    abstract fun scrapeIssueReportDao(): ScrapeIssueReportDao
 
     companion object {
         @Volatile
@@ -44,6 +45,25 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_21_22 = object : Migration(21, 22) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `scrape_issue_reports` (
+                        `id` TEXT NOT NULL PRIMARY KEY,
+                        `sourceUrl` TEXT NOT NULL,
+                        `normalizedUrl` TEXT NOT NULL,
+                        `adapterName` TEXT NOT NULL,
+                        `scrapedSnapshotJson` TEXT NOT NULL,
+                        `issueTagsJson` TEXT NOT NULL,
+                        `note` TEXT NOT NULL,
+                        `createdAt` TEXT NOT NULL,
+                        `synced` INTEGER NOT NULL,
+                        `deleted` INTEGER NOT NULL
+                    )
+                """)
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -51,7 +71,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "omnitrack_database"
                 )
-                    .addMigrations(MIGRATION_19_20, MIGRATION_20_21)
+                    .addMigrations(MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22)
                     .fallbackToDestructiveMigration(false)
                     .build()
                 INSTANCE = instance

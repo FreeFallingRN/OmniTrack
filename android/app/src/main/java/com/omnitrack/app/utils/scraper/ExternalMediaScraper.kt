@@ -6,6 +6,7 @@ import android.util.Log
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.omnitrack.app.utils.ScrapedMediaDraft
+import com.omnitrack.app.utils.ImportedMediaDraft
 import com.omnitrack.app.utils.scraper.adapters.AmazonAdapter
 import com.omnitrack.app.utils.scraper.adapters.AniListAdapter
 import com.omnitrack.app.utils.scraper.adapters.GenericFallbackAdapter
@@ -80,13 +81,28 @@ object ExternalMediaScraper {
         }
     }
 
-    suspend fun scrape(context: Context, rawUrl: String): ScrapedMediaDraft {
+    suspend fun scrape(context: Context, rawUrl: String): ImportedMediaDraft {
         val url = normalizeInputUrl(rawUrl)
+        val host = runCatching { URI(url).host.orEmpty().lowercase() }.getOrDefault("")
+        val adapter = adapters.firstOrNull { it.canHandle(host, url) }
+        return ImportedMediaDraft(
+            sourceUrl = rawUrl.trim(),
+            normalizedUrl = url,
+            adapterName = adapter?.name ?: GenericFallbackAdapter.name,
+            draft = scrapeDraft(context, rawUrl, url, host, adapter)
+        )
+    }
+
+    private suspend fun scrapeDraft(
+        context: Context,
+        rawUrl: String,
+        url: String,
+        host: String,
+        matchedAdapter: MediaSourceAdapter?
+    ): ScrapedMediaDraft {
         val originalUrl = rawUrl.trim().let {
             if (it.startsWith("http://", true) || it.startsWith("https://", true)) it else "https://$it"
         }
-        val host = runCatching { URI(url).host.orEmpty().lowercase() }.getOrDefault("")
-        val matchedAdapter = adapters.firstOrNull { it.canHandle(host, url) }
         val trace = ScrapeTrace(url = url, adapterName = matchedAdapter?.name ?: "None")
         val fetcher = createFetchClient(context, trace)
 
@@ -168,10 +184,6 @@ object ExternalMediaScraper {
             }
 
             val fallbackDraft = GenericFallbackAdapter.scrapeFromHtml(url, html)
-                ?: ScrapedMediaDraft(
-                    title = HtmlMetadataParser.extractTitleFromSlug(url),
-                    sourceUrl = url
-                )
             trace.log(
                 "fallbackParse: title=\"${fallbackDraft.title}\" creators=${fallbackDraft.creators.map { "${it.name}(${it.role})" }} cover=${fallbackDraft.coverUrl != null}"
             )

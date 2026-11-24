@@ -85,7 +85,7 @@ import com.omnitrack.app.ui.screens.stats.HistoryStatsScreen
 import com.omnitrack.app.ui.viewmodel.SeriesViewModel
 import com.omnitrack.app.utils.LibrarySortOption
 import com.omnitrack.app.utils.MediaUrlImporter
-import com.omnitrack.app.utils.ScrapedMediaDraft
+import com.omnitrack.app.utils.ImportedMediaDraft
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 
@@ -127,7 +127,7 @@ fun OmniTrackHomeScreen(
     }
     var fabExpanded by remember { mutableStateOf(false) }
     var showImportUrlDialog by remember { mutableStateOf(false) }
-    var scrapedPrefill by remember { mutableStateOf<ScrapedMediaDraft?>(null) }
+    var scrapedPrefill by remember { mutableStateOf<ImportedMediaDraft?>(null) }
 
     LaunchedEffect(bottomNavIndex) {
         sortOption = LibrarySortOption.fromKey(prefs.getString("sort_option", "last_updated"))
@@ -440,7 +440,8 @@ fun OmniTrackHomeScreen(
         if (showEntryEditor) {
             MediaEntryEditorSheet(
                 existing = editorEntry,
-                prefill = scrapedPrefill,
+                prefill = scrapedPrefill?.draft,
+                reportDraft = scrapedPrefill,
                 entries = mediaEntries,
                 onDismiss = {
                     showEntryEditor = false
