@@ -108,8 +108,10 @@ fun OmniTrackHomeScreen(
         mutableStateOf(UserStatus.fromValue(prefs.getString("selected_user_status", null) ?: ""))
     }
     val onStatusSelected: (UserStatus) -> Unit = {
-        selectedUserStatus = it
-        prefs.edit().putString("selected_user_status", it.value).apply()
+        if (selectedUserStatus != it) {
+            selectedUserStatus = it
+            prefs.edit().putString("selected_user_status", it.value).apply()
+        }
     }
     var searchQuery by remember { mutableStateOf("") }
     var selectedEntryForDetail by remember { mutableStateOf<MediaEntry?>(null) }
