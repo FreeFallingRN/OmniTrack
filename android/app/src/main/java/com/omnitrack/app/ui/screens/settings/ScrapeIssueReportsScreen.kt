@@ -77,8 +77,8 @@ fun ScrapeIssueReportsScreen(onBack: () -> Unit) {
                             Text(report.adapterName)
                             Surface(
                                 shape = RoundedCornerShape(50),
-                                color = if (report.synced) MaterialTheme.colorScheme.secondaryContainer
-                                    else MaterialTheme.colorScheme.tertiaryContainer
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                             ) {
                                 Text(
                                     if (report.synced) "Synced" else "Pending sync",

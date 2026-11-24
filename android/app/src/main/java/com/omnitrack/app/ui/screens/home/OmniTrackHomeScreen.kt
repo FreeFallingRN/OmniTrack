@@ -370,6 +370,7 @@ fun OmniTrackHomeScreen(
                 onUpdateProgress = { newProgress ->
                     viewModel.updateProgress(entry.id, newProgress, ProgressSource.DETAIL_SHEET)
                 },
+                onUnlinkMoonReader = { entryId -> viewModel.unlinkMoonReaderBook(entryId) },
                 controlsEnabled = !savingStatus && !isRefreshing,
                 onUpdateStatus = { status ->
                     if (status != (pendingStatus ?: entry.userStatus)) {

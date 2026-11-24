@@ -1,7 +1,10 @@
 package com.omnitrack.app.ui.components
 
 import android.content.Intent
+import android.content.Context
+import android.content.SharedPreferences
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.ui.platform.LocalContext
@@ -34,11 +37,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,6 +60,8 @@ import com.omnitrack.app.domain.model.EntryCreator
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.UserStatus
 import com.omnitrack.app.domain.model.toDisplayLabel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
@@ -64,12 +72,27 @@ fun MediaDetailSheet(
     onUpdateProgress: (Double) -> Unit,
     onUpdateStatus: (UserStatus) -> Unit,
     controlsEnabled: Boolean,
+    onUnlinkMoonReader: suspend (String) -> Unit,
     onSelectEntry: (MediaEntry) -> Unit,
     onOpenRelatedEntity: (RelatedEntityDetail) -> Unit,
     onEdit: () -> Unit
 ) {
     var showCover by remember(entry.id) { mutableStateOf(false) }
     var showShare by remember(entry.id) { mutableStateOf(false) }
+    var unlinking by remember(entry.id) { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val prefs = remember(context) { context.getSharedPreferences("omnitrack_prefs", Context.MODE_PRIVATE) }
+    val linkKey = "moon_reader_file_uri_${entry.id}"
+    var moonReaderLinked by remember(prefs, linkKey) { mutableStateOf(prefs.getString(linkKey, null) != null) }
+    DisposableEffect(prefs, linkKey) {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == null || key == linkKey) moonReaderLinked = prefs.getString(linkKey, null) != null
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        moonReaderLinked = prefs.getString(linkKey, null) != null
+        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -218,6 +241,32 @@ fun MediaDetailSheet(
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.tertiary
                                 )
+                            }
+                        }
+                        if (moonReaderLinked) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                DetailStatusPill("Moon+ linked")
+                                TextButton(
+                                    enabled = !unlinking,
+                                    onClick = {
+                                        unlinking = true
+                                        scope.launch {
+                                            try {
+                                                onUnlinkMoonReader(entry.id)
+                                            } catch (e: CancellationException) {
+                                                throw e
+                                            } catch (e: Exception) {
+                                                Toast.makeText(
+                                                    context,
+                                                    "Could not unlink ${entry.title}: ${e.message ?: "Unknown error"}",
+                                                    Toast.LENGTH_LONG
+                                                ).show()
+                                            } finally {
+                                                unlinking = false
+                                            }
+                                        }
+                                    }
+                                ) { Text("Unlink") }
                             }
                         }
                     }

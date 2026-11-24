@@ -129,10 +129,12 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         pendingSharedUrl = extractSharedUrl(intent)
     }
-    
+
     override fun onResume() {
         super.onResume()
-        seriesViewModel.syncMoonReader()
+        if (::seriesViewModel.isInitialized) {
+            seriesViewModel.syncMoonReader()
+        }
     }
 
     private fun extractSharedUrl(intent: Intent?): String? {

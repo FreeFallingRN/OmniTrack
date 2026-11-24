@@ -2,6 +2,7 @@ package com.omnitrack.app.utils
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import com.omnitrack.app.domain.model.ProgressSource
 import com.omnitrack.app.domain.repository.SeriesRepository
 import kotlinx.coroutines.flow.first
@@ -15,6 +16,18 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
 
     fun hasFolderAccess(uri: Uri): Boolean =
         context.contentResolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission }
+
+    suspend fun unlink(entryId: String) = mutex.withLock {
+        check(prefs.edit()
+            .remove(FILE_URI + entryId)
+            .remove(FILE_NAME + entryId)
+            .remove(OFFSET + entryId)
+            .remove(SPINE_OFFSET + entryId)
+            .remove(TIMESTAMP + entryId)
+            .remove(SPINE + entryId)
+            .remove(LAST_MODIFIED + entryId)
+            .commit()) { "Could not unlink Moon+ Reader book" }
+    }
 
     suspend fun apply(match: MoonReaderMatch, value: Double, folder: String?) = mutex.withLock {
         val entries = repository.getMediaEntriesStream().first()
@@ -34,7 +47,12 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
             }
             check(!duplicate) { "${progress.fileName} is already linked to another entry" }
         }
-        repository.updateProgress(current.id, value, ProgressSource.IMPORT)
+        repository.updateProgress(
+            current.id, value,
+            if (isChapter && folder != null && progress.fileUri != null && progress.fileName != null) {
+                ProgressSource.DETAIL_SHEET
+            } else ProgressSource.IMPORT
+        )
         if (isChapter) {
             val editor = prefs.edit()
                 .putLong(OFFSET + current.id, (value - progress.spineChapterIndex - 1.0).toRawBits())
@@ -44,6 +62,11 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
                     .putString(FILE_NAME + current.id, progress.fileName)
                     .putLong(TIMESTAMP + current.id, progress.timestamp)
                     .putInt(SPINE + current.id, progress.spineChapterIndex)
+                if (progress.lastModified != null && progress.lastModified > 0) {
+                    editor.putLong(LAST_MODIFIED + current.id, progress.lastModified)
+                } else {
+                    editor.remove(LAST_MODIFIED + current.id)
+                }
             }
             check(editor.commit()) { "Could not save Moon+ Reader state for ${current.title}" }
         }
@@ -57,26 +80,39 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
         }
         val uri = Uri.parse(folder)
         val entries = repository.getMediaEntriesStream().first()
+        var skipped = false
         val links = entries.mapNotNull { entry ->
             val fileUri = prefs.getString(FILE_URI + entry.id, null)
             val name = prefs.getString(FILE_NAME + entry.id, null)
-            if (fileUri != null && name != null) entry.id to MoonReaderFile(fileUri, name) else null
+            if (fileUri != null && name != null) {
+                if (!isChapterUnit(entry.unitName)) {
+                    if (manual) notify("Moon+ Reader: ${entry.title} no longer uses chapters")
+                    else Log.w("MoonReaderSync", "${entry.title} no longer uses chapters")
+                    skipped = true
+                    return@mapNotNull null
+                }
+                entry.id to MoonReaderFile(
+                    fileUri, name,
+                    prefs.getLong(LAST_MODIFIED + entry.id, -1L),
+                    prefs.getLong(TIMESTAMP + entry.id, -1L)
+                )
+            } else null
         }.toMap()
         if (links.isEmpty()) {
-            if (manual) notify("Moon+ Reader: no linked chapter entries")
+            if (manual && !skipped) notify("Moon+ Reader: no linked chapter entries")
             return@withLock
         }
         check(hasFolderAccess(uri)) { "Folder access was lost; choose the folder again" }
         val scan = MoonReaderImport.scan(context, uri, true, entries, links)
         var updates = 0
-        var skipped = false
         for (match in scan.matches) {
             check(prefs.getString("moon_reader_folder", null) == folder && hasFolderAccess(uri)) {
                 "Folder access changed during sync; try again"
             }
             val entry = match.entry
             if (!isChapterUnit(entry.unitName)) {
-                notify("Moon+ Reader: ${entry.title} no longer uses chapters")
+                if (manual) notify("Moon+ Reader: ${entry.title} no longer uses chapters")
+                else Log.w("MoonReaderSync", "${entry.title} no longer uses chapters")
                 skipped = true
                 continue
             }
@@ -86,11 +122,12 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
             val lastSpine = prefs.getInt(SPINE + entry.id, -1)
             if (progress.timestamp < lastTime ||
                 (progress.timestamp == lastTime && progress.spineChapterIndex <= lastSpine)) {
-                if (links.getValue(entry.id).uri != fileUri) {
-                    check(prefs.edit().putString(FILE_URI + entry.id, fileUri).commit()) {
-                        "Could not save Moon+ Reader file reference for ${entry.title}"
-                    }
-                }
+                val editor = prefs.edit().putString(FILE_URI + entry.id, fileUri)
+                    .putString(FILE_NAME + entry.id, requireNotNull(progress.fileName))
+                if (progress.lastModified != null && progress.lastModified > 0) {
+                    editor.putLong(LAST_MODIFIED + entry.id, progress.lastModified)
+                } else editor.remove(LAST_MODIFIED + entry.id)
+                check(editor.commit()) { "Could not save Moon+ Reader file reference for ${entry.title}" }
                 continue
             }
             check(prefs.contains(SPINE_OFFSET + entry.id)) { "Missing chapter offset for ${entry.title}" }
@@ -99,18 +136,25 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
             val chapter = offset + progress.spineChapterIndex
             check(chapter.isFinite() && chapter >= 0.0) { "Invalid chapter for ${entry.title}" }
             val updated = repository.updateMoonReaderChapterIfHigher(entry.id, chapter)
-            check(prefs.edit()
+            val editor = prefs.edit()
                 .putString(FILE_URI + entry.id, fileUri)
+                .putString(FILE_NAME + entry.id, requireNotNull(progress.fileName))
                 .putLong(TIMESTAMP + entry.id, progress.timestamp)
                 .putInt(SPINE + entry.id, progress.spineChapterIndex)
-                .commit()) { "Could not save Moon+ Reader sync state for ${entry.title}" }
+            if (progress.lastModified != null && progress.lastModified > 0) {
+                editor.putLong(LAST_MODIFIED + entry.id, progress.lastModified)
+            } else editor.remove(LAST_MODIFIED + entry.id)
+            check(editor.commit()) { "Could not save Moon+ Reader sync state for ${entry.title}" }
             if (updated) {
                 val formatted = if (chapter % 1.0 == 0.0) chapter.toLong().toString() else chapter.toString()
                 notify("Moon+ Reader: updated ${entry.title} to Ch. $formatted")
                 updates++
             }
         }
-        if (scan.hasProblems) notify("Moon+ Reader: ${scan.message}")
+        if (scan.hasProblems) {
+            if (manual) notify("Moon+ Reader: ${scan.message}")
+            else Log.w("MoonReaderSync", scan.message)
+        }
         if (manual && updates == 0 && !skipped && !scan.hasProblems) notify("Moon+ Reader: already up to date")
     }
 
@@ -121,6 +165,7 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
         private const val FILE_NAME = "moon_reader_file_name_"
         private const val TIMESTAMP = "moon_reader_timestamp_"
         private const val SPINE = "moon_reader_spine_"
+        private const val LAST_MODIFIED = "moon_reader_last_modified_"
 
         fun isChapterUnit(unit: String): Boolean =
             unit.trim().equals("chapter", ignoreCase = true) ||

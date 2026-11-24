@@ -23,7 +23,7 @@ class SeriesRepositoryImpl(
     private val supabaseService: SupabaseService = SupabaseService
 ) : SeriesRepository {
 
-    // Serializes all progress updates & history writes so rapid taps never read stale state
+    // Keep refreshes and progress uploads ordered with local progress and history writes.
     private val progressMutex = Mutex()
 
     override fun getMediaEntriesStream(): Flow<List<MediaEntry>> {
@@ -32,7 +32,7 @@ class SeriesRepositoryImpl(
         }
     }
 
-    override suspend fun fetchFromSupabase() {
+    override suspend fun fetchFromSupabase(): Unit = progressMutex.withLock {
         try {
             val series = supabaseService.getSeriesTitles()
             val entries = supabaseService.getAllMediaEntries()
@@ -102,11 +102,10 @@ class SeriesRepositoryImpl(
         computeTarget: (current: MediaEntryEntity?) -> Pair<Double, String?>?,
         source: ProgressSource
     ): Boolean {
-        val today = LocalDate.now().toString()
-
-        val result = progressMutex.withLock {
+        return progressMutex.withLock {
+            val today = LocalDate.now().toString()
             val current = mediaEntryDao.getEntryById(id)
-            val (nextUnit, targetStatus) = computeTarget(current) ?: return@withLock null
+            val (nextUnit, targetStatus) = computeTarget(current) ?: return@withLock false
 
             // Update MediaEntry in Room
             if (targetStatus != null && targetStatus != current?.userStatus) {
@@ -137,37 +136,36 @@ class SeriesRepositoryImpl(
                 )
             }
 
-            Triple(
-                nextUnit,
-                targetStatus?.takeIf { it != current?.userStatus },
-                prevUnitForHistory
-            )
-        } ?: return false
-        val (newUnit, statusToWrite, previousUnitToLog) = result
-
-        // Sync to Supabase
-        try {
-            supabaseService.updateEntryProgress(
-                entryId = id,
-                currentUnit = newUnit,
-                updatedStatus = statusToWrite
-            )
-            val hasNetProgress = (newUnit - previousUnitToLog) > 0.0001
-            if (source.isActiveConsumption && hasNetProgress) {
-                supabaseService.logProgress(
+            try {
+                supabaseService.updateEntryProgress(
                     entryId = id,
-                    activityDate = today,
-                    prevUnit = previousUnitToLog,
-                    newUnit = newUnit,
-                    source = source.value
+                    currentUnit = nextUnit,
+                    updatedStatus = targetStatus?.takeIf { it != current?.userStatus }
                 )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("SeriesRepository", "Failed to sync progress to Supabase", e)
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.e("SeriesRepository", "Failed to sync progress to Supabase", e)
+            if (source.isActiveConsumption && hasNetProgress) {
+                try {
+                    check(
+                        supabaseService.logProgress(
+                            entryId = id,
+                            activityDate = today,
+                            prevUnit = prevUnitForHistory,
+                            newUnit = nextUnit,
+                            source = source.value
+                        )
+                    ) { "Supabase rejected progress history for $id on $today" }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e("SeriesRepository", "Failed to sync progress history to Supabase", e)
+                }
+            }
+            true
         }
-        return true
     }
 
     override suspend fun updateProgress(
@@ -192,7 +190,7 @@ class SeriesRepositoryImpl(
                     newProgress > current.currentUnit
                 ) Pair(newProgress, current.userStatus) else null
             },
-            source = ProgressSource.IMPORT
+            source = ProgressSource.DETAIL_SHEET
         )
 
     override suspend fun incrementProgress(

@@ -176,6 +176,10 @@ class SeriesViewModel(
         moonReaderSync.apply(match, newProgress, folder)
     }
 
+    suspend fun unlinkMoonReaderBook(entryId: String) {
+        moonReaderSync.unlink(entryId)
+    }
+
     fun syncMoonReader(manual: Boolean = false) {
         if (_moonReaderBusy.value) return
         val now = SystemClock.elapsedRealtime()

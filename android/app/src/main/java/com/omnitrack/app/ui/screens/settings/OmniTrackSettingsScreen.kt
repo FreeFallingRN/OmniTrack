@@ -7,12 +7,14 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
@@ -27,6 +29,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -107,25 +110,31 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                         .statusBarsPadding()
                         .verticalScroll(rememberScrollState())
                         .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     UpdateSettingsCard()
 
                     MoonReaderSyncCard(viewModel)
 
                     Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                        ),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                         modifier = Modifier.fillMaxWidth()
                             .clickable { currentRoute = SettingsPage.SCRAPE_REPORTS }
                     ) {
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(20.dp),
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp).padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Scrape reports", style = MaterialTheme.typography.titleMedium)
+                            Text("Scrape reports", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             Icon(
                                 Icons.Default.ChevronRight,
-                                contentDescription = "Open scrape reports"
+                                contentDescription = "Open scrape reports",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -137,7 +146,8 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                                 alpha = 0.3f
                             )
                         ),
-                        shape = RoundedCornerShape(16.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { currentRoute = SettingsPage.SORT_ORDER }
@@ -145,7 +155,8 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(20.dp),
+                                .heightIn(min = 80.dp)
+                                .padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
@@ -176,13 +187,14 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                                 alpha = 0.3f
                             )
                         ),
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { currentRoute = SettingsPage.SHARE_STYLE }
                     ) {
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(20.dp),
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp).padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
@@ -248,12 +260,13 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                                 alpha = 0.3f
                             )
                         ),
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
                             modifier = Modifier.fillMaxWidth().padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             ShareFormatStyle.entries.forEach { option ->
                                 val selectOption = {
@@ -266,7 +279,7 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable(onClick = selectOption)
-                                        .padding(vertical = 12.dp, horizontal = 4.dp),
+                                        .padding(vertical = 4.dp, horizontal = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
@@ -284,7 +297,11 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                                     }
                                     RadioButton(
                                         selected = currentShareStyle == option,
-                                        onClick = selectOption
+                                        onClick = selectOption,
+                                        colors = RadioButtonDefaults.colors(
+                                            selectedColor = MaterialTheme.colorScheme.onSurface,
+                                            unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
                                     )
                                 }
                             }
@@ -329,14 +346,15 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                                 alpha = 0.3f
                             )
                         ),
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             LibrarySortOption.entries.forEach { option ->
                                 Row(
@@ -347,7 +365,7 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                                             prefs.edit().putString("sort_option", option.key)
                                                 .apply()
                                         }
-                                        .padding(vertical = 12.dp, horizontal = 4.dp),
+                                        .padding(vertical = 4.dp, horizontal = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
@@ -362,7 +380,11 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                                             currentSort = option
                                             prefs.edit().putString("sort_option", option.key)
                                                 .apply()
-                                        }
+                                        },
+                                        colors = RadioButtonDefaults.colors(
+                                            selectedColor = MaterialTheme.colorScheme.onSurface,
+                                            unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
                                     )
                                 }
                             }
