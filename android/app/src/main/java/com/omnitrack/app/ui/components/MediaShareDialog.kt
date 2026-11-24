@@ -210,7 +210,9 @@ private fun formatShareText(
     val title = buildString {
         append(escape(entry.title))
         entry.seriesTitle?.takeIf { it.isNotBlank() }?.let { append(" — ${escape(it)}") }
-        entry.sequenceNumber?.let { append(" #${formatUnit(it)}") }
+        if (!entry.seriesTitle.isNullOrBlank() || !entry.seriesId.isNullOrBlank()) {
+            entry.sequenceNumber?.let { append(" #${formatUnit(it)}") }
+        }
     }
     val url = clean(entry.sourceUrl.orEmpty())
     val heading = when {
