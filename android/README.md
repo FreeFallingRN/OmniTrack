@@ -6,6 +6,7 @@ Native Android client built with Kotlin, Jetpack Compose, Room SQLite cache, and
 - **Architecture**: MVVM with Offline-First Repository Pattern
 - **Instant Actions**: Low-latency persistent notification with `[+1]`, `[-1]`, and `[Switch]` quick actions.
 - **Share Target**: Intercepts `ACTION_SEND` (webnovel links) with an OpenGraph metadata parser sheet.
+- **Discord Sharing**: Customize fields and preview Markdown from an entry's share button. The share style is selected in Settings; covers are attached when available, with text-only sharing if loading fails.
 - **Sync**: Supabase REST / WebSocket realtime integration with local Room caching.
 
 ## Scrape issue reports

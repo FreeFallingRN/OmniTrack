@@ -59,10 +59,10 @@ fun MediaDetailSheet(
     controlsEnabled: Boolean,
     onSelectEntry: (MediaEntry) -> Unit,
     onOpenRelatedEntity: (RelatedEntityDetail) -> Unit,
-    onEdit: () -> Unit,
-    onShare: () -> Unit = {}
+    onEdit: () -> Unit
 ) {
     var showCover by remember(entry.id) { mutableStateOf(false) }
+    var showShare by remember(entry.id) { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -127,7 +127,7 @@ fun MediaDetailSheet(
                             IconButton(onClick = onEdit, modifier = Modifier.size(40.dp)) {
                                 Icon(Icons.Default.Edit, contentDescription = "Edit")
                             }
-                            IconButton(onClick = onShare, modifier = Modifier.size(40.dp)) {
+                            IconButton(onClick = { showShare = true }, modifier = Modifier.size(40.dp)) {
                                 Icon(Icons.Default.Share, contentDescription = "Share")
                             }
                         }
@@ -254,6 +254,10 @@ fun MediaDetailSheet(
                 }
             }
         }
+    }
+
+    if (showShare) {
+        MediaShareDialog(entry = entry, onDismiss = { showShare = false })
     }
 
     if (showCover && !entry.coverUrl.isNullOrBlank()) {
