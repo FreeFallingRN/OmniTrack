@@ -18,6 +18,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.omnitrack.app.ui.components.UpdateSettingsCard
+import com.omnitrack.app.ui.components.MoonReaderSyncCard
+import com.omnitrack.app.ui.viewmodel.SeriesViewModel
 import com.omnitrack.app.utils.LibrarySortOption
 
 enum class SettingsPage {
@@ -41,7 +43,7 @@ enum class ShareFormatStyle(val label: String, val description: String) {
 }
 
 @Composable
-fun OmniTrackSettingsScreen() {
+fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("omnitrack_prefs", Context.MODE_PRIVATE) }
 
@@ -80,6 +82,8 @@ fun OmniTrackSettingsScreen() {
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     UpdateSettingsCard()
+
+                    MoonReaderSyncCard(viewModel)
 
                     Card(
                         modifier = Modifier.fillMaxWidth().clickable { currentRoute = SettingsPage.SCRAPE_REPORTS }

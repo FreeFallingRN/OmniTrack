@@ -157,6 +157,10 @@ class SeriesViewModel(
         }
     }
 
+    suspend fun importMoonReaderProgress(id: String, newProgress: Double) {
+        repository.updateProgress(id, newProgress, ProgressSource.IMPORT)
+    }
+
     fun incrementUnitCount(
         id: String,
         delta: Double = 1.0,

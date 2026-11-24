@@ -343,7 +343,7 @@ fun OmniTrackHomeScreen(
 
                     3 -> {
                         // 3: Settings View
-                        OmniTrackSettingsScreen()
+                        OmniTrackSettingsScreen(viewModel)
                     }
                 }
             }
