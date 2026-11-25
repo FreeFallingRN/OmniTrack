@@ -48,7 +48,11 @@ val releaseKeyPassword: String = (localProperties.getProperty("KEY_PASSWORD")
 
 extensions.configure<ApplicationExtension> {
     namespace = "com.omnitrack.app"
-    compileSdk = 37
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 2
+        }
+    }
 
     defaultConfig {
         applicationId = "com.omnitrack.app"
