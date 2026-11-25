@@ -270,7 +270,7 @@ object AmazonAdapter : MediaSourceAdapter {
             "yyyy-MM-dd", "yyyy/MM/dd", "yyyy-MM", "yyyy/MM", "yyyy", "d/M/yyyy", "M/d/yyyy",
             "d-M-yyyy", "M-d-yyyy", "d.M.yyyy"
         )
-        val locales = listOf(Locale.ENGLISH, Locale("nl"))
+        val locales = listOf(Locale.ENGLISH, Locale.forLanguageTag("nl"))
         for (locale in locales) {
             for (pattern in patterns) {
                 val format = SimpleDateFormat(pattern, locale).apply { isLenient = false }

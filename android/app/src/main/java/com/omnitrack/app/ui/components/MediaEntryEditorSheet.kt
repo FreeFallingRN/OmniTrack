@@ -51,19 +51,17 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.omnitrack.app.data.SupabaseService
 import com.omnitrack.app.data.model.AuthorDto
 import com.omnitrack.app.data.model.PlatformDto
 import com.omnitrack.app.data.model.SeriesDto
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.model.UserStatus
-import com.omnitrack.app.utils.CoverLookup
+import com.omnitrack.app.utils.scraper.ExternalMediaScraper
 import com.omnitrack.app.utils.ScrapedMediaDraft
 import com.omnitrack.app.utils.ImportedMediaDraft
-import kotlinx.coroutines.Dispatchers
+import com.omnitrack.app.ui.viewmodel.SeriesViewModel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.math.BigDecimal
 import java.math.RoundingMode
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -114,6 +112,7 @@ data class NewPlatformData(
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun MediaEntryEditorSheet(
+    viewModel: SeriesViewModel,
     existing: MediaEntry?,
     prefill: ScrapedMediaDraft? = null,
     reportDraft: ImportedMediaDraft? = null,
@@ -122,19 +121,20 @@ fun MediaEntryEditorSheet(
     onSave: (MediaEntryEditorData) -> Unit,
     onDelete: (() -> Unit)? = null
 ) {
+    val draftKey = existing to prefill
     var series by remember { mutableStateOf<List<SeriesDto>>(emptyList()) }
     var authors by remember { mutableStateOf<List<AuthorDto>>(emptyList()) }
     var platforms by remember { mutableStateOf<List<PlatformDto>>(emptyList()) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var error by remember(draftKey) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    var metadataLoaded by remember { mutableStateOf(false) }
+    var metadataLoaded by remember(draftKey) { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(viewModel, draftKey) {
         try {
-            series = SupabaseService.getSeries()
-            authors = SupabaseService.getAuthors()
-            platforms = SupabaseService.getPlatforms()
+            series = viewModel.getSeries()
+            authors = viewModel.getAuthors()
+            platforms = viewModel.getPlatforms()
         } catch (e: Exception) {
             error = e.message ?: "Could not load series and authors"
         } finally {
@@ -142,47 +142,53 @@ fun MediaEntryEditorSheet(
         }
     }
 
-    var title by remember { mutableStateOf(existing?.title ?: prefill?.title.orEmpty()) }
-    var altTitles by remember {
+    var title by remember(draftKey) { mutableStateOf(existing?.title ?: prefill?.title.orEmpty()) }
+    var altTitles by remember(draftKey) {
         mutableStateOf(existing?.alternativeTitles ?: prefill?.alternativeTitles.orEmpty())
     }
-    var newAltTitle by remember { mutableStateOf("") }
-    var showAliasInput by remember { mutableStateOf(false) }
+    var newAltTitle by remember(draftKey) { mutableStateOf("") }
+    var showAliasInput by remember(draftKey) { mutableStateOf(false) }
 
-    var type by remember { mutableStateOf(existing?.type ?: prefill?.type ?: MediaType.NOVEL) }
-    var seriesId by remember { mutableStateOf(existing?.seriesId) }
-    var userStatus by remember { mutableStateOf(existing?.userStatus?.value ?: prefill?.userStatus ?: "planning") }
-    var publishingStatus by remember {
+    var type by remember(draftKey) { mutableStateOf(existing?.type ?: prefill?.type ?: MediaType.NOVEL) }
+    var seriesId by remember(draftKey) { mutableStateOf(existing?.seriesId) }
+    var userStatus by remember(draftKey) {
+        mutableStateOf(existing?.userStatus?.value ?: prefill?.userStatus ?: "planning")
+    }
+    var publishingStatus by remember(draftKey) {
         mutableStateOf(existing?.publishingStatus ?: prefill?.publishingStatus ?: "releasing")
     }
-    var sequence by remember {
+    var sequence by remember(draftKey) {
         mutableStateOf((existing?.sequenceNumber ?: prefill?.sequenceNumber)?.toString().orEmpty())
     }
-    var currentUnit by remember { mutableStateOf((existing?.currentUnit ?: prefill?.currentUnit)?.toString() ?: "0") }
-    var unitName by remember { mutableStateOf(existing?.unitName ?: prefill?.unitName ?: "Chapter") }
-    var sourceUrl by remember { mutableStateOf(existing?.sourceUrl ?: prefill?.sourceUrl.orEmpty()) }
-    var coverUrl by remember { mutableStateOf(existing?.coverUrl ?: prefill?.coverUrl.orEmpty()) }
+    var currentUnit by remember(draftKey) {
+        mutableStateOf((existing?.currentUnit ?: prefill?.currentUnit)?.toString() ?: "0")
+    }
+    var unitName by remember(draftKey) {
+        mutableStateOf(existing?.unitName ?: prefill?.unitName ?: "Chapter")
+    }
+    var sourceUrl by remember(draftKey) { mutableStateOf(existing?.sourceUrl ?: prefill?.sourceUrl.orEmpty()) }
+    var coverUrl by remember(draftKey) { mutableStateOf(existing?.coverUrl ?: prefill?.coverUrl.orEmpty()) }
 
-    var creatorRows by remember { mutableStateOf(emptyList<CreatorFormRow>()) }
-    var creatorDraft by remember { mutableStateOf(CreatorFormRow()) }
-    var editingCreator by remember { mutableStateOf<Int?>(null) }
+    var creatorRows by remember(draftKey) { mutableStateOf(emptyList<CreatorFormRow>()) }
+    var creatorDraft by remember(draftKey) { mutableStateOf(CreatorFormRow()) }
+    var editingCreator by remember(draftKey) { mutableStateOf<Int?>(null) }
 
-    var platformId by remember { mutableStateOf(existing?.platformId) }
-    var createPlatform by remember { mutableStateOf(false) }
-    var newPlatformName by remember { mutableStateOf(prefill?.platformHint.orEmpty()) }
+    var platformId by remember(draftKey) { mutableStateOf(existing?.platformId) }
+    var createPlatform by remember(draftKey) { mutableStateOf(false) }
+    var newPlatformName by remember(draftKey) { mutableStateOf(prefill?.platformHint.orEmpty()) }
 
-    var isCanon by remember { mutableStateOf(existing?.isCanon ?: true) }
-    var findingCover by remember { mutableStateOf(false) }
-    var createSeries by remember { mutableStateOf(false) }
-    var newSeriesTitle by remember { mutableStateOf("") }
-    var newPlatformWebsiteUrl by remember { mutableStateOf("") }
-    var newPlatformLogoUrl by remember { mutableStateOf("") }
+    var isCanon by remember(draftKey) { mutableStateOf(existing?.isCanon ?: true) }
+    var findingCover by remember(draftKey) { mutableStateOf(false) }
+    var createSeries by remember(draftKey) { mutableStateOf(false) }
+    var newSeriesTitle by remember(draftKey) { mutableStateOf("") }
+    var newPlatformWebsiteUrl by remember(draftKey) { mutableStateOf("") }
+    var newPlatformLogoUrl by remember(draftKey) { mutableStateOf("") }
 
-    var showSeriesDetails by remember { mutableStateOf(false) }
-    var showReportDialog by remember { mutableStateOf(false) }
+    var showSeriesDetails by remember(draftKey) { mutableStateOf(false) }
+    var showReportDialog by remember(draftKey) { mutableStateOf(false) }
 
     // Populate multi-creator rows once authors finish loading
-    LaunchedEffect(existing?.id, prefill, metadataLoaded) {
+    LaunchedEffect(draftKey, metadataLoaded) {
         if (!metadataLoaded) return@LaunchedEffect
 
         val sourceCreators: List<Pair<String, String>> = when {
@@ -209,7 +215,7 @@ fun MediaEntryEditorSheet(
         }
     }
 
-    LaunchedEffect(existing?.id, prefill, metadataLoaded) {
+    LaunchedEffect(draftKey, metadataLoaded) {
         if (!metadataLoaded) return@LaunchedEffect
         val normalizedHint = prefill?.platformHint?.replace(" ", "")?.trim()
         val matched = platforms.firstOrNull {
@@ -226,7 +232,7 @@ fun MediaEntryEditorSheet(
         }
     }
 
-    LaunchedEffect(existing?.id, prefill, metadataLoaded) {
+    LaunchedEffect(draftKey, metadataLoaded) {
         if (!metadataLoaded || existing != null) return@LaunchedEffect
         val seriesTitle = prefill?.seriesTitle?.trim()?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
         val matched = series.firstOrNull { it.title.trim().equals(seriesTitle, ignoreCase = true) }
@@ -279,8 +285,8 @@ fun MediaEntryEditorSheet(
             urlMatch || titleMatch
         }
     }
-    var mergeTargetEntry by remember { mutableStateOf<MediaEntry?>(null) }
-    var groupWithEntry by remember { mutableStateOf<MediaEntry?>(null) }
+    var mergeTargetEntry by remember(draftKey) { mutableStateOf<MediaEntry?>(null) }
+    var groupWithEntry by remember(draftKey) { mutableStateOf<MediaEntry?>(null) }
 
     val targetEntryId = existing?.id ?: mergeTargetEntry?.id
     val position = sequence.toDoubleOrNull()?.takeIf { it.isFinite() }?.let {
@@ -303,7 +309,7 @@ fun MediaEntryEditorSheet(
     val positionError = when {
         positionConflict != null -> "This position is already used by \"${positionConflict.title}\"."
         position != null && groupedPosition == position ->
-            "This position will be used by \"${groupedEntry?.title}\" when it is added to the series."
+            "This position will be used by \"${groupedEntry.title}\" when it is added to the series."
         groupedPositionConflict != null ->
             "\"${groupedEntry?.title}\" cannot be added: its position is already used by \"${groupedPositionConflict.title}\"."
         else -> null
@@ -652,9 +658,7 @@ fun MediaEntryEditorSheet(
                     scope.launch {
                         try {
                             findingCover = true
-                            val found = withContext(Dispatchers.IO) {
-                                CoverLookup.findOpenGraphImage(sourceUrl, context)
-                            }
+                            val found = ExternalMediaScraper.findCoverImage(sourceUrl, context)
                             findingCover = false
                             if (found == null) error = "No cover image found."
                             else coverUrl = found

@@ -47,7 +47,7 @@ import com.omnitrack.app.data.model.PlatformDto
 import com.omnitrack.app.data.model.SeriesDto
 import com.omnitrack.app.domain.model.UserStatus
 import com.omnitrack.app.domain.model.toDisplayLabel
-import com.omnitrack.app.utils.CoverLookup
+import com.omnitrack.app.utils.scraper.ExternalMediaScraper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -295,7 +295,7 @@ internal fun PlatformEditorSheet(
             onClick = {
                 scope.launch(Dispatchers.IO) {
                     findingLogo = true
-                    val found = CoverLookup.findOpenGraphImage(websiteUrl)
+                    val found = ExternalMediaScraper.findCoverImage(websiteUrl)
                     withContext(Dispatchers.Main) {
                         findingLogo = false
                         if (found != null) logoUrl = found

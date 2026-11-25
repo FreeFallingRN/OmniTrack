@@ -1,8 +1,7 @@
-package com.omnitrack.app.ui.components
+package com.omnitrack.app.ui.screens.settings
 
 import android.content.Context
 import android.content.Intent
-import android.content.SharedPreferences
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.util.Log
@@ -57,6 +56,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
+import com.omnitrack.app.data.OmniTrackPreferences
+import com.omnitrack.app.data.OmniTrackPreferenceKeys
+import com.omnitrack.app.data.PreferenceChange
+import com.omnitrack.app.ui.components.formatUnit
 import com.omnitrack.app.ui.viewmodel.SeriesViewModel
 import com.omnitrack.app.utils.MoonReaderImport
 import com.omnitrack.app.utils.MoonReaderScan
@@ -123,16 +126,16 @@ private fun folderLocation(context: Context, savedFolder: String, name: String?)
 @Composable
 fun MoonReaderSettingsScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
     val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences("omnitrack_prefs", Context.MODE_PRIVATE) }
+    val prefs = remember { OmniTrackPreferences(context) }
     val entries by viewModel.mediaEntries.collectAsState()
     val syncing by viewModel.moonReaderBusy.collectAsState()
     val needsProgressReauth by viewModel.needsProgressFolderReauth.collectAsState()
     val needsBooksReauth by viewModel.needsBooksFolderReauth.collectAsState()
     val scope = rememberCoroutineScope()
-    var folder by remember { mutableStateOf(prefs.getString("moon_reader_folder", null)) }
-    var folderName by remember { mutableStateOf(prefs.getString("moon_reader_folder_name", null)) }
-    var booksFolder by remember { mutableStateOf(prefs.getString("moon_reader_books_folder", null)) }
-    var booksFolderName by remember { mutableStateOf(prefs.getString("moon_reader_books_folder_name", null)) }
+    var folder by remember { mutableStateOf(prefs.getString(OmniTrackPreferenceKeys.MoonReaderFolder)) }
+    var folderName by remember { mutableStateOf(prefs.getString(OmniTrackPreferenceKeys.MoonReaderFolderName)) }
+    var booksFolder by remember { mutableStateOf(prefs.getString(OmniTrackPreferenceKeys.MoonReaderBooksFolder)) }
+    var booksFolderName by remember { mutableStateOf(prefs.getString(OmniTrackPreferenceKeys.MoonReaderBooksFolderName)) }
     fun hasAccess(value: String?): Boolean = value != null &&
         context.contentResolver.persistedUriPermissions.any { it.uri == Uri.parse(value) && it.isReadPermission }
     var busy by remember { mutableStateOf(false) }
@@ -143,16 +146,16 @@ fun MoonReaderSettingsScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
     var values by remember { mutableStateOf(emptyMap<String, String>()) }
     var linksVersion by remember { mutableStateOf(0) }
     val linkedEntries = remember(entries, linksVersion) {
-        entries.filter { prefs.getString("moon_reader_file_uri_${it.id}", null) != null }
+        entries.filter { prefs.getString(OmniTrackPreferenceKeys.moonReaderFileUri(it.id)) != null }
     }
 
     DisposableEffect(prefs) {
-        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key == null || key.startsWith("moon_reader_file_uri_") ||
-                key.startsWith("moon_reader_chapter_offset_")) linksVersion++
+        val listener = prefs.addListener { change ->
+            if (change == PreferenceChange.ALL ||
+                change == PreferenceChange.MOON_READER_FILE_URI ||
+                change == PreferenceChange.MOON_READER_CHAPTER_OFFSET) linksVersion++
         }
-        prefs.registerOnSharedPreferenceChangeListener(listener)
-        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        onDispose { prefs.removeListener(listener) }
     }
 
     LaunchedEffect(folder) {
@@ -161,7 +164,7 @@ fun MoonReaderSettingsScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
             try {
                 val name = folderDisplayName(context, Uri.parse(savedFolder))
                 if (folder == savedFolder) {
-                    check(prefs.edit().putString("moon_reader_folder_name", name).commit()) {
+                    check(prefs.edit().putString(OmniTrackPreferenceKeys.MoonReaderFolderName, name).commit()) {
                         "Could not save the folder name"
                     }
                     folderName = name
@@ -205,20 +208,20 @@ fun MoonReaderSettingsScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
                     return@launch
                 }
                 val linkedUris = entries.mapNotNull {
-                    prefs.getString("moon_reader_file_uri_${it.id}", null)
+                    prefs.getString(OmniTrackPreferenceKeys.moonReaderFileUri(it.id))
                 }.toSet()
                 val matches = result.matches.filter {
                     MoonReaderSync.isChapterUnit(it.entry.unitName) &&
                         it.progress.fileUri != null && it.progress.fileName != null &&
-                        prefs.getString("moon_reader_file_uri_${it.entry.id}", null) == null &&
+                        prefs.getString(OmniTrackPreferenceKeys.moonReaderFileUri(it.entry.id)) == null &&
                         it.progress.fileUri.toString() !in linkedUris
                 }
                 selected = emptySet()
                 values = matches.associate { match ->
-                    val key = "moon_reader_chapter_offset_${match.entry.id}"
+                    val key = OmniTrackPreferenceKeys.moonReaderChapterOffset(match.entry.id)
                     val chapter = match.progress.spineChapterIndex.toDouble() + 1.0
                     val offset = if (prefs.contains(key)) {
-                        Double.fromBits(prefs.getLong(key, 0L)).also {
+                        Double.fromBits(prefs.getLong(key)).also {
                             check(it.isFinite()) { "Invalid saved chapter offset for ${match.entry.title}" }
                         }
                     } else if (match.entry.currentUnit > 0.0) {
@@ -251,8 +254,8 @@ fun MoonReaderSettingsScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
                     check(viewModel.checkMoonReaderFolder(uri.toString(), books = false)) { MOON_READER_FOLDER_EXPIRED }
                     val previous = folder
                     val name = folderDisplayName(context, uri)
-                    check(prefs.edit().putString("moon_reader_folder", uri.toString())
-                        .putString("moon_reader_folder_name", name).commit()) {
+                    check(prefs.edit().putString(OmniTrackPreferenceKeys.MoonReaderFolder, uri.toString())
+                        .putString(OmniTrackPreferenceKeys.MoonReaderFolderName, name).commit()) {
                         "Could not save the selected folder"
                     }
                     folder = uri.toString()
@@ -291,8 +294,8 @@ fun MoonReaderSettingsScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
                     check(viewModel.checkMoonReaderFolder(uri.toString(), books = true)) { MOON_READER_FOLDER_EXPIRED }
                     val previous = booksFolder
                     val name = folderDisplayName(context, uri)
-                    check(prefs.edit().putString("moon_reader_books_folder", uri.toString())
-                        .putString("moon_reader_books_folder_name", name).commit()) {
+                    check(prefs.edit().putString(OmniTrackPreferenceKeys.MoonReaderBooksFolder, uri.toString())
+                        .putString(OmniTrackPreferenceKeys.MoonReaderBooksFolderName, name).commit()) {
                         "Could not save the selected books folder"
                     }
                     booksFolder = uri.toString()
@@ -428,9 +431,9 @@ fun MoonReaderSettingsScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
                 }
                 Text("${linkedEntries.size} linked ${if (linkedEntries.size == 1) "book" else "books"}", style = MaterialTheme.typography.bodyMedium)
                 linkedEntries.forEach { entry ->
-                    val offsetKey = "moon_reader_chapter_offset_${entry.id}"
+                    val offsetKey = OmniTrackPreferenceKeys.moonReaderChapterOffset(entry.id)
                     val offset = if (prefs.contains(offsetKey)) {
-                        Double.fromBits(prefs.getLong(offsetKey, 0L)).takeIf { it.isFinite() }
+                        Double.fromBits(prefs.getLong(offsetKey)).takeIf { it.isFinite() }
                     } else null
                     Row(
                         modifier = Modifier.fillMaxWidth(),

@@ -43,6 +43,8 @@ import coil.request.ErrorResult
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import coil.size.Size
+import com.omnitrack.app.data.OmniTrackPreferenceKeys
+import com.omnitrack.app.data.OmniTrackPreferences
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.toDisplayLabel
 import com.omnitrack.app.ui.screens.settings.ShareFormatStyle
@@ -57,8 +59,8 @@ import kotlinx.coroutines.withContext
 fun MediaShareDialog(entry: MediaEntry, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val style = remember {
-        val prefs = context.getSharedPreferences("omnitrack_prefs", Context.MODE_PRIVATE)
-        ShareFormatStyle.fromKey(prefs.getString(ShareFormatStyle.PREFERENCE_KEY, null))
+        val prefs = OmniTrackPreferences(context)
+        ShareFormatStyle.fromKey(prefs.getString(OmniTrackPreferenceKeys.ShareFormatStyle))
     }
     val coverUrl = entry.coverUrl?.takeIf { it.isNotBlank() }
     val sourceUrl = entry.sourceUrl?.takeIf { it.isNotBlank() }

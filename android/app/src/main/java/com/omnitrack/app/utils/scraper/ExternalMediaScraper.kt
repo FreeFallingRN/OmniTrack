@@ -1,10 +1,7 @@
 package com.omnitrack.app.utils.scraper
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.util.Log
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import com.omnitrack.app.data.MangaBakaPreferences
 import com.omnitrack.app.data.mangaBakaAuthorization
 import com.omnitrack.app.domain.model.MediaType
@@ -24,24 +21,15 @@ import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.get
 import io.ktor.client.request.header
-import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import org.json.JSONTokener
 import java.net.URI
-import kotlin.coroutines.resume
-import kotlin.time.Duration.Companion.milliseconds
 
 object ExternalMediaScraper {
-    private const val TAG = "ExternalMediaScraper"
+    internal const val TAG = "ExternalMediaScraper"
 
     private val client = HttpClient(CIO) {
         install(HttpTimeout) {
@@ -50,8 +38,9 @@ object ExternalMediaScraper {
             socketTimeoutMillis = 15_000L
         }
     }
-    private val json = Json { ignoreUnknownKeys = true }
     private val mangaBakaClient = client.config { followRedirects = false }
+    private val httpFastFetcher = HttpFastFetcher(client)
+    private val webViewHtmlFetcher = WebViewHtmlFetcher()
 
     // Register new site adapters here; GenericFallbackAdapter always runs last.
     private val adapters: List<MediaSourceAdapter> = listOf(
@@ -65,7 +54,7 @@ object ExternalMediaScraper {
         NovelpiaAdapter
     )
 
-    private class ScrapeTrace(
+    internal class ScrapeTrace(
         val url: String,
         val adapterName: String
     ) {
@@ -223,9 +212,6 @@ object ExternalMediaScraper {
         }
     }
 
-    /**
-     * Lightweight cover-only lookup (replaces CoverLookup.findOpenGraphImage).
-     */
     suspend fun findCoverImage(rawUrl: String, context: Context? = null): String? = withContext(Dispatchers.IO) {
         val url = normalizeInputUrl(rawUrl)
         val host = runCatching { URI(url).host.orEmpty().lowercase() }.getOrDefault("")
@@ -280,19 +266,9 @@ object ExternalMediaScraper {
     }
 
     private fun createFastFetchClient(trace: ScrapeTrace? = null): HtmlFetchClient = object : HtmlFetchClient {
-        override suspend fun getJson(url: String): String = fetchJson(url, trace)
+        override suspend fun getJson(url: String): String = httpFastFetcher.getJson(url, trace)
 
-        override suspend fun getHtml(url: String): String {
-            return try {
-                fetchHtmlFast(url, trace)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                trace?.log("httpFast: exception=${e.message}")
-                Log.w(TAG, "HTML fetch failed for $url", e)
-                ""
-            }
-        }
+        override suspend fun getHtml(url: String): String = httpFastFetcher.getHtml(url, trace)
     }
 
     private fun mergeDrafts(
@@ -340,7 +316,7 @@ object ExternalMediaScraper {
     }
 
     private fun createFetchClient(context: Context, trace: ScrapeTrace): HtmlFetchClient = object : HtmlFetchClient {
-        override suspend fun getJson(url: String): String = fetchJson(url, trace)
+        override suspend fun getJson(url: String): String = httpFastFetcher.getJson(url, trace)
 
         override suspend fun getMangaBakaJson(url: String): String {
             val uri = URI(url)
@@ -373,124 +349,11 @@ object ExternalMediaScraper {
         }
 
         override suspend fun getHtml(url: String): String {
-            val fastHtml = try {
-                fetchHtmlFast(url, trace)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                trace.log("httpFast: exception=${e.message}")
-                Log.w(TAG, "HTML fetch failed for $url", e)
-                ""
-            }
+            val fastHtml = httpFastFetcher.getHtml(url, trace)
             if (fastHtml.isNotBlank()) return fastHtml
             trace.log("httpFast: empty -> starting WebView fallback")
-            return fetchHtmlWithWebView(context, url, trace)
+            return webViewHtmlFetcher.getHtml(context, url, trace)
         }
     }
 
-    private suspend fun fetchJson(url: String, trace: ScrapeTrace?): String {
-        val response = client.get(url) {
-            header("Accept", "application/json")
-            header("User-Agent", "OmniTrack-Android/1.0")
-        }
-        trace?.log("json: status=${response.status.value} url=$url")
-        check(response.status.isSuccess()) { "HTTP ${response.status.value}" }
-        return response.bodyAsText()
-    }
-
-    private suspend fun fetchHtmlFast(url: String, trace: ScrapeTrace? = null): String {
-        val response: HttpResponse = client.get(url) {
-            header(
-                "User-Agent",
-                "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
-            )
-            header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-            header("Accept-Language", "en-US,en;q=0.9")
-        }
-        val body = response.bodyAsText()
-        val botChallenge = isBotChallenge(body)
-        val looksLikeStub = body.length < 10_000 ||
-                Regex("""<title>\s*Amazon\.[a-z.]+\s*</title>""", RegexOption.IGNORE_CASE).containsMatchIn(body)
-        trace?.log(
-            "httpFast: status=${response.status.value} ok=${response.status.isSuccess()} len=${body.length} botChallenge=$botChallenge stub=$looksLikeStub"
-        )
-        if (!response.status.isSuccess() || botChallenge || looksLikeStub) return ""
-        return body
-    }
-
-    @SuppressLint("SetJavaScriptEnabled")
-    private suspend fun fetchHtmlWithWebView(
-        context: Context,
-        url: String,
-        trace: ScrapeTrace? = null
-    ): String = withContext(Dispatchers.Main) {
-        val webView = WebView(context).apply {
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            settings.userAgentString = settings.userAgentString.replace("; wv", "")
-        }
-
-        try {
-            withTimeoutOrNull(15_000L.milliseconds) {
-                suspendCancellableCoroutine { cont ->
-                    var finished = false
-
-                    fun pollDom(attempt: Int) {
-                        if (!cont.isActive || finished) return
-                        webView.evaluateJavascript(
-                            "(function(){ return JSON.stringify({title: document.title, html: document.documentElement.outerHTML}); })()"
-                        ) { rawJson ->
-                            if (!cont.isActive || finished) return@evaluateJavascript
-                            val unescaped = runCatching {
-                                JSONTokener(rawJson).nextValue() as? String
-                            }.getOrNull().orEmpty()
-
-                            val title = runCatching {
-                                json.parseToJsonElement(unescaped).jsonObject["title"]?.jsonPrimitive?.content.orEmpty()
-                            }.getOrDefault("")
-                            val html = runCatching {
-                                json.parseToJsonElement(unescaped).jsonObject["html"]?.jsonPrimitive?.content.orEmpty()
-                            }.getOrDefault("")
-
-                            val challenged = html.isBlank() ||
-                                    isBotChallenge(html) ||
-                                    title.contains("Just a moment", ignoreCase = true)
-
-                            if (!challenged) {
-                                finished = true
-                                trace?.log("webView: hit attempt=$attempt len=${html.length} title=\"${title.take(60)}\"")
-                                cont.resume(html)
-                            } else if (attempt < 20) {
-                                webView.postDelayed({ pollDom(attempt + 1) }, 600L)
-                            } else {
-                                finished = true
-                                trace?.log("webView: exhausted attempts=20 len=${html.length} title=\"${title.take(60)}\"")
-                                cont.resume("")
-                            }
-                        }
-                    }
-
-                    webView.webViewClient = object : WebViewClient() {
-                        override fun onPageFinished(view: WebView?, finishedUrl: String?) {
-                            trace?.log("webView: onPageFinished url=$finishedUrl")
-                            pollDom(1)
-                        }
-                    }
-
-                    cont.invokeOnCancellation { finished = true }
-                    webView.loadUrl(url)
-                }
-            }.orEmpty()
-        } finally {
-            webView.destroy()
-        }
-    }
-
-    private fun isBotChallenge(html: String): Boolean {
-        return html.contains("<title>Just a moment...</title>", ignoreCase = true) ||
-                html.contains("cf-browser-verification", ignoreCase = true) ||
-                html.contains("challenge-platform", ignoreCase = true) ||
-                html.contains("validateCaptcha", ignoreCase = true) ||
-                html.contains("<title>Robot Check</title>", ignoreCase = true)
-    }
 }

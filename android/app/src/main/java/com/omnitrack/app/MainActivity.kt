@@ -47,6 +47,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         val repository: SeriesRepository = SeriesRepositoryImpl(
+            database = database,
             mediaEntryDao = database.mediaEntryDao(),
             progressHistoryDao = database.progressHistoryDao(),
             mangaBakaPreferences = MangaBakaPreferences(applicationContext)

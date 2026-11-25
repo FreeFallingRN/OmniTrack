@@ -59,8 +59,8 @@ import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
-import com.omnitrack.app.data.SupabaseService
 import com.omnitrack.app.data.model.AuthorDto
+import com.omnitrack.app.data.model.CreatePlatformRequest
 import com.omnitrack.app.data.model.CreateSeriesRequest
 import com.omnitrack.app.data.model.PlatformDto
 import com.omnitrack.app.data.model.SeriesDto
@@ -124,9 +124,9 @@ fun LibraryManagementScreen(
     fun reload() {
         scope.launch {
             try {
-                series = SupabaseService.getSeries()
-                authors = SupabaseService.getAuthors()
-                platforms = SupabaseService.getPlatforms()
+                series = viewModel.getSeries()
+                authors = viewModel.getAuthors()
+                platforms = viewModel.getPlatforms()
                 viewModel.refreshData()
             } catch (e: Exception) {
                 error = e.message ?: "Could not load library management data"
@@ -341,9 +341,9 @@ fun LibraryManagementScreen(
                     scope.launch {
                         try {
                             when (selectedKind) {
-                                "series" -> SupabaseService.deleteSeries(selectedId!!)
-                                "author" -> SupabaseService.deleteAuthor(selectedId!!)
-                                "platform" -> SupabaseService.deletePlatform(selectedId!!)
+                                "series" -> viewModel.deleteSeries(selectedId!!)
+                                "author" -> viewModel.deleteAuthor(selectedId!!)
+                                "platform" -> viewModel.deletePlatform(selectedId!!)
                             }
                             showDeleteWarning = false
                             selectedId = null
@@ -375,14 +375,14 @@ fun LibraryManagementScreen(
                 scope.launch {
                     try {
                         if (selectedSeries == null) {
-                            SupabaseService.createSeries(
+                            viewModel.createSeries(
                                 CreateSeriesRequest(
                                     title = form.title,
                                     rating = form.rating
                                 )
                             )
                         } else {
-                            SupabaseService.updateSeries(
+                            viewModel.updateSeries(
                                 selectedSeries!!.id,
                                 form.title,
                                 form.rating
@@ -409,14 +409,14 @@ fun LibraryManagementScreen(
                 scope.launch {
                     try {
                         if (selectedAuthor == null) {
-                            SupabaseService.createAuthor(
+                            viewModel.createAuthor(
                                 form.name,
                                 form.nativeName,
                                 form.imageUrl,
                                 form.bio
                             )
                         } else {
-                            SupabaseService.updateAuthor(
+                            viewModel.updateAuthor(
                                 selectedAuthor!!.id,
                                 form.name,
                                 form.nativeName,
@@ -445,7 +445,7 @@ fun LibraryManagementScreen(
                 scope.launch {
                     try {
                         selectedPlatform?.let {
-                            SupabaseService.updatePlatform(
+                            viewModel.updatePlatform(
                                 it.id,
                                 UpdatePlatformRequest(
                                     name = name,
@@ -453,7 +453,13 @@ fun LibraryManagementScreen(
                                     logoUrl = logoUrl
                                 )
                             )
-                        }
+                        } ?: viewModel.createPlatform(
+                            CreatePlatformRequest(
+                                name = name,
+                                websiteUrl = websiteUrl,
+                                logoUrl = logoUrl
+                            )
+                        )
                         showPlatformEditor = false
                         reloadToken++
                     } catch (e: Exception) {

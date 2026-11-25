@@ -1,11 +1,15 @@
 package com.omnitrack.app.ui.viewmodel
 
 import android.content.Context
-import android.content.SharedPreferences
 import android.net.Uri
 import android.os.SystemClock
 import android.util.Log
+import android.widget.Toast
 import com.omnitrack.app.data.MangaBakaTitle
+import com.omnitrack.app.data.OmniTrackPreferences
+import com.omnitrack.app.data.OmniTrackPreferenceKeys
+import com.omnitrack.app.data.PreferenceChange
+import com.omnitrack.app.data.model.*
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.omnitrack.app.domain.model.HistoryTimeframe
@@ -59,7 +63,7 @@ class SeriesViewModel(
     val mangaBaka = MangaBakaViewModel(appContext, repository)
     private val _mangaBakaImportMessages = MutableSharedFlow<String>(extraBufferCapacity = 16)
     val mangaBakaImportMessages = _mangaBakaImportMessages.asSharedFlow()
-    private val moonReaderPrefs = appContext.getSharedPreferences("omnitrack_prefs", Context.MODE_PRIVATE)
+    private val moonReaderPrefs = OmniTrackPreferences(appContext)
     private val moonReaderSync = MoonReaderSync(appContext, repository)
     private val _moonReaderBusy = MutableStateFlow(false)
     val moonReaderBusy: StateFlow<Boolean> = _moonReaderBusy.asStateFlow()
@@ -71,15 +75,16 @@ class SeriesViewModel(
     val moonReaderMessages = _moonReaderMessages.asSharedFlow()
     private var lastMoonReaderCheck: Long? = null
     private var moonReaderScheduleJob: Job? = null
-    private val moonReaderPrefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == null || key == "moon_reader_folder" || key.startsWith("moon_reader_file_uri_")) {
+    private val moonReaderPrefsListener = moonReaderPrefs.addListener { change ->
+        if (change == PreferenceChange.ALL ||
+            change == PreferenceChange.MOON_READER_FOLDER ||
+            change == PreferenceChange.MOON_READER_FILE_URI) {
             updateMoonReaderSchedule()
         }
     }
 
     init {
         viewModelScope.launch { mangaBaka.initialize() }
-        moonReaderPrefs.registerOnSharedPreferenceChangeListener(moonReaderPrefsListener)
         viewModelScope.launch {
             repository.getMediaEntriesStream().collect { updateMoonReaderSchedule() }
         }
@@ -99,7 +104,7 @@ class SeriesViewModel(
 
     override fun onCleared() {
         mangaBaka.close()
-        moonReaderPrefs.unregisterOnSharedPreferenceChangeListener(moonReaderPrefsListener)
+        moonReaderPrefs.removeListener(moonReaderPrefsListener)
         super.onCleared()
     }
 
@@ -145,8 +150,10 @@ class SeriesViewModel(
         moonReaderScheduleJob?.cancel()
         moonReaderScheduleJob = viewModelScope.launch {
             val entries = repository.getMediaEntriesStream().first()
-            val folder = moonReaderPrefs.getString("moon_reader_folder", null)
-            val linked = entries.any { moonReaderPrefs.getString("moon_reader_file_uri_${it.id}", null) != null }
+            val folder = moonReaderPrefs.getString(OmniTrackPreferenceKeys.MoonReaderFolder)
+            val linked = entries.any {
+                moonReaderPrefs.getString(OmniTrackPreferenceKeys.moonReaderFileUri(it.id)) != null
+            }
             if (linked && folder != null && checkMoonReaderFolder(folder, books = false)) {
                 MoonReaderSyncWorker.schedule(appContext)
             } else {
@@ -162,8 +169,8 @@ class SeriesViewModel(
     }
 
     suspend fun setMoonReaderFolderAccess(folder: String, books: Boolean, valid: Boolean) {
-        val key = if (books) "moon_reader_books_folder" else "moon_reader_folder"
-        if (moonReaderPrefs.getString(key, null) == folder) {
+        val key = if (books) OmniTrackPreferenceKeys.MoonReaderBooksFolder else OmniTrackPreferenceKeys.MoonReaderFolder
+        if (moonReaderPrefs.getString(key) == folder) {
             val state = if (books) _needsBooksFolderReauth else _needsProgressFolderReauth
             val wasExpired = state.value
             state.value = !valid
@@ -175,6 +182,8 @@ class SeriesViewModel(
     private val periodOffsetFlow = MutableStateFlow(0)
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+    private val _refreshError = MutableStateFlow<String?>(null)
+    val refreshError: StateFlow<String?> = _refreshError.asStateFlow()
     private var activeRefreshes = 0
 
     val mediaEntries: StateFlow<List<MediaEntry>> = repository.getMediaEntriesStream()
@@ -345,6 +354,40 @@ class SeriesViewModel(
         }
     }
 
+    suspend fun getSeries() = repository.getSeries()
+    suspend fun getAuthors() = repository.getAuthors()
+    suspend fun getPlatforms() = repository.getPlatforms()
+    suspend fun createSeries(request: CreateSeriesRequest) = repository.createSeries(request)
+    suspend fun updateSeries(id: String, title: String, rating: Int?) =
+        repository.updateSeries(id, title, rating)
+    suspend fun deleteSeries(id: String) = repository.deleteSeries(id)
+    suspend fun createAuthor(name: String, nativeName: String? = null, imageUrl: String? = null, bio: String? = null) =
+        repository.createAuthor(name, nativeName, imageUrl, bio)
+    suspend fun updateAuthor(
+        id: String,
+        name: String,
+        nativeName: String? = null,
+        imageUrl: String? = null,
+        bio: String? = null
+    ) = repository.updateAuthor(id, name, nativeName, imageUrl, bio)
+    suspend fun deleteAuthor(id: String) = repository.deleteAuthor(id)
+    suspend fun createPlatform(request: CreatePlatformRequest) = repository.createPlatform(request)
+    suspend fun updatePlatform(id: String, request: UpdatePlatformRequest) =
+        repository.updatePlatform(id, request)
+    suspend fun deletePlatform(id: String) = repository.deletePlatform(id)
+    suspend fun createMediaEntry(
+        request: CreateEntryRequest,
+        creators: List<Pair<String, String>>,
+        alternativeTitles: List<String>
+    ) = repository.createMediaEntry(request, creators, alternativeTitles)
+    suspend fun updateMediaEntry(
+        id: String,
+        request: UpdateEntryRequest,
+        creators: List<Pair<String, String>>,
+        alternativeTitles: List<String>
+    ) = repository.updateMediaEntry(id, request, creators, alternativeTitles)
+    suspend fun updateEntryStatus(id: String, status: String) = repository.updateEntryStatus(id, status)
+
     private data class PeriodNavState(
         val tab: HistoryTimeframe,
         val offset: Int,
@@ -358,10 +401,14 @@ class SeriesViewModel(
             _isRefreshing.value = true
             try {
                 repository.fetchFromSupabase()
+                _refreshError.value = null
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e("SeriesViewModel", "Refresh failed", e)
+                val message = "Refresh failed. Please try again."
+                _refreshError.value = message
+                Toast.makeText(appContext, message, Toast.LENGTH_LONG).show()
             } finally {
                 activeRefreshes--
                 _isRefreshing.value = activeRefreshes > 0

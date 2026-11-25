@@ -62,13 +62,13 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.omnitrack.app.data.OmniTrackPreferenceKeys
+import com.omnitrack.app.data.OmniTrackPreferences
 import androidx.compose.ui.zIndex
-import androidx.room.withTransaction
-import com.omnitrack.app.data.SupabaseService
-import com.omnitrack.app.data.local.AppDatabase
 import com.omnitrack.app.data.model.CreateEntryRequest
 import com.omnitrack.app.data.model.CreatePlatformRequest
 import com.omnitrack.app.data.model.CreateSeriesRequest
+import com.omnitrack.app.data.model.UpdateEntryRequest
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.model.ProgressSource
@@ -102,17 +102,17 @@ fun OmniTrackHomeScreen(
     val isRefreshing by viewModel.isRefreshing.collectAsState()
 
     val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences("omnitrack_prefs", Context.MODE_PRIVATE) }
+    val prefs = remember { OmniTrackPreferences(context) }
     var selectedTabMediaType by remember {
-        mutableStateOf(MediaType.fromValue(prefs.getString("selected_media_type", null) ?: ""))
+        mutableStateOf(MediaType.fromValue(prefs.getString(OmniTrackPreferenceKeys.SelectedMediaType) ?: ""))
     }
     var selectedUserStatus by remember {
-        mutableStateOf(UserStatus.fromValue(prefs.getString("selected_user_status", null) ?: ""))
+        mutableStateOf(UserStatus.fromValue(prefs.getString(OmniTrackPreferenceKeys.SelectedUserStatus) ?: ""))
     }
     val onStatusSelected: (UserStatus) -> Unit = {
         if (selectedUserStatus != it) {
             selectedUserStatus = it
-            prefs.edit().putString("selected_user_status", it.value).apply()
+            prefs.edit().putString(OmniTrackPreferenceKeys.SelectedUserStatus, it.value).apply()
         }
     }
     var searchQuery by remember { mutableStateOf("") }
@@ -125,7 +125,7 @@ fun OmniTrackHomeScreen(
     var showDeleteWarning by remember { mutableStateOf(false) }
     val refreshScope = rememberCoroutineScope()
     var sortOption by remember {
-        mutableStateOf(LibrarySortOption.fromKey(prefs.getString("sort_option", "last_updated")))
+        mutableStateOf(LibrarySortOption.fromKey(prefs.getString(OmniTrackPreferenceKeys.SortOption, "last_updated")))
     }
     var fabExpanded by remember { mutableStateOf(false) }
     var showImportUrlDialog by remember { mutableStateOf(false) }
@@ -148,7 +148,7 @@ fun OmniTrackHomeScreen(
     }
 
     LaunchedEffect(bottomNavIndex) {
-        sortOption = LibrarySortOption.fromKey(prefs.getString("sort_option", "last_updated"))
+        sortOption = LibrarySortOption.fromKey(prefs.getString(OmniTrackPreferenceKeys.SortOption, "last_updated"))
         if (bottomNavIndex != 0) fabExpanded = false
     }
 
@@ -337,7 +337,7 @@ fun OmniTrackHomeScreen(
                             selectedTabMediaType = selectedTabMediaType,
                             onMediaTypeSelected = {
                                 selectedTabMediaType = it
-                                prefs.edit().putString("selected_media_type", it.value).apply()
+                                prefs.edit().putString(OmniTrackPreferenceKeys.SelectedMediaType, it.value).apply()
                             },
                             selectedUserStatus = selectedUserStatus,
                             onStatusSelected = onStatusSelected,
@@ -407,14 +407,7 @@ fun OmniTrackHomeScreen(
                         savingStatus = true
                         refreshScope.launch {
                             try {
-                                SupabaseService.updateEntryProgress(entry.id, null, status.value)
-                                val db = AppDatabase.getInstance(context)
-                                db.withTransaction {
-                                    val current = checkNotNull(db.mediaEntryDao().getEntryById(entry.id))
-                                    db.mediaEntryDao().updateProgressAndStatus(
-                                        entry.id, current.currentUnit, status.value
-                                    )
-                                }
+                                viewModel.updateEntryStatus(entry.id, status.value)
                                 viewModel.refreshData()
                             } catch (e: CancellationException) {
                                 throw e
@@ -472,6 +465,7 @@ fun OmniTrackHomeScreen(
 
         if (showEntryEditor) {
             MediaEntryEditorSheet(
+                viewModel = viewModel,
                 existing = editorEntry,
                 prefill = scrapedPrefill?.draft,
                 reportDraft = scrapedPrefill,
@@ -493,7 +487,7 @@ fun OmniTrackHomeScreen(
                             val resolvedSeriesId: String? = when {
                                 form.seriesId != null -> form.seriesId
                                 !form.newSeries?.title.isNullOrBlank() -> {
-                                    SupabaseService.createSeries(
+                                    viewModel.createSeries(
                                         CreateSeriesRequest(title = form.newSeries.title.trim())
                                     ).id
                                 }
@@ -508,7 +502,7 @@ fun OmniTrackHomeScreen(
                                         val name = row.newAuthorName.trim()
                                         val key = name.lowercase()
                                         val existingId = if (importedMangaBakaId != null) importedCreatorIds[key] else null
-                                        existingId ?: SupabaseService.createAuthor(name).id.also {
+                                        existingId ?: viewModel.createAuthor(name).id.also {
                                             if (importedMangaBakaId != null) importedCreatorIds[key] = it
                                         }
                                     } else {
@@ -518,7 +512,7 @@ fun OmniTrackHomeScreen(
                                 }
 
                             val resolvedPlatformId =
-                                form.platformId ?: SupabaseService.createPlatform(
+                                form.platformId ?: viewModel.createPlatform(
                                     CreatePlatformRequest(
                                         name = form.newPlatform!!.name,
                                         websiteUrl = form.newPlatform.websiteUrl,
@@ -530,21 +524,23 @@ fun OmniTrackHomeScreen(
                             form.linkExistingEntryToSeriesId?.let { existingId ->
                                 val existingMatch = mediaEntries.firstOrNull { it.id == existingId }
                                 if (existingMatch != null && existingMatch.seriesId == null && resolvedSeriesId != null) {
-                                    SupabaseService.updateEntry(
+                                    viewModel.updateMediaEntry(
                                         id = existingMatch.id,
-                                        title = existingMatch.title,
-                                        type = existingMatch.type.value,
-                                        seriesId = resolvedSeriesId,
+                                        request = UpdateEntryRequest(
+                                            title = existingMatch.title,
+                                            type = existingMatch.type.value,
+                                            seriesId = resolvedSeriesId,
+                                            platformId = existingMatch.platformId,
+                                            coverUrl = existingMatch.coverUrl,
+                                            sourceUrl = existingMatch.sourceUrl,
+                                            userStatus = existingMatch.userStatus.value,
+                                            publishingStatus = existingMatch.publishingStatus,
+                                            sequenceNumber = existingMatch.sequenceNumber ?: 1.0,
+                                            currentUnit = existingMatch.currentUnit,
+                                            unitName = existingMatch.unitName,
+                                            isCanon = existingMatch.isCanon
+                                        ),
                                         creators = existingMatch.creators.mapNotNull { c -> c.id?.let { it to c.role } },
-                                        platformId = existingMatch.platformId,
-                                        coverUrl = existingMatch.coverUrl,
-                                        sourceUrl = existingMatch.sourceUrl,
-                                        userStatus = existingMatch.userStatus.value,
-                                        publishingStatus = existingMatch.publishingStatus,
-                                        sequenceNumber = existingMatch.sequenceNumber ?: 1.0,
-                                        currentUnit = existingMatch.currentUnit,
-                                        unitName = existingMatch.unitName,
-                                        isCanon = existingMatch.isCanon,
                                         alternativeTitles = existingMatch.alternativeTitles
                                     )
                                 }
@@ -553,7 +549,7 @@ fun OmniTrackHomeScreen(
                             // 2. Determine target ID for create vs merge/edit
                             val targetUpdateId = editorEntry?.id ?: form.mergeIntoEntryId
                             if (targetUpdateId == null) {
-                                val created = SupabaseService.createEntry(
+                                val created = viewModel.createMediaEntry(
                                     CreateEntryRequest(
                                         seriesId = resolvedSeriesId,
                                         title = form.title,
@@ -567,58 +563,37 @@ fun OmniTrackHomeScreen(
                                         sourceUrl = form.sourceUrl,
                                         platformId = resolvedPlatformId,
                                         coverUrl = form.coverUrl
-                                    )
+                                    ),
+                                    resolvedCreators,
+                                    form.alternativeTitles
                                 )
-                                SupabaseService.replaceEntryAuthors(created.id, resolvedCreators)
-                                SupabaseService.replaceEntryAlternateTitles(
-                                    entryId = created.id,
-                                    seriesId = resolvedSeriesId,
-                                    titles = form.alternativeTitles
-                                )
-                                if (form.currentUnit > 0.0) {
-                                    viewModel.updateProgress(
-                                        created.id,
-                                        form.currentUnit,
-                                        ProgressSource.IMPORT
-                                    )
-                                }
                                 if (importedMangaBakaId != null && mangaBakaLinkUrl != null) {
                                     viewModel.linkImportedMangaBakaEntry(
                                         importedMangaBakaId, created.id, form.unitName, mangaBakaLinkUrl
                                     )
                                 }
                             } else {
-                                val existingMatch =
-                                    mediaEntries.firstOrNull { it.id == targetUpdateId }
-                                val progressChanged =
-                                    existingMatch != null && existingMatch.currentUnit != form.currentUnit
-
                                 // Update the existing entry or merged target with all new fields & creators
-                                SupabaseService.updateEntry(
+                                viewModel.updateMediaEntry(
                                     id = targetUpdateId,
-                                    title = form.title,
-                                    type = form.type.value,
-                                    seriesId = resolvedSeriesId,
+                                    request = UpdateEntryRequest(
+                                        title = form.title,
+                                        type = form.type.value,
+                                        seriesId = resolvedSeriesId,
+                                        platformId = resolvedPlatformId,
+                                        coverUrl = form.coverUrl,
+                                        sourceUrl = form.sourceUrl,
+                                        userStatus = form.userStatus,
+                                        publishingStatus = form.publishingStatus,
+                                        sequenceNumber = form.sequenceNumber,
+                                        currentUnit = form.currentUnit,
+                                        unitName = form.unitName,
+                                        isCanon = form.isCanon
+                                    ),
                                     creators = resolvedCreators,
-                                    platformId = resolvedPlatformId,
-                                    coverUrl = form.coverUrl,
-                                    sourceUrl = form.sourceUrl,
-                                    userStatus = form.userStatus,
-                                    publishingStatus = form.publishingStatus,
-                                    sequenceNumber = form.sequenceNumber,
-                                    currentUnit = form.currentUnit,
-                                    unitName = form.unitName,
-                                    isCanon = form.isCanon,
                                     alternativeTitles = form.alternativeTitles
                                 )
 
-                                if (progressChanged) {
-                                    viewModel.updateProgress(
-                                        targetUpdateId,
-                                        form.currentUnit,
-                                        ProgressSource.EDITOR
-                                    )
-                                }
                                 if (importedMangaBakaId != null && mangaBakaLinkUrl != null) {
                                     viewModel.linkImportedMangaBakaEntry(
                                         importedMangaBakaId, targetUpdateId, form.unitName, mangaBakaLinkUrl

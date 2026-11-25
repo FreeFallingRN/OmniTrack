@@ -28,6 +28,8 @@ object SupabaseService {
     private val supabaseAnonKey: String = BuildConfig.SUPABASE_ANON_KEY
 
     private val client: HttpClient = HttpClient(Android) {
+        expectSuccess = true
+        followRedirects = false
         install(ContentNegotiation) {
             json(Json {
                 ignoreUnknownKeys = true

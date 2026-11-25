@@ -23,7 +23,7 @@ class MoonReaderSyncWorker(context: Context, params: WorkerParameters) : Corouti
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val database = AppDatabase.getInstance(applicationContext)
         val repository = SeriesRepositoryImpl(
-            database.mediaEntryDao(), database.progressHistoryDao(), MangaBakaPreferences(applicationContext)
+            database, database.mediaEntryDao(), database.progressHistoryDao(), MangaBakaPreferences(applicationContext)
         )
         try {
             MoonReaderSync(applicationContext, repository).sync(manual = false) {

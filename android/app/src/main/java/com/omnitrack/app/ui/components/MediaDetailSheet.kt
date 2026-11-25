@@ -2,7 +2,6 @@ package com.omnitrack.app.ui.components
 
 import android.content.Intent
 import android.content.Context
-import android.content.SharedPreferences
 import android.net.Uri
 import android.util.Log
 import androidx.compose.foundation.background
@@ -28,8 +27,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -63,6 +62,9 @@ import com.omnitrack.app.domain.model.EntryCreator
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.UserStatus
 import com.omnitrack.app.domain.model.toDisplayLabel
+import com.omnitrack.app.data.OmniTrackPreferenceKeys
+import com.omnitrack.app.data.OmniTrackPreferences
+import com.omnitrack.app.data.PreferenceChange
 import com.omnitrack.app.utils.findMoonReaderPackage
 import com.omnitrack.app.utils.openInMoonReader
 import kotlinx.coroutines.launch
@@ -88,8 +90,8 @@ fun MediaDetailSheet(
     var showShare by remember(entry.id) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val prefs = remember(context) { context.getSharedPreferences("omnitrack_prefs", Context.MODE_PRIVATE) }
-    val linkKey = "moon_reader_file_uri_${entry.id}"
+    val prefs = remember(context) { OmniTrackPreferences(context) }
+    val linkKey = OmniTrackPreferenceKeys.moonReaderFileUri(entry.id)
     val moonReaderPackage = remember(context) { findMoonReaderPackage(context) }
     val moonReaderIcon = remember(context, moonReaderPackage) {
         moonReaderPackage?.let { packageName ->
@@ -98,14 +100,15 @@ fun MediaDetailSheet(
                 .getOrNull()
         }
     }
-    var moonReaderLinked by remember(prefs, linkKey) { mutableStateOf(prefs.getString(linkKey, null) != null) }
+    var moonReaderLinked by remember(prefs, linkKey) { mutableStateOf(prefs.getString(linkKey) != null) }
     DisposableEffect(prefs, linkKey) {
-        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key == null || key == linkKey) moonReaderLinked = prefs.getString(linkKey, null) != null
+        val listener = prefs.addListener { change ->
+            if (change == PreferenceChange.ALL || change == PreferenceChange.MOON_READER_FILE_URI) {
+                moonReaderLinked = prefs.getString(linkKey) != null
+            }
         }
-        prefs.registerOnSharedPreferenceChangeListener(listener)
-        moonReaderLinked = prefs.getString(linkKey, null) != null
-        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        moonReaderLinked = prefs.getString(linkKey) != null
+        onDispose { prefs.removeListener(listener) }
     }
 
     ModalBottomSheet(
@@ -166,10 +169,10 @@ fun MediaDetailSheet(
                                 shape = RoundedCornerShape(8.dp),
                                 color = MaterialTheme.colorScheme.secondaryContainer,
                                 modifier = Modifier.size(28.dp).clickable {
-                                    val fileUri = prefs.getString(linkKey, null)
-                                    val fileName = prefs.getString("moon_reader_file_name_${entry.id}", null)
-                                    val folder = prefs.getString("moon_reader_folder", null)
-                                    val booksFolder = prefs.getString("moon_reader_books_folder", null)
+                                    val fileUri = prefs.getString(linkKey)
+                                    val fileName = prefs.getString(OmniTrackPreferenceKeys.moonReaderFileName(entry.id))
+                                    val folder = prefs.getString(OmniTrackPreferenceKeys.MoonReaderFolder)
+                                    val booksFolder = prefs.getString(OmniTrackPreferenceKeys.MoonReaderBooksFolder)
                                     scope.launch {
                                         openInMoonReader(
                                             context, moonReaderPackage, fileUri, fileName, folder, booksFolder,
@@ -186,7 +189,7 @@ fun MediaDetailSheet(
                                             modifier = Modifier.size(20.dp)
                                         )
                                     } else {
-                                        Icon(Icons.Default.MenuBook, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, modifier = Modifier.size(16.dp))
                                     }
                                 }
                             }

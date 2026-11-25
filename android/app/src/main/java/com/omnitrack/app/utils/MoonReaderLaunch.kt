@@ -57,7 +57,7 @@ suspend fun openInMoonReader(
                 .getOrNull()
         } else null
         val progressAccessible = fromBooksFolder == null && folderUri != null && checkFolder(folderUri, false)
-        val sibling = fromBooksFolder ?: if (progressAccessible && folderUri != null) runCatching {
+        val sibling = fromBooksFolder ?: if (progressAccessible) runCatching {
             searchFolder(folderUri, false) { findSiblingBook(context, poFileUri, poFileName, folderUri) }
         }
             .onFailure {

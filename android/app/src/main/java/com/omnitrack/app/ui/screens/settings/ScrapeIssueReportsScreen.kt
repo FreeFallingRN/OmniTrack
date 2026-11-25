@@ -47,6 +47,8 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 
+private val prettyPrintJson = Json { prettyPrint = true }
+
 @Composable
 fun ScrapeIssueReportsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
@@ -112,7 +114,7 @@ fun ScrapeIssueReportsScreen(onBack: () -> Unit) {
                     Text(if (report.synced) "Synced" else "Pending sync")
                     Text("Scraped details", style = MaterialTheme.typography.titleSmall)
                     Text(remember(report.scrapedSnapshotJson) {
-                        Json { prettyPrint = true }.encodeToString(
+                        prettyPrintJson.encodeToString(
                             JsonElement.serializer(),
                             Json.parseToJsonElement(report.scrapedSnapshotJson)
                         )

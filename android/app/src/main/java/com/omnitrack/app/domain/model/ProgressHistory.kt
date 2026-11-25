@@ -7,14 +7,15 @@ enum class ProgressSource(val value: String) {
     DETAIL_SHEET("detail_sheet"),
     INCREMENT("increment"),
     EDITOR("editor"),
-    IMPORT("import");
+    IMPORT("import"),
+    UNKNOWN("unknown");
 
     val isActiveConsumption: Boolean
         get() = this == DETAIL_SHEET || this == INCREMENT
 
     companion object {
         fun fromValue(value: String): ProgressSource =
-            entries.find { it.value.equals(value, ignoreCase = true) } ?: INCREMENT
+            entries.find { it.value.equals(value, ignoreCase = true) } ?: UNKNOWN
     }
 }
 
