@@ -5,6 +5,11 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <queries>
+        <package android:name="com.flyersoft.moonreaderp" />
+        <package android:name="com.flyersoft.moonreader" />
+    </queries>
+
     <application
         android:name=".OmniTrackApp"
         android:allowBackup="true"
