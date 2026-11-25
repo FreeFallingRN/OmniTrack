@@ -121,6 +121,17 @@ object SupabaseService {
         return list.first()
     }
 
+    suspend fun updateMangaBakaUrl(entryId: String, sourceUrl: String) {
+        val response = client.patch("$supabaseUrl/rest/v1/media_entries?id=eq.$entryId") {
+            contentType(ContentType.Application.Json)
+            header("Prefer", "return=representation")
+            setBody(buildJsonObject { put("source_url", sourceUrl) })
+        }
+        check(response.status.isSuccess()) { "Could not update MangaBaka URL (HTTP ${response.status.value})" }
+        val entries: List<MediaEntryDto> = response.body()
+        check(entries.size == 1) { "Entry no longer exists or could not be updated" }
+    }
+
     suspend fun logProgress(
         entryId: String,
         activityDate: String,

@@ -21,6 +21,7 @@ import com.omnitrack.app.utils.MoonReaderFolderAccessException
 import com.omnitrack.app.utils.MOON_READER_FOLDER_EXPIRED
 import com.omnitrack.app.utils.hasMoonReaderFolderAccess
 import com.omnitrack.app.worker.MoonReaderSyncWorker
+import com.omnitrack.app.worker.MangaBakaSyncWorker
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.temporal.ChronoUnit
@@ -34,6 +35,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -79,6 +81,18 @@ class SeriesViewModel(
         viewModelScope.launch {
             repository.getMediaEntriesStream().collect { updateMoonReaderSchedule() }
         }
+        viewModelScope.launch {
+            combine(mangaBaka.state, repository.getMediaEntriesStream()) { state, entries ->
+                if (!state.initialized) null else
+                    state.connected && state.links.values.any { link -> entries.any { it.id == link.entryId } }
+            }.distinctUntilChanged().collect { enabled ->
+                when (enabled) {
+                    true -> MangaBakaSyncWorker.schedule(appContext)
+                    false -> MangaBakaSyncWorker.cancel(appContext)
+                    null -> Unit
+                }
+            }
+        }
     }
 
     override fun onCleared() {
@@ -93,6 +107,10 @@ class SeriesViewModel(
 
     fun fetchMangaBakaLibrary() {
         viewModelScope.launch { mangaBaka.fetch() }
+    }
+
+    fun syncMangaBakaProgress(manual: Boolean = false) {
+        viewModelScope.launch { mangaBaka.sync(manual) }
     }
 
     fun addMangaBakaEntry(title: MangaBakaTitle, otherType: String? = null) {

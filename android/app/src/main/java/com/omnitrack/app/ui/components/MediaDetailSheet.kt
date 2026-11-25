@@ -71,6 +71,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun MediaDetailSheet(
     entry: MediaEntry,
+    mangaBakaLinked: Boolean,
     relatedEntries: List<MediaEntry>,
     onDismiss: () -> Unit,
     onUpdateProgress: (Double) -> Unit,
@@ -309,15 +310,18 @@ fun MediaDetailSheet(
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary
                     )
-                    key(entry.id, moonReaderLinked) {
-                        Box(modifier = Modifier.alpha(if (moonReaderLinked) 0.4f else 1f)) {
+                    if (mangaBakaLinked) {
+                        Text("Synced via MangaBaka", style = MaterialTheme.typography.labelMedium)
+                    }
+                    key(entry.id, moonReaderLinked, mangaBakaLinked) {
+                        Box(modifier = Modifier.alpha(if (moonReaderLinked || mangaBakaLinked) 0.4f else 1f)) {
                             ProgressWheel(
                                 entryId = entry.id,
                                 currentUnit = entry.currentUnit,
                                 unitName = entry.unitName,
-                                enabled = controlsEnabled && !moonReaderLinked,
+                                enabled = controlsEnabled && !moonReaderLinked && !mangaBakaLinked,
                                 onUpdateProgress = { value ->
-                                    if (prefs.getString(linkKey, null) == null) onUpdateProgress(value)
+                                    if (!mangaBakaLinked && prefs.getString(linkKey, null) == null) onUpdateProgress(value)
                                 }
                             )
                         }

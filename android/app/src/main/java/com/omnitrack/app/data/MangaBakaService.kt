@@ -141,6 +141,7 @@ data class MangaBakaSeries(
     @SerialName("canonical_url") val url: String,
     val type: String,
     val status: String,
+    @SerialName("total_chapters") val totalChapters: Double? = null,
     val titles: List<MangaBakaSeriesTitle>? = null,
     val cover: MangaBakaCover? = null
 )

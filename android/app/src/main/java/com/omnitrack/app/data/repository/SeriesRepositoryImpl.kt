@@ -61,6 +61,12 @@ class SeriesRepositoryImpl(
         entity.toDomain()
     }
 
+    override suspend fun updateMangaBakaUrl(id: String, sourceUrl: String): Unit = progressMutex.withLock {
+        val entry = mediaEntryDao.getEntryById(id) ?: error("Entry no longer exists")
+        supabaseService.updateMangaBakaUrl(id, sourceUrl)
+        mediaEntryDao.insertAll(listOf(entry.copy(sourceUrl = sourceUrl)))
+    }
+
     override suspend fun fetchFromSupabase(): Unit = progressMutex.withLock {
         try {
             val series = supabaseService.getSeriesTitles()
@@ -118,66 +124,29 @@ class SeriesRepositoryImpl(
         }
     }
 
-    /**
-     * Unified progress persistence pipeline:
-     * 1. Captures previousUnit before updating currentUnit.
-     * 2. Updates local Room (MediaEntryDao).
-     * 3. Upserts daily activity record into ProgressHistoryDao & Supabase progress_history,
-     *    preserving the original previous_unit of the day if multiple updates happen on the same date.
-     * 4. Updates remote Supabase media_entries.
-     */
+    // MangaBaka uploads first so a failed Supabase write can be retried without losing the delta.
     private suspend fun recordProgressInternal(
         id: String,
         computeTarget: (current: MediaEntryEntity?) -> Pair<Double, String?>?,
-        source: ProgressSource
+        source: ProgressSource,
+        uploadFirst: Boolean = false
     ): Boolean {
         return progressMutex.withLock {
             val today = LocalDate.now().toString()
             val current = mediaEntryDao.getEntryById(id)
             val (nextUnit, targetStatus) = computeTarget(current) ?: return@withLock false
 
-            // Update MediaEntry in Room
-            if (targetStatus != null && targetStatus != current?.userStatus) {
-                mediaEntryDao.updateProgressAndStatus(id, nextUnit, targetStatus)
-            } else {
-                mediaEntryDao.updateProgress(id, nextUnit)
-            }
-
             var prevUnitForHistory = current?.currentUnit ?: nextUnit
             val hasNetProgress = (nextUnit - prevUnitForHistory) > 0.0001
 
-            // Only log daily consumption progress_history for active reading/watching sessions with positive progress
             if (source.isActiveConsumption && hasNetProgress) {
-                // Preserve the original previous_unit of the day if a record for today already exists
                 val existingTodayHistory = progressHistoryDao.getEntryHistoryForDate(id, today)
                 prevUnitForHistory = existingTodayHistory?.previousUnit
                     ?: (current?.currentUnit ?: nextUnit)
-
-                // Update local Room ProgressHistory
-                progressHistoryDao.upsert(
-                    ProgressHistoryEntity(
-                        entryId = id,
-                        activityDate = today,
-                        previousUnit = prevUnitForHistory,
-                        newUnit = nextUnit,
-                        source = source.value
-                    )
-                )
             }
 
-            try {
-                supabaseService.updateEntryProgress(
-                    entryId = id,
-                    currentUnit = nextUnit,
-                    updatedStatus = targetStatus?.takeIf { it != current?.userStatus }
-                )
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.e("SeriesRepository", "Failed to sync progress to Supabase", e)
-            }
-            if (source.isActiveConsumption && hasNetProgress) {
-                try {
+            suspend fun uploadHistory() {
+                if (source.isActiveConsumption && hasNetProgress) {
                     check(
                         supabaseService.logProgress(
                             entryId = id,
@@ -187,6 +156,48 @@ class SeriesRepositoryImpl(
                             source = source.value
                         )
                     ) { "Supabase rejected progress history for $id on $today" }
+                }
+            }
+
+            suspend fun uploadEntry() {
+                supabaseService.updateEntryProgress(
+                    entryId = id,
+                    currentUnit = nextUnit,
+                    updatedStatus = targetStatus?.takeIf { it != current?.userStatus }
+                )
+            }
+
+            if (uploadFirst) {
+                uploadHistory()
+                uploadEntry()
+            }
+
+            if (targetStatus != null && targetStatus != current?.userStatus) {
+                mediaEntryDao.updateProgressAndStatus(id, nextUnit, targetStatus)
+            } else {
+                mediaEntryDao.updateProgress(id, nextUnit)
+            }
+
+            if (source.isActiveConsumption && hasNetProgress) {
+                progressHistoryDao.upsert(
+                    ProgressHistoryEntity(
+                        entryId = id, activityDate = today, previousUnit = prevUnitForHistory,
+                        newUnit = nextUnit, source = source.value
+                    )
+                )
+            }
+
+            if (uploadFirst) return@withLock true
+            try {
+                uploadEntry()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("SeriesRepository", "Failed to sync progress to Supabase", e)
+            }
+            if (source.isActiveConsumption && hasNetProgress) {
+                try {
+                    uploadHistory()
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -221,6 +232,25 @@ class SeriesRepositoryImpl(
             },
             source = ProgressSource.DETAIL_SHEET
         )
+
+    override suspend fun updateMangaBakaChapterIfHigher(
+        id: String, newProgress: Double, completed: Boolean, seriesStatus: String?
+    ): Boolean = recordProgressInternal(
+        id = id,
+        computeTarget = { current ->
+            if (current != null &&
+                (current.unitName.trim().equals("chapter", true) ||
+                    current.unitName.trim().equals("chapters", true)) &&
+                newProgress > current.currentUnit
+            ) {
+                val shouldCompleteSeries = completed &&
+                    seriesStatus?.trim()?.lowercase() in setOf("completed", "cancelled")
+                Pair(newProgress, if (shouldCompleteSeries) "completed" else current.userStatus)
+            } else null
+        },
+        source = ProgressSource.DETAIL_SHEET,
+        uploadFirst = true
+    )
 
     override suspend fun incrementProgress(
         id: String,

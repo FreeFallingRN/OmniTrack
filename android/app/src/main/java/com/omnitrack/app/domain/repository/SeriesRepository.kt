@@ -15,6 +15,12 @@ interface SeriesRepository {
         source: ProgressSource = ProgressSource.DETAIL_SHEET
     )
     suspend fun updateMoonReaderChapterIfHigher(id: String, newProgress: Double): Boolean
+    suspend fun updateMangaBakaChapterIfHigher(
+        id: String,
+        newProgress: Double,
+        completed: Boolean,
+        seriesStatus: String? = null
+    ): Boolean
     suspend fun incrementProgress(
         id: String,
         delta: Double,
@@ -30,6 +36,7 @@ interface SeriesRepository {
         coverUrl: String?,
         sourceUrl: String
     ): MediaEntry
+    suspend fun updateMangaBakaUrl(id: String, sourceUrl: String)
 
     fun getRecentActivityFeed(): Flow<List<ProgressHistoryItem>>
     fun getProgressStats(): Flow<OverallProgressStats>

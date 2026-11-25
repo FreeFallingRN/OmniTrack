@@ -2,10 +2,12 @@ package com.omnitrack.app.ui.viewmodel
 
 import android.content.Context
 import android.net.Uri
+import android.os.SystemClock
 import android.util.Log
 import com.omnitrack.app.data.MangaBakaCredentials
 import com.omnitrack.app.data.MangaBakaLink
 import com.omnitrack.app.data.MangaBakaPreferences
+import com.omnitrack.app.data.MangaBakaProgressSync
 import com.omnitrack.app.data.MangaBakaService
 import com.omnitrack.app.data.MangaBakaTitle
 import com.omnitrack.app.domain.repository.SeriesRepository
@@ -18,7 +20,15 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
+fun mangaBakaSeriesUrl(title: MangaBakaTitle): String {
+    val uri = Uri.parse(title.series.url)
+    return if (uri.scheme == "https" && uri.host == "mangabaka.org" &&
+        uri.port == -1 && uri.userInfo == null && !uri.path.isNullOrBlank()
+    ) title.series.url else "https://mangabaka.org/series/${title.series.id}"
+}
+
 data class MangaBakaState(
+    val initialized: Boolean = false,
     val username: String = "",
     val connected: Boolean = false,
     val busy: Boolean = false,
@@ -30,15 +40,18 @@ data class MangaBakaState(
 class MangaBakaViewModel(context: Context, private val repository: SeriesRepository) {
     private val preferences = MangaBakaPreferences(context.applicationContext)
     private val service = MangaBakaService(preferences)
+    private val progressSync = MangaBakaProgressSync(preferences, service, repository)
     private val _state = MutableStateFlow(MangaBakaState())
     val state = _state.asStateFlow()
     private var credentials = MangaBakaCredentials()
     private val mutex = Mutex()
+    private var lastSyncAttempt: Long? = null
 
     suspend fun initialize() = operation {
         credentials = withContext(Dispatchers.IO) { preferences.read() }
         val links = withContext(Dispatchers.IO) { preferences.links(credentials.userId) }
         _state.value = _state.value.copy(
+            initialized = true,
             username = credentials.username,
             connected = credentials.accessToken.isNotBlank() && credentials.userId.isNotBlank(),
             links = links
@@ -66,6 +79,19 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
         _state.value = _state.value.copy(
             titles = titles,
             message = "Fetched ${titles.size} MangaBaka titles."
+        )
+    }
+
+    suspend fun sync(manual: Boolean) = operation {
+        if (!manual && (!_state.value.connected || _state.value.links.isEmpty())) return@operation
+        val now = SystemClock.elapsedRealtime()
+        if (!manual && lastSyncAttempt?.let { now - it < 60_000L } == true) return@operation
+        lastSyncAttempt = now
+        val (titles, updated) = progressSync.syncMangaBakaProgress()
+        _state.value = _state.value.copy(
+            titles = titles,
+            message = if (updated == 0) "MangaBaka progress is up to date."
+                else "Synced progress for $updated MangaBaka ${if (updated == 1) "title" else "titles"}."
         )
     }
 
@@ -103,7 +129,7 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
         val entry = withContext(Dispatchers.IO) {
             repository.createMangaBakaEntry(
                 title.title, type, status, publishingStatus, progress,
-                title.series.cover?.x250 ?: title.series.cover?.raw, title.series.url
+                title.series.cover?.x250 ?: title.series.cover?.raw, mangaBakaSeriesUrl(title)
             )
         }
         try {
@@ -128,7 +154,14 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
         check(_state.value.links.values.none { it.entryId == entryId }) {
             "This entry is already linked to a MangaBaka title"
         }
-        saveLink(title.series.id, entryId, offset)
+        withContext(Dispatchers.IO) { repository.updateMangaBakaUrl(entryId, mangaBakaSeriesUrl(title)) }
+        try {
+            saveLink(title.series.id, entryId, offset)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            throw IllegalStateException("Updated ${entry.title}'s URL, but its MangaBaka link could not be saved", e)
+        }
         _state.value = _state.value.copy(message = "Linked ${title.title} to ${entry.title}.")
     }
 

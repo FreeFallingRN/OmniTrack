@@ -28,6 +28,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,9 +40,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import com.omnitrack.app.data.MangaBakaTitle
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.ui.viewmodel.SeriesViewModel
+import com.omnitrack.app.ui.viewmodel.mangaBakaSeriesUrl
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -57,12 +62,28 @@ fun MangaBakaScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
     var otherTypeTitle by remember { mutableStateOf<MangaBakaTitle?>(null) }
     var localError by remember { mutableStateOf("") }
     val entriesById = remember(entries) { entries.associateBy { it.id } }
+    val availableEntries = remember(entries, state.links) {
+        val linkedIds = state.links.values.map { it.entryId }.toSet()
+        entries.filter {
+            it.id !in linkedIds &&
+                (it.unitName.trim().equals("chapter", true) || it.unitName.trim().equals("chapters", true))
+        }
+    }
     val titles = remember(state.titles, state.links, search, filter) {
         state.titles.filter { title ->
             val linked = state.links.containsKey(title.series.id)
             title.title.contains(search, ignoreCase = true) &&
                 (filter == "All" || (filter == "Linked" && linked) || (filter == "Unlinked" && !linked))
         }
+    }
+
+    DisposableEffect(context, viewModel) {
+        val lifecycle = (context as? LifecycleOwner)?.lifecycle
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.syncMangaBakaProgress()
+        }
+        lifecycle?.addObserver(observer)
+        onDispose { lifecycle?.removeObserver(observer) }
     }
 
     BackHandler(onBack = onBack)
@@ -97,6 +118,9 @@ fun MangaBakaScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
             }) { Text("Fetch library") }
             if (state.busy) CircularProgressIndicator(modifier = Modifier.size(32.dp))
         }
+        Button(enabled = state.connected && state.links.isNotEmpty() && !state.busy, onClick = {
+            viewModel.syncMangaBakaProgress(manual = true)
+        }) { Text("Sync now") }
         if (state.message.isNotBlank()) Text(state.message, style = MaterialTheme.typography.bodyMedium)
         if (localError.isNotBlank()) Text(localError, color = MaterialTheme.colorScheme.error)
         OutlinedTextField(
@@ -113,6 +137,9 @@ fun MangaBakaScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
             items(titles, key = { it.series.id }) { title ->
                 val link = state.links[title.series.id]
+                val match = remember(title, link, availableEntries) {
+                    if (link == null) findMangaBakaMatch(title, availableEntries) else null
+                }
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp)) {
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -130,7 +157,7 @@ fun MangaBakaScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
                                 )
                                 TextButton(onClick = {
                                     try {
-                                        val uri = Uri.parse(title.series.url)
+                                        val uri = Uri.parse(mangaBakaSeriesUrl(title))
                                         require(uri.scheme == "https" && uri.host == "mangabaka.org")
                                         context.startActivity(Intent(Intent.ACTION_VIEW, uri))
                                     } catch (e: Exception) {
@@ -141,6 +168,16 @@ fun MangaBakaScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
                             }
                         }
                         if (link == null) {
+                            if (match != null) {
+                                Text(
+                                    "Match found: ${match.title}",
+                                    color = MaterialTheme.colorScheme.primary,
+                                    style = MaterialTheme.typography.labelLarge
+                                )
+                                Button(enabled = !state.busy, onClick = {
+                                    viewModel.linkMangaBakaEntry(title, match.id, 0.0)
+                                }) { Text("Link to \"${match.title}\"") }
+                            }
                             Row {
                                 TextButton(enabled = !state.busy, onClick = {
                                     if (title.series.type == "other") otherTypeTitle = title
@@ -223,7 +260,7 @@ private fun LinkMangaBakaDialog(
                     offsetText, { offsetText = it }, label = { Text("Chapter offset") },
                     isError = offset == null, singleLine = true
                 )
-                Text("Offset is stored with the link; linking does not change progress.")
+                Text("The offset is added to MangaBaka's chapter on sync; linking does not change progress.")
                 LazyColumn(Modifier.heightIn(max = 300.dp)) {
                     items(available, key = { it.id }) { entry ->
                         TextButton(onClick = { selectedId = entry.id }, modifier = Modifier.fillMaxWidth()) {

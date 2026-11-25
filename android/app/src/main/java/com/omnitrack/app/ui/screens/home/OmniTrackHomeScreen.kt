@@ -97,6 +97,7 @@ fun OmniTrackHomeScreen(
     onSharedUrlConsumed: (() -> Unit)? = null
 ) {
     val mediaEntries by viewModel.mediaEntries.collectAsState()
+    val mangaBakaState by viewModel.mangaBaka.state.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
 
     val context = LocalContext.current
@@ -359,6 +360,8 @@ fun OmniTrackHomeScreen(
             }
             MediaDetailSheet(
                 entry = entry.copy(userStatus = pendingStatus ?: entry.userStatus),
+                mangaBakaLinked = mangaBakaState.connected &&
+                    mangaBakaState.links.values.any { it.entryId == entry.id },
                 relatedEntries = if (!entry.seriesId.isNullOrBlank()) {
                     mediaEntries
                         .filter { it.seriesId == entry.seriesId && it.id != entry.id }

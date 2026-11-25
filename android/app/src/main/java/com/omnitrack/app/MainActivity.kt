@@ -136,6 +136,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         if (::seriesViewModel.isInitialized) {
             seriesViewModel.syncMoonReader()
+            seriesViewModel.syncMangaBakaProgress()
         }
     }
 
