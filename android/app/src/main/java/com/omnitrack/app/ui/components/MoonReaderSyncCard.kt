@@ -47,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -87,9 +88,12 @@ fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
     val scope = rememberCoroutineScope()
     var folder by remember { mutableStateOf(prefs.getString("moon_reader_folder", null)) }
     var folderName by remember { mutableStateOf(prefs.getString("moon_reader_folder_name", null)) }
+    var booksFolder by remember { mutableStateOf(prefs.getString("moon_reader_books_folder", null)) }
+    var booksFolderName by remember { mutableStateOf(prefs.getString("moon_reader_books_folder_name", null)) }
     fun hasAccess(value: String?): Boolean = value != null &&
         context.contentResolver.persistedUriPermissions.any { it.uri == Uri.parse(value) && it.isReadPermission }
     var folderAccess by remember { mutableStateOf(hasAccess(folder)) }
+    var booksFolderAccess by remember { mutableStateOf(hasAccess(booksFolder)) }
     var busy by remember { mutableStateOf(false) }
     var preview by remember { mutableStateOf<MoonReaderScan?>(null) }
     var previewFolder by remember { mutableStateOf<String?>(null) }
@@ -133,7 +137,10 @@ fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
     DisposableEffect(context) {
         val lifecycle = (context as? LifecycleOwner)?.lifecycle
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) folderAccess = hasAccess(folder)
+            if (event == Lifecycle.Event.ON_RESUME) {
+                folderAccess = hasAccess(folder)
+                booksFolderAccess = hasAccess(booksFolder)
+            }
         }
         lifecycle?.addObserver(observer)
         onDispose { lifecycle?.removeObserver(observer) }
@@ -195,7 +202,7 @@ fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
                     folder = uri.toString()
                     folderName = name
                     folderAccess = true
-                    if (previous != null && previous != folder) {
+                    if (previous != null && previous != folder && previous != booksFolder) {
                         try {
                             context.contentResolver.releasePersistableUriPermission(
                                 Uri.parse(previous), Intent.FLAG_GRANT_READ_URI_PERMISSION
@@ -217,6 +224,42 @@ fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
         }
     }
 
+    val booksFolderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                busy = true
+                try {
+                    context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    check(hasAccess(uri.toString())) { "Books folder read permission was not retained" }
+                    val previous = booksFolder
+                    val name = withContext(Dispatchers.IO) { folderDisplayName(context, uri) }
+                    check(prefs.edit().putString("moon_reader_books_folder", uri.toString())
+                        .putString("moon_reader_books_folder_name", name).commit()) {
+                        "Could not save the selected books folder"
+                    }
+                    booksFolder = uri.toString()
+                    booksFolderName = name
+                    booksFolderAccess = true
+                    if (previous != null && previous != booksFolder && previous != folder) {
+                        try {
+                            context.contentResolver.releasePersistableUriPermission(
+                                Uri.parse(previous), Intent.FLAG_GRANT_READ_URI_PERMISSION
+                            )
+                        } catch (e: SecurityException) {
+                            Log.w("MoonReaderSync", "Could not release previous books folder permission", e)
+                        }
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    message = "Could not retain books folder access: ${e.message}"
+                } finally {
+                    busy = false
+                }
+            }
+        }
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
@@ -234,6 +277,31 @@ fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
             )
             val actionColors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
             val actionPadding = PaddingValues(horizontal = 8.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    when {
+                        booksFolder == null -> "Books folder: Not set"
+                        !booksFolderAccess -> "Books folder: Access lost"
+                        else -> "Books folder: ${booksFolderName ?: "Selected folder"}"
+                    },
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                TextButton(
+                    onClick = { booksFolderPicker.launch(null) },
+                    enabled = !busy && !syncing,
+                    colors = actionColors,
+                    contentPadding = actionPadding
+                ) {
+                    Text(if (booksFolder == null) "Set folder" else "Change")
+                }
+            }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(
                     onClick = { folderPicker.launch(null) },

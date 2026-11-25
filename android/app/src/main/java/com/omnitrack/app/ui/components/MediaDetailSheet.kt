@@ -166,8 +166,9 @@ fun MediaDetailSheet(
                                     val fileUri = prefs.getString(linkKey, null)
                                     val fileName = prefs.getString("moon_reader_file_name_${entry.id}", null)
                                     val folder = prefs.getString("moon_reader_folder", null)
+                                    val booksFolder = prefs.getString("moon_reader_books_folder", null)
                                     scope.launch {
-                                        openInMoonReader(context, moonReaderPackage, fileUri, fileName, folder)
+                                        openInMoonReader(context, moonReaderPackage, fileUri, fileName, folder, booksFolder)
                                     }
                                 }.semantics { contentDescription = "Open in Moon+ Reader" }
                             ) {
