@@ -2,7 +2,10 @@ package com.omnitrack.app.ui.screens.settings
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.Intent
 import android.net.Uri
+import android.os.PowerManager
+import android.provider.Settings
 import android.util.Log
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
@@ -34,6 +37,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -140,6 +144,24 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
         lifecycle?.addObserver(observer)
         onDispose { lifecycle?.removeObserver(observer) }
     }
+    var isIgnoringBatteryOptimizations by remember {
+        mutableStateOf(
+            (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
+                .isIgnoringBatteryOptimizations(context.packageName)
+        )
+    }
+    DisposableEffect(context) {
+        val lifecycle = (context as? LifecycleOwner)?.lifecycle
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                isIgnoringBatteryOptimizations =
+                    (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
+                        .isIgnoringBatteryOptimizations(context.packageName)
+            }
+        }
+        lifecycle?.addObserver(observer)
+        onDispose { lifecycle?.removeObserver(observer) }
+    }
     var currentSort by remember {
         mutableStateOf(LibrarySortOption.fromKey(prefs.getString("sort_option", "last_updated")))
     }
@@ -181,6 +203,50 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     UpdateSettingsCard()
+
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                        ),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp).padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("Background sync", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text(
+                                    if (isIgnoringBatteryOptimizations) "Background sync active — battery optimization disabled"
+                                    else "Allow unrestricted background activity so Moon+ Reader and MangaBaka sync reliably",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            TextButton(onClick = {
+                                val settingsIntent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                if (isIgnoringBatteryOptimizations) {
+                                    runCatching { context.startActivity(settingsIntent) }
+                                } else {
+                                    runCatching {
+                                        context.startActivity(
+                                            Intent(
+                                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                                Uri.parse("package:${context.packageName}")
+                                            )
+                                        )
+                                    }.onFailure {
+                                        runCatching { context.startActivity(settingsIntent) }
+                                    }
+                                }
+                            }) {
+                                Text(if (isIgnoringBatteryOptimizations) "Manage" else "Allow")
+                            }
+                        }
+                    }
 
                     Card(
                         colors = CardDefaults.cardColors(
