@@ -87,6 +87,38 @@ internal suspend fun folderDisplayName(context: Context, uri: Uri): String {
     }
 }
 
+private fun initialFolderDocumentUri(savedFolder: String?): Uri? = savedFolder?.let {
+    runCatching {
+        val treeUri = Uri.parse(it)
+        require(treeUri.scheme == "content" && !treeUri.authority.isNullOrBlank())
+        DocumentsContract.buildDocumentUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri))
+    }.getOrNull()
+}
+
+private fun folderLocation(context: Context, savedFolder: String, name: String?): String {
+    val uri = Uri.parse(savedFolder)
+    val authority = uri.authority
+    val provider = when {
+        authority == "com.android.externalstorage.documents" -> "Device storage"
+        authority == "com.google.android.apps.docs.storage" ||
+            authority == "com.google.android.apps.docs.storage.legacy" -> "Google Drive"
+        authority != null -> context.packageManager.resolveContentProvider(authority, 0)
+            ?.loadLabel(context.packageManager)?.toString()?.takeIf { it.isNotBlank() } ?: authority
+        else -> "Unknown provider"
+    }
+    val documentId = runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull()
+    val path = if (authority == "com.android.externalstorage.documents" && documentId != null) {
+        val root = documentId.substringBefore(':')
+        val relativePath = documentId.substringAfter(':', "")
+        val rootName = if (root == "primary") "Internal storage" else root
+        listOf(rootName, relativePath).filter { it.isNotBlank() }.joinToString(" / ")
+    } else {
+        listOfNotNull(name?.takeIf { it.isNotBlank() }, documentId?.takeIf { it.isNotBlank() })
+            .distinct().joinToString(" · ")
+    }
+    return "$provider · ${path.ifBlank { name ?: "Unknown folder" }}"
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MoonReaderSettingsScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
@@ -312,20 +344,20 @@ fun MoonReaderSettingsScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Progress Backup / Sync Folder (.po files)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(
-                    if (folder == null) "No progress folder selected" else folderName ?: "Selected folder",
+                    folder?.let { folderLocation(context, it, folderName) } ?: "No progress folder selected",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 if (needsProgressReauth && folder != null) {
                     TextButton(
-                        onClick = { folder?.let { folderPicker.launch(Uri.parse(it)) } },
+                        onClick = { folderPicker.launch(initialFolderDocumentUri(folder)) },
                         enabled = !busy,
                         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                         contentPadding = actionPadding
                     ) { Text("Access expired — re-select folder") }
                 }
                 TextButton(
-                    onClick = { folderPicker.launch(folder?.let(Uri::parse)) },
+                    onClick = { folderPicker.launch(initialFolderDocumentUri(folder)) },
                     enabled = !busy && (!syncing || needsProgressReauth),
                     colors = actionColors,
                     contentPadding = actionPadding
@@ -342,20 +374,20 @@ fun MoonReaderSettingsScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("EPUB Storage Folder (.epub files)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(
-                    if (booksFolder == null) "No EPUB folder selected" else booksFolderName ?: "Selected folder",
+                    booksFolder?.let { folderLocation(context, it, booksFolderName) } ?: "No EPUB folder selected",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 if (needsBooksReauth && booksFolder != null) {
                     TextButton(
-                        onClick = { booksFolder?.let { booksFolderPicker.launch(Uri.parse(it)) } },
+                        onClick = { booksFolderPicker.launch(initialFolderDocumentUri(booksFolder)) },
                         enabled = !busy,
                         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                         contentPadding = actionPadding
                     ) { Text("Access expired — re-select folder") }
                 }
                 TextButton(
-                    onClick = { booksFolderPicker.launch(booksFolder?.let(Uri::parse)) },
+                    onClick = { booksFolderPicker.launch(initialFolderDocumentUri(booksFolder)) },
                     enabled = !busy && !syncing,
                     colors = actionColors,
                     contentPadding = actionPadding
