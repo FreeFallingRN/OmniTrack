@@ -29,7 +29,7 @@ class MangaBakaSyncWorker(context: Context, params: WorkerParameters) : Coroutin
                 Result.success()
             } else {
                 val database = AppDatabase.getInstance(applicationContext)
-                val repository = SeriesRepositoryImpl(database.mediaEntryDao(), database.progressHistoryDao())
+                val repository = SeriesRepositoryImpl(database.mediaEntryDao(), database.progressHistoryDao(), preferences)
                 MangaBakaProgressSync(preferences, service, repository).syncMangaBakaProgress()
                 Result.success()
             }

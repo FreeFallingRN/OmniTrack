@@ -83,6 +83,7 @@ import com.omnitrack.app.ui.screens.library.LibraryManagementScreen
 import com.omnitrack.app.ui.screens.settings.OmniTrackSettingsScreen
 import com.omnitrack.app.ui.screens.stats.HistoryStatsScreen
 import com.omnitrack.app.ui.viewmodel.SeriesViewModel
+import com.omnitrack.app.ui.viewmodel.mangaBakaSeriesId
 import com.omnitrack.app.utils.LibrarySortOption
 import com.omnitrack.app.utils.MediaUrlImporter
 import com.omnitrack.app.utils.ImportedMediaDraft
@@ -130,6 +131,12 @@ fun OmniTrackHomeScreen(
     var showImportUrlDialog by remember { mutableStateOf(false) }
     var scrapedPrefill by remember { mutableStateOf<ImportedMediaDraft?>(null) }
 
+    LaunchedEffect(viewModel) {
+        viewModel.mangaBakaImportMessages.collect { message ->
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        }
+    }
+
     LaunchedEffect(bottomNavIndex) {
         sortOption = LibrarySortOption.fromKey(prefs.getString("sort_option", "last_updated"))
         if (bottomNavIndex != 0) fabExpanded = false
@@ -141,10 +148,15 @@ fun OmniTrackHomeScreen(
 
             refreshScope.launch {
                 try {
-                    val draft = MediaUrlImporter.importFromUrl(context, initialSharedUrl)
+                    val draft = viewModel.mangaBaka.prepareImportedDraft(
+                        MediaUrlImporter.importFromUrl(context, initialSharedUrl)
+                    )
+                    draft.warning?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
                     scrapedPrefill = draft
                     editorEntry = null
                     showEntryEditor = true
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     Toast.makeText(context, "Import failed: ${e.message}", Toast.LENGTH_LONG).show()
                 }
@@ -435,8 +447,11 @@ fun OmniTrackHomeScreen(
         if (showImportUrlDialog) {
             ImportUrlDialog(
                 onDismiss = { showImportUrlDialog = false },
-                onImport = { url -> MediaUrlImporter.importFromUrl(context, url) },
+                onImport = { url ->
+                    viewModel.mangaBaka.prepareImportedDraft(MediaUrlImporter.importFromUrl(context, url))
+                },
                 onImported = { draft ->
+                    draft.warning?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
                     scrapedPrefill = draft
                     editorEntry = null
                     showImportUrlDialog = false
@@ -459,6 +474,8 @@ fun OmniTrackHomeScreen(
                     { showDeleteWarning = true }
                 } else null,
                 onSave = { form: MediaEntryEditorData ->
+                    val importedUrl = scrapedPrefill?.normalizedUrl
+                    val importedMangaBakaId = importedUrl?.let(::mangaBakaSeriesId)
                     refreshScope.launch {
                         try {
                             val resolvedSeriesId: String? = when {
@@ -472,10 +489,16 @@ fun OmniTrackHomeScreen(
                                 else -> null
                             }
 
+                            val importedCreatorIds = mutableMapOf<String, String>()
                             val resolvedCreators: List<Pair<String, String>> =
                                 form.creators.mapNotNull { row ->
                                     val id = if (row.createNew && row.newAuthorName.isNotBlank()) {
-                                        SupabaseService.createAuthor(row.newAuthorName.trim()).id
+                                        val name = row.newAuthorName.trim()
+                                        val key = name.lowercase()
+                                        val existingId = if (importedMangaBakaId != null) importedCreatorIds[key] else null
+                                        existingId ?: SupabaseService.createAuthor(name).id.also {
+                                            if (importedMangaBakaId != null) importedCreatorIds[key] = it
+                                        }
                                     } else {
                                         row.authorId
                                     }
@@ -547,6 +570,11 @@ fun OmniTrackHomeScreen(
                                         ProgressSource.IMPORT
                                     )
                                 }
+                                if (importedMangaBakaId != null && importedUrl != null) {
+                                    viewModel.linkImportedMangaBakaEntry(
+                                        importedMangaBakaId, created.id, form.unitName, importedUrl
+                                    )
+                                }
                             } else {
                                 val existingMatch =
                                     mediaEntries.firstOrNull { it.id == targetUpdateId }
@@ -579,11 +607,18 @@ fun OmniTrackHomeScreen(
                                         ProgressSource.EDITOR
                                     )
                                 }
+                                if (importedMangaBakaId != null && importedUrl != null) {
+                                    viewModel.linkImportedMangaBakaEntry(
+                                        importedMangaBakaId, targetUpdateId, form.unitName, importedUrl
+                                    )
+                                }
                             }
 
                             showEntryEditor = false
                             scrapedPrefill = null
                             viewModel.refreshData()
+                        } catch (e: CancellationException) {
+                            throw e
                         } catch (e: Exception) {
                             Log.e("OmniTrackHomeScreen", "Failed to save entry", e)
                             Toast.makeText(

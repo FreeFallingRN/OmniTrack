@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import androidx.lifecycle.Lifecycle
@@ -61,6 +62,8 @@ fun MangaBakaScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
     var selected by remember { mutableStateOf<MangaBakaTitle?>(null) }
     var otherTypeTitle by remember { mutableStateOf<MangaBakaTitle?>(null) }
     var localError by remember { mutableStateOf("") }
+    var showTokenDialog by remember { mutableStateOf(false) }
+    var personalToken by remember { mutableStateOf("") }
     val entriesById = remember(entries) { entries.associateBy { it.id } }
     val availableEntries = remember(entries, state.links) {
         val linkedIds = state.links.values.map { it.entryId }.toSet()
@@ -117,6 +120,41 @@ fun MangaBakaScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
                 viewModel.fetchMangaBakaLibrary()
             }) { Text("Fetch library") }
             if (state.busy) CircularProgressIndicator(modifier = Modifier.size(32.dp))
+        }
+        TextButton(enabled = !state.busy, onClick = { showTokenDialog = true }) {
+            Text("Connect with personal access token")
+        }
+        if (showTokenDialog) {
+            AlertDialog(
+                onDismissRequest = {
+                    personalToken = ""
+                    showTokenDialog = false
+                },
+                title = { Text("MangaBaka personal access token") },
+                text = {
+                    OutlinedTextField(
+                        value = personalToken,
+                        onValueChange = { personalToken = it },
+                        label = { Text("Personal access token") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true
+                    )
+                },
+                confirmButton = {
+                    TextButton(enabled = personalToken.isNotBlank(), onClick = {
+                        val token = personalToken
+                        personalToken = ""
+                        showTokenDialog = false
+                        scope.launch { viewModel.mangaBaka.connectPersonalToken(token) }
+                    }) { Text("Connect") }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        personalToken = ""
+                        showTokenDialog = false
+                    }) { Text("Cancel") }
+                }
+            )
         }
         Button(enabled = state.connected && state.links.isNotEmpty() && !state.busy, onClick = {
             viewModel.syncMangaBakaProgress(manual = true)

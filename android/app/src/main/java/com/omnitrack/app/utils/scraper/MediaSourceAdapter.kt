@@ -29,5 +29,6 @@ interface MediaSourceAdapter {
 
 interface HtmlFetchClient {
     suspend fun getJson(url: String): String
+    suspend fun getMangaBakaJson(url: String): String = getJson(url)
     suspend fun getHtml(url: String): String
 }

@@ -1,6 +1,7 @@
 package com.omnitrack.app.data
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.net.Uri
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
@@ -14,7 +15,12 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.forms.submitForm
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.http.ContentType
 import io.ktor.http.Parameters
+import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.Dispatchers
@@ -111,6 +117,24 @@ class MangaBakaPreferences(context: Context) {
     fun unlink(userId: String, seriesId: Long) {
         check(links.edit().remove("$userId:$seriesId").commit()) { "Could not remove MangaBaka link" }
     }
+
+    fun unlinkEntry(entryId: String) {
+        val keys = links.all.mapNotNull { (key, value) ->
+            if (value is String && json.decodeFromString<MangaBakaLink>(value).entryId == entryId) key else null
+        }
+        if (keys.isEmpty()) return
+        val editor = links.edit()
+        keys.forEach { editor.remove(it) }
+        check(editor.commit()) { "Could not remove MangaBaka links" }
+    }
+
+    fun registerLinkListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
+        links.registerOnSharedPreferenceChangeListener(listener)
+    }
+
+    fun unregisterLinkListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
+        links.unregisterOnSharedPreferenceChangeListener(listener)
+    }
 }
 
 @Serializable
@@ -164,6 +188,24 @@ private data class Pagination(val next: String? = null)
 private data class TokenResponse(@SerialName("access_token") val accessToken: String)
 @Serializable
 private data class UserInfo(val sub: String, val name: String? = null)
+@Serializable
+private data class ProfileResponse(val data: Profile)
+@Serializable
+private data class Profile(val id: String, val nickname: String? = null, @SerialName("preferred_username") val username: String? = null)
+@Serializable
+private data class LibraryEntryResponse(val data: MangaBakaLibraryEntry)
+@Serializable
+private data class CreateLibraryEntry(val state: String)
+@Serializable
+private data class CreateLibraryEntryResponse(val data: Boolean)
+
+internal fun HttpRequestBuilder.mangaBakaAuthorization(credentials: MangaBakaCredentials) {
+    if (credentials.accessToken.startsWith("mb-")) {
+        header("x-api-key", credentials.accessToken)
+    } else {
+        header("Authorization", "Bearer ${credentials.accessToken}")
+    }
+}
 
 class MangaBakaService(private val preferences: MangaBakaPreferences) {
     private val client = HttpClient(Android) {
@@ -192,7 +234,7 @@ class MangaBakaService(private val preferences: MangaBakaPreferences) {
             .appendQueryParameter("response_type", "code")
             .appendQueryParameter("client_id", CLIENT_ID)
             .appendQueryParameter("redirect_uri", REDIRECT_URI)
-            .appendQueryParameter("scope", "openid profile library.read")
+            .appendQueryParameter("scope", "openid profile library.read library.write")
             .appendQueryParameter("state", state)
             .appendQueryParameter("code_challenge", challenge)
             .appendQueryParameter("code_challenge_method", "S256")
@@ -229,6 +271,54 @@ class MangaBakaService(private val preferences: MangaBakaPreferences) {
             .also { preferences.write(it) }
     }
 
+    suspend fun connectPersonalToken(token: String): MangaBakaCredentials = withContext(Dispatchers.IO) {
+        val trimmed = token.trim()
+        require(trimmed.startsWith("mb-") && trimmed.length > 3) { "Enter a valid MangaBaka personal access token" }
+        val candidate = MangaBakaCredentials(accessToken = trimmed)
+        val response = client.get("https://api.mangabaka.org/v1/my/profile") {
+            mangaBakaAuthorization(candidate)
+        }
+        check(response.status.isSuccess()) { "MangaBaka token validation failed (HTTP ${response.status.value})" }
+        val profile = response.body<ProfileResponse>().data
+        require(profile.id.isNotBlank()) { "MangaBaka returned an invalid account" }
+        candidate.copy(userId = profile.id, username = profile.username ?: profile.nickname.orEmpty())
+            .also { preferences.write(it) }
+    }
+
+    suspend fun libraryEntry(credentials: MangaBakaCredentials, seriesId: Long): MangaBakaLibraryEntry? =
+        withContext(Dispatchers.IO) {
+            check(credentials.accessToken.isNotBlank() && credentials.userId.isNotBlank()) {
+                "Connect your MangaBaka account first"
+            }
+            val url = "https://api.mangabaka.org/v1/my/library/$seriesId"
+            val existing = client.get(url) { mangaBakaAuthorization(credentials) }
+            if (existing.status.isSuccess()) {
+                return@withContext existing.body<LibraryEntryResponse>().data
+            }
+            check(existing.status.value == 404) {
+                "MangaBaka library lookup failed (HTTP ${existing.status.value})"
+            }
+            null
+        }
+
+    suspend fun libraryEntryOrAdd(credentials: MangaBakaCredentials, seriesId: Long): MangaBakaLibraryEntry =
+        withContext(Dispatchers.IO) {
+            libraryEntry(credentials, seriesId)?.let { return@withContext it }
+            val url = "https://api.mangabaka.org/v1/my/library/$seriesId"
+            val created = client.post(url) {
+                mangaBakaAuthorization(credentials)
+                contentType(ContentType.Application.Json)
+                setBody(CreateLibraryEntry("plan_to_read"))
+            }
+            check(created.status.isSuccess()) {
+                "Could not add to MangaBaka (HTTP ${created.status.value}); reconnect if write access is missing"
+            }
+            check(created.body<CreateLibraryEntryResponse>().data) { "MangaBaka did not create the library entry" }
+            val result = client.get(url) { mangaBakaAuthorization(credentials) }
+            check(result.status.isSuccess()) { "MangaBaka library lookup failed (HTTP ${result.status.value})" }
+            result.body<LibraryEntryResponse>().data
+        }
+
     suspend fun library(credentials: MangaBakaCredentials): List<MangaBakaTitle> = withContext(Dispatchers.IO) {
         check(credentials.accessToken.isNotBlank() && credentials.userId.isNotBlank()) {
             "Connect your MangaBaka account first"
@@ -242,7 +332,7 @@ class MangaBakaService(private val preferences: MangaBakaPreferences) {
             check(parsed.scheme == "https" && parsed.host == "api.mangabaka.org" &&
                 parsed.port == -1 && parsed.path == "/v2/my/library" && parsed.userInfo == null &&
                 visited.add(url)) { "MangaBaka returned an invalid pagination link" }
-            val response = client.get(url) { header("Authorization", "Bearer ${credentials.accessToken}") }
+            val response = client.get(url) { mangaBakaAuthorization(credentials) }
             if (response.status.value == 401 || response.status.value == 403) {
                 error("MangaBaka authorization expired or was revoked; connect again")
             }

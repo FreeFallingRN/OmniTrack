@@ -57,6 +57,8 @@ class SeriesViewModel(
 
     private val appContext = context.applicationContext
     val mangaBaka = MangaBakaViewModel(appContext, repository)
+    private val _mangaBakaImportMessages = MutableSharedFlow<String>(extraBufferCapacity = 16)
+    val mangaBakaImportMessages = _mangaBakaImportMessages.asSharedFlow()
     private val moonReaderPrefs = appContext.getSharedPreferences("omnitrack_prefs", Context.MODE_PRIVATE)
     private val moonReaderSync = MoonReaderSync(appContext, repository)
     private val _moonReaderBusy = MutableStateFlow(false)
@@ -123,6 +125,20 @@ class SeriesViewModel(
 
     fun unlinkMangaBakaEntry(title: MangaBakaTitle) {
         viewModelScope.launch { mangaBaka.unlink(title) }
+    }
+
+    fun linkImportedMangaBakaEntry(seriesId: Long, entryId: String, unitName: String, sourceUrl: String) {
+        viewModelScope.launch {
+            try {
+                mangaBaka.linkImportedSeries(seriesId, entryId, unitName, sourceUrl)
+                _mangaBakaImportMessages.emit("Entry linked to MangaBaka.")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("MangaBaka", "Could not link imported entry", e)
+                _mangaBakaImportMessages.emit("Entry saved. MangaBaka: ${e.message ?: "Unknown error"}")
+            }
+        }
     }
 
     fun updateMoonReaderSchedule() {

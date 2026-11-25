@@ -1,6 +1,7 @@
 package com.omnitrack.app.data.repository
 
 import android.util.Log
+import com.omnitrack.app.data.MangaBakaPreferences
 import com.omnitrack.app.data.SupabaseService
 import com.omnitrack.app.data.model.CreateEntryRequest
 import com.omnitrack.app.data.local.MediaEntryDao
@@ -11,16 +12,19 @@ import com.omnitrack.app.domain.model.*
 import com.omnitrack.app.domain.model.ProgressSource
 import com.omnitrack.app.domain.repository.SeriesRepository
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.math.BigDecimal
 import java.time.LocalDate
 
 class SeriesRepositoryImpl(
     private val mediaEntryDao: MediaEntryDao,
     private val progressHistoryDao: ProgressHistoryDao,
+    private val mangaBakaPreferences: MangaBakaPreferences,
     private val supabaseService: SupabaseService = SupabaseService
 ) : SeriesRepository {
 
@@ -273,6 +277,9 @@ class SeriesRepositoryImpl(
     }
 
     override suspend fun deleteMediaEntry(id: String) {
+        withContext(Dispatchers.IO) {
+            mangaBakaPreferences.unlinkEntry(id)
+        }
         mediaEntryDao.deleteEntryById(id)
         progressHistoryDao.deleteHistoryForEntry(id)
         try {

@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.rememberCoroutineScope
 import com.omnitrack.app.utils.ImportedMediaDraft
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 @Composable
@@ -70,6 +71,8 @@ fun ImportUrlDialog(
                         importError = null
                         try {
                             onImported(onImport(importUrl))
+                        } catch (e: CancellationException) {
+                            throw e
                         } catch (e: Exception) {
                             importError = e.message ?: "Failed to fetch media details"
                         } finally {

@@ -9,6 +9,7 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.omnitrack.app.data.MangaBakaPreferences
 import com.omnitrack.app.data.local.AppDatabase
 import com.omnitrack.app.data.repository.SeriesRepositoryImpl
 import com.omnitrack.app.utils.MoonReaderFolderAccessException
@@ -21,7 +22,9 @@ import kotlinx.coroutines.withContext
 class MoonReaderSyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val database = AppDatabase.getInstance(applicationContext)
-        val repository = SeriesRepositoryImpl(database.mediaEntryDao(), database.progressHistoryDao())
+        val repository = SeriesRepositoryImpl(
+            database.mediaEntryDao(), database.progressHistoryDao(), MangaBakaPreferences(applicationContext)
+        )
         try {
             MoonReaderSync(applicationContext, repository).sync(manual = false) {
                 Log.i("MoonReaderSync", it)

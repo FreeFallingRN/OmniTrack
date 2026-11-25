@@ -5,11 +5,14 @@ import android.content.Context
 import android.util.Log
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import com.omnitrack.app.data.MangaBakaPreferences
+import com.omnitrack.app.data.mangaBakaAuthorization
 import com.omnitrack.app.utils.ScrapedMediaDraft
 import com.omnitrack.app.utils.ImportedMediaDraft
 import com.omnitrack.app.utils.scraper.adapters.AmazonAdapter
 import com.omnitrack.app.utils.scraper.adapters.AniListAdapter
 import com.omnitrack.app.utils.scraper.adapters.GenericFallbackAdapter
+import com.omnitrack.app.utils.scraper.adapters.MangaBakaAdapter
 import com.omnitrack.app.utils.scraper.adapters.MangaDexAdapter
 import com.omnitrack.app.utils.scraper.adapters.MyAnimeListAdapter
 import com.omnitrack.app.utils.scraper.adapters.NovelpiaAdapter
@@ -47,11 +50,13 @@ object ExternalMediaScraper {
         }
     }
     private val json = Json { ignoreUnknownKeys = true }
+    private val mangaBakaClient = client.config { followRedirects = false }
 
     // Register new site adapters here; GenericFallbackAdapter always runs last.
     private val adapters: List<MediaSourceAdapter> = listOf(
         MyAnimeListAdapter,
         AniListAdapter,
+        MangaBakaAdapter,
         MangaDexAdapter,
         RoyalRoadAdapter,
         AmazonAdapter,
@@ -85,11 +90,15 @@ object ExternalMediaScraper {
         val url = normalizeInputUrl(rawUrl)
         val host = runCatching { URI(url).host.orEmpty().lowercase() }.getOrDefault("")
         val adapter = adapters.firstOrNull { it.canHandle(host, url) }
+        if (host in listOf("mangabaka.org", "www.mangabaka.org", "mangabaka.dev", "dev.mangabaka.dev")) {
+            require(adapter === MangaBakaAdapter) { "Invalid MangaBaka series URL" }
+        }
+        val draft = scrapeDraft(context, rawUrl, url, host, adapter)
         return ImportedMediaDraft(
             sourceUrl = rawUrl.trim(),
-            normalizedUrl = url,
+            normalizedUrl = if (adapter === MangaBakaAdapter) draft.sourceUrl else url,
             adapterName = adapter?.name ?: GenericFallbackAdapter.name,
-            draft = scrapeDraft(context, rawUrl, url, host, adapter)
+            draft = draft
         )
     }
 
@@ -111,6 +120,15 @@ object ExternalMediaScraper {
 
         try {
             trace.log("host=$host matchedAdapter=${matchedAdapter?.name ?: "none"}")
+
+            if (matchedAdapter === MangaBakaAdapter) {
+                val draft = requireNotNull(matchedAdapter.scrapeWithoutHtml(url, fetcher)) {
+                    "Could not load MangaBaka series"
+                }
+                resultTitle = draft.title
+                resultCover = draft.coverUrl
+                return draft.copy(coverUrl = CoverNormalizer.normalize(draft.coverUrl, baseUrl = draft.sourceUrl))
+            }
 
             // 1. Try API / fast-path extraction without HTML first
             if (matchedAdapter != null) {
@@ -229,6 +247,8 @@ object ExternalMediaScraper {
                 return@withContext normalized
             }
 
+            if (matchedAdapter === MangaBakaAdapter) return@withContext null
+
             val html = runCatching { fetcher.getHtml(url) }
                 .onFailure { e -> trace.log("coverHtml: error=${e.message}") }
                 .getOrDefault("")
@@ -319,6 +339,36 @@ object ExternalMediaScraper {
 
     private fun createFetchClient(context: Context, trace: ScrapeTrace): HtmlFetchClient = object : HtmlFetchClient {
         override suspend fun getJson(url: String): String = fetchJson(url, trace)
+
+        override suspend fun getMangaBakaJson(url: String): String {
+            val uri = URI(url)
+            require(uri.scheme == "https" && uri.host == "api.mangabaka.org" &&
+                uri.port == -1 && uri.userInfo == null &&
+                Regex("^/v1/series/[0-9]+$").matches(uri.path) &&
+                uri.rawQuery == null && uri.rawFragment == null) { "Invalid MangaBaka API URL" }
+            val credentials = try {
+                MangaBakaPreferences(context.applicationContext).read()
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not read MangaBaka credentials", e)
+                null
+            }
+            val response = mangaBakaClient.get(url) {
+                header("Accept", "application/json")
+                header("User-Agent", "OmniTrack-Android/1.0")
+                if (credentials != null && credentials.accessToken.isNotBlank()) mangaBakaAuthorization(credentials)
+            }
+            trace.log("json: status=${response.status.value} url=$url")
+            if (response.status.value in listOf(401, 403) && credentials?.accessToken?.isNotBlank() == true) {
+                val publicResponse = mangaBakaClient.get(url) {
+                    header("Accept", "application/json")
+                    header("User-Agent", "OmniTrack-Android/1.0")
+                }
+                check(publicResponse.status.isSuccess()) { "MangaBaka metadata request failed (HTTP ${publicResponse.status.value})" }
+                return publicResponse.bodyAsText()
+            }
+            check(response.status.isSuccess()) { "HTTP ${response.status.value}" }
+            return response.bodyAsText()
+        }
 
         override suspend fun getHtml(url: String): String {
             val fastHtml = try {

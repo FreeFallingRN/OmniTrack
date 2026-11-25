@@ -23,14 +23,19 @@ data class ScrapedMediaDraft(
     val coverUrl: String? = null,
     val sourceUrl: String = "",
     val seriesTitle: String? = null,
-    val sequenceNumber: Double? = null
+    val sequenceNumber: Double? = null,
+    val description: String? = null,
+    val totalChapters: Double? = null,
+    val userStatus: String? = null,
+    val currentUnit: Double? = null
 )
 
 data class ImportedMediaDraft(
     val sourceUrl: String,
     val normalizedUrl: String,
     val adapterName: String,
-    val draft: ScrapedMediaDraft
+    val draft: ScrapedMediaDraft,
+    val warning: String? = null
 )
 
 object MediaUrlImporter {

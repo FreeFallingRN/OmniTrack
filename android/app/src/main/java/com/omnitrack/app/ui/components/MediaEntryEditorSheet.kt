@@ -151,14 +151,14 @@ fun MediaEntryEditorSheet(
 
     var type by remember { mutableStateOf(existing?.type ?: prefill?.type ?: MediaType.NOVEL) }
     var seriesId by remember { mutableStateOf(existing?.seriesId) }
-    var userStatus by remember { mutableStateOf(existing?.userStatus?.value ?: "planning") }
+    var userStatus by remember { mutableStateOf(existing?.userStatus?.value ?: prefill?.userStatus ?: "planning") }
     var publishingStatus by remember {
         mutableStateOf(existing?.publishingStatus ?: prefill?.publishingStatus ?: "releasing")
     }
     var sequence by remember {
         mutableStateOf((existing?.sequenceNumber ?: prefill?.sequenceNumber)?.toString().orEmpty())
     }
-    var currentUnit by remember { mutableStateOf(existing?.currentUnit?.toString() ?: "0") }
+    var currentUnit by remember { mutableStateOf((existing?.currentUnit ?: prefill?.currentUnit)?.toString() ?: "0") }
     var unitName by remember { mutableStateOf(existing?.unitName ?: prefill?.unitName ?: "Chapter") }
     var sourceUrl by remember { mutableStateOf(existing?.sourceUrl ?: prefill?.sourceUrl.orEmpty()) }
     var coverUrl by remember { mutableStateOf(existing?.coverUrl ?: prefill?.coverUrl.orEmpty()) }
@@ -641,6 +641,9 @@ fun MediaEntryEditorSheet(
                 isCanon = isCanon,
                 onIsCanonChange = { isCanon = it }
             )
+            prefill?.totalChapters?.let { total ->
+                item { Text("MangaBaka total chapters: $total", style = MaterialTheme.typography.bodySmall) }
+            }
             publicationCoverSection(
                 sourceUrl = sourceUrl,
                 onSourceUrlChange = { sourceUrl = it },

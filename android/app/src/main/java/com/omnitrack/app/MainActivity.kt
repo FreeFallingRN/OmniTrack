@@ -15,6 +15,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import com.omnitrack.app.data.MangaBakaPreferences
 import com.omnitrack.app.data.local.AppDatabase
 import com.omnitrack.app.data.repository.SeriesRepositoryImpl
 import com.omnitrack.app.domain.repository.SeriesRepository
@@ -47,7 +48,8 @@ class MainActivity : ComponentActivity() {
         }
         val repository: SeriesRepository = SeriesRepositoryImpl(
             mediaEntryDao = database.mediaEntryDao(),
-            progressHistoryDao = database.progressHistoryDao()
+            progressHistoryDao = database.progressHistoryDao(),
+            mangaBakaPreferences = MangaBakaPreferences(applicationContext)
         )
 
         // Custom ViewModel Factory for supplying the SeriesRepository
