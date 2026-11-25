@@ -25,29 +25,51 @@ suspend fun openInMoonReader(
     poFileUri: String?,
     poFileName: String?,
     folderUri: String?,
-    booksFolderUri: String?
+    booksFolderUri: String?,
+    checkFolder: suspend (String, Boolean) -> Boolean,
+    reportFolderFailure: suspend (String, Boolean) -> Unit
 ) {
+    suspend fun searchFolder(folder: String, books: Boolean, search: suspend () -> Pair<Uri, String>?): Pair<Uri, String>? {
+        return try {
+            val result = moonReaderProviderCall(60_000L) { listOfNotNull(search()) }
+            if (result == null) {
+                Log.w(TAG, "Moon+ Reader folder search timed out")
+                reportFolderFailure(folder, books)
+            }
+            result?.firstOrNull()
+        } catch (e: SecurityException) {
+            Log.w(TAG, "Moon+ Reader folder access was lost", e)
+            reportFolderFailure(folder, books)
+            null
+        }
+    }
+
     val book = withContext(Dispatchers.IO) {
         val fromBooksFolder = if (booksFolderUri != null && poFileName != null &&
-            poFileName.endsWith(".po", ignoreCase = true)) {
-            runCatching { findBookInFolder(context, booksFolderUri, poFileName.dropLast(3)) }
+            poFileName.endsWith(".po", ignoreCase = true) && checkFolder(booksFolderUri, true)) {
+            runCatching {
+                searchFolder(booksFolderUri, true) { findBookInFolder(context, booksFolderUri, poFileName.dropLast(3)) }
+            }
                 .onFailure {
                     if (it is CancellationException) throw it
                     Log.w(TAG, "Unable to search books folder; checking sync folder", it)
                 }
                 .getOrNull()
         } else null
-        val sibling = fromBooksFolder ?: runCatching {
-            findSiblingBook(context, poFileUri, poFileName, folderUri)
+        val progressAccessible = fromBooksFolder == null && folderUri != null && checkFolder(folderUri, false)
+        val sibling = fromBooksFolder ?: if (progressAccessible && folderUri != null) runCatching {
+            searchFolder(folderUri, false) { findSiblingBook(context, poFileUri, poFileName, folderUri) }
         }
             .onFailure {
                 if (it is CancellationException) throw it
                 Log.w(TAG, "Unable to find linked book beside progress file", it)
             }
-            .getOrNull()
+            .getOrNull() else null
         sibling ?: if (folderUri != null && poFileName != null &&
-            poFileName.endsWith(".po", ignoreCase = true)) {
-            runCatching { findBookInFolder(context, folderUri, poFileName.dropLast(3)) }
+            poFileName.endsWith(".po", ignoreCase = true) && progressAccessible) {
+            runCatching {
+                searchFolder(folderUri, false) { findBookInFolder(context, folderUri, poFileName.dropLast(3)) }
+            }
                 .onFailure {
                     if (it is CancellationException) throw it
                     Log.w(TAG, "Unable to search sync folder; opening Moon+ Reader", it)

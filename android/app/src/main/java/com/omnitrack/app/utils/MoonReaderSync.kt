@@ -3,16 +3,51 @@ package com.omnitrack.app.utils
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import androidx.documentfile.provider.DocumentFile
 import com.omnitrack.app.domain.model.ProgressSource
 import com.omnitrack.app.domain.repository.SeriesRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+
+private val providerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+internal suspend fun <T> moonReaderProviderCall(timeout: Long, block: suspend () -> T): T? =
+    withTimeoutOrNull(timeout) {
+        suspendCancellableCoroutine { continuation ->
+            val job = providerScope.launch {
+                try {
+                    continuation.resume(block())
+                } catch (e: Exception) {
+                    continuation.resumeWithException(e)
+                }
+            }
+            continuation.invokeOnCancellation { job.cancel() }
+        }
+    }
+
+internal suspend fun hasMoonReaderFolderAccess(context: Context, uri: Uri): Boolean =
+    moonReaderProviderCall(10_000L) {
+        runCatching {
+            context.contentResolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission } &&
+                DocumentFile.fromTreeUri(context, uri)?.canRead() == true
+        }.onFailure { Log.w("MoonReaderSync", "Could not check folder access", it) }.getOrDefault(false)
+    } == true
+
+internal const val MOON_READER_FOLDER_EXPIRED = "Folder access expired \u2014 tap to re-grant access"
+internal class MoonReaderFolderAccessException(val folder: String) : IllegalStateException(MOON_READER_FOLDER_EXPIRED)
 
 class MoonReaderSync(context: Context, private val repository: SeriesRepository) {
     private val context = context.applicationContext
     private val prefs = this.context.getSharedPreferences("omnitrack_prefs", Context.MODE_PRIVATE)
-    private val mutex = Mutex()
 
     fun hasFolderAccess(uri: Uri): Boolean =
         context.contentResolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission }
@@ -102,11 +137,18 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
             if (manual && !skipped) notify("Moon+ Reader: no linked chapter entries")
             return@withLock
         }
-        check(hasFolderAccess(uri)) { "Folder access was lost; choose the folder again" }
-        val scan = MoonReaderImport.scan(context, uri, true, entries, links)
+        if (!hasMoonReaderFolderAccess(context, uri)) throw MoonReaderFolderAccessException(folder)
+        val scan = try {
+            moonReaderProviderCall(60_000L) {
+                MoonReaderImport.scan(context, uri, true, entries, links)
+            } ?: throw MoonReaderFolderAccessException(folder)
+        } catch (e: SecurityException) {
+            throw MoonReaderFolderAccessException(folder)
+        }
         var updates = 0
         for (match in scan.matches) {
-            check(prefs.getString("moon_reader_folder", null) == folder && hasFolderAccess(uri)) {
+            if (!hasFolderAccess(uri)) throw MoonReaderFolderAccessException(folder)
+            check(prefs.getString("moon_reader_folder", null) == folder) {
                 "Folder access changed during sync; try again"
             }
             val entry = match.entry
@@ -159,6 +201,7 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
     }
 
     companion object {
+        private val mutex = Mutex()
         private const val OFFSET = "moon_reader_chapter_offset_"
         private const val SPINE_OFFSET = "moon_reader_spine_offset_"
         private const val FILE_URI = "moon_reader_file_uri_"

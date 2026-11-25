@@ -55,7 +55,7 @@ extensions.configure<ApplicationExtension> {
         minSdk = 26
         targetSdk = 37
         versionCode = 3
-        versionName = "2.0.1.2"
+        versionName = "2.0.1.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -114,6 +114,7 @@ dependencies {
 
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
+    implementation(libs.documentfile)
     ksp(libs.androidx.room.compiler)
 
     implementation(libs.androidx.work.runtime.ktx)
@@ -125,5 +126,5 @@ dependencies {
 
     implementation(libs.coil.compose)
 
-    implementation("io.ktor:ktor-client-cio:3.6.1")
+    implementation(libs.ktor.client.cio)
 }

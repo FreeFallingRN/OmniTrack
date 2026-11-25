@@ -77,6 +77,8 @@ fun MediaDetailSheet(
     onUpdateStatus: (UserStatus) -> Unit,
     controlsEnabled: Boolean,
     @Suppress("UNUSED_PARAMETER") onUnlinkMoonReader: suspend (String) -> Unit,
+    checkMoonReaderFolder: suspend (String, Boolean) -> Boolean,
+    reportMoonReaderFolderFailure: suspend (String, Boolean) -> Unit,
     onSelectEntry: (MediaEntry) -> Unit,
     onOpenRelatedEntity: (RelatedEntityDetail) -> Unit,
     onEdit: () -> Unit
@@ -168,7 +170,10 @@ fun MediaDetailSheet(
                                     val folder = prefs.getString("moon_reader_folder", null)
                                     val booksFolder = prefs.getString("moon_reader_books_folder", null)
                                     scope.launch {
-                                        openInMoonReader(context, moonReaderPackage, fileUri, fileName, folder, booksFolder)
+                                        openInMoonReader(
+                                            context, moonReaderPackage, fileUri, fileName, folder, booksFolder,
+                                            checkMoonReaderFolder, reportMoonReaderFolderFailure
+                                        )
                                     }
                                 }.semantics { contentDescription = "Open in Moon+ Reader" }
                             ) {

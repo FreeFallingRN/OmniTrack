@@ -24,7 +24,9 @@ class SeriesRepositoryImpl(
 ) : SeriesRepository {
 
     // Keep refreshes and progress uploads ordered with local progress and history writes.
-    private val progressMutex = Mutex()
+    companion object {
+        private val progressMutex = Mutex()
+    }
 
     override fun getMediaEntriesStream(): Flow<List<MediaEntry>> {
         return mediaEntryDao.getAllEntries().map { entities ->

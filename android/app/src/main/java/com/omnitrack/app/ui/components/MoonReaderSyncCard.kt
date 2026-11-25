@@ -16,19 +16,25 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -47,7 +53,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -57,21 +62,25 @@ import com.omnitrack.app.utils.MoonReaderImport
 import com.omnitrack.app.utils.MoonReaderScan
 import com.omnitrack.app.utils.MoonReaderSync
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import com.omnitrack.app.utils.MOON_READER_FOLDER_EXPIRED
+import com.omnitrack.app.utils.moonReaderProviderCall
 
-private fun folderDisplayName(context: Context, uri: Uri): String {
+internal suspend fun folderDisplayName(context: Context, uri: Uri): String {
     val documentId = DocumentsContract.getTreeDocumentId(uri)
     val fallback = documentId.substringAfterLast('/').substringAfterLast(':')
         .takeUnless { it.isBlank() || it.contains("doc=") } ?: "Selected folder"
     return try {
-        val document = DocumentsContract.buildDocumentUriUsingTree(uri, documentId)
-        context.contentResolver.query(
-            document, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null
-        )?.use { cursor ->
-            if (cursor.moveToFirst()) cursor.getString(0)?.takeIf { it.isNotBlank() } else null
-        } ?: fallback
+        moonReaderProviderCall(3_000L) {
+            val document = DocumentsContract.buildDocumentUriUsingTree(uri, documentId)
+            context.contentResolver.query(
+                document, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0)?.takeIf { it.isNotBlank() } else null
+            } ?: fallback
+        } ?: fallback.also { Log.w("MoonReaderSync", "Folder name lookup timed out") }
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         Log.w("MoonReaderSync", "Could not resolve folder name", e)
         fallback
@@ -80,11 +89,13 @@ private fun folderDisplayName(context: Context, uri: Uri): String {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
+fun MoonReaderSettingsScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("omnitrack_prefs", Context.MODE_PRIVATE) }
     val entries by viewModel.mediaEntries.collectAsState()
     val syncing by viewModel.moonReaderBusy.collectAsState()
+    val needsProgressReauth by viewModel.needsProgressFolderReauth.collectAsState()
+    val needsBooksReauth by viewModel.needsBooksFolderReauth.collectAsState()
     val scope = rememberCoroutineScope()
     var folder by remember { mutableStateOf(prefs.getString("moon_reader_folder", null)) }
     var folderName by remember { mutableStateOf(prefs.getString("moon_reader_folder_name", null)) }
@@ -92,8 +103,6 @@ fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
     var booksFolderName by remember { mutableStateOf(prefs.getString("moon_reader_books_folder_name", null)) }
     fun hasAccess(value: String?): Boolean = value != null &&
         context.contentResolver.persistedUriPermissions.any { it.uri == Uri.parse(value) && it.isReadPermission }
-    var folderAccess by remember { mutableStateOf(hasAccess(folder)) }
-    var booksFolderAccess by remember { mutableStateOf(hasAccess(booksFolder)) }
     var busy by remember { mutableStateOf(false) }
     var preview by remember { mutableStateOf<MoonReaderScan?>(null) }
     var previewFolder by remember { mutableStateOf<String?>(null) }
@@ -101,7 +110,6 @@ fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
     var selected by remember { mutableStateOf(emptySet<String>()) }
     var values by remember { mutableStateOf(emptyMap<String, String>()) }
     var linksVersion by remember { mutableStateOf(0) }
-    var showLinks by remember { mutableStateOf(false) }
     val linkedEntries = remember(entries, linksVersion) {
         entries.filter { prefs.getString("moon_reader_file_uri_${it.id}", null) != null }
     }
@@ -115,11 +123,11 @@ fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
         onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
 
-    LaunchedEffect(folder, folderAccess) {
+    LaunchedEffect(folder) {
         val savedFolder = folder
-        if (savedFolder != null && folderAccess && folderName == null) {
+        if (savedFolder != null && folderName == null) {
             try {
-                val name = withContext(Dispatchers.IO) { folderDisplayName(context, Uri.parse(savedFolder)) }
+                val name = folderDisplayName(context, Uri.parse(savedFolder))
                 if (folder == savedFolder) {
                     check(prefs.edit().putString("moon_reader_folder_name", name).commit()) {
                         "Could not save the folder name"
@@ -134,12 +142,19 @@ fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
         }
     }
 
-    DisposableEffect(context) {
+    LaunchedEffect(folder, booksFolder) {
+        folder?.let { viewModel.checkMoonReaderFolder(it, books = false) }
+        booksFolder?.let { viewModel.checkMoonReaderFolder(it, books = true) }
+    }
+
+    DisposableEffect(context, folder, booksFolder) {
         val lifecycle = (context as? LifecycleOwner)?.lifecycle
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                folderAccess = hasAccess(folder)
-                booksFolderAccess = hasAccess(booksFolder)
+                scope.launch {
+                    folder?.let { viewModel.checkMoonReaderFolder(it, books = false) }
+                    booksFolder?.let { viewModel.checkMoonReaderFolder(it, books = true) }
+                }
             }
         }
         lifecycle?.addObserver(observer)
@@ -150,7 +165,13 @@ fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
         scope.launch {
             busy = true
             try {
-                val result = MoonReaderImport.scan(context, uri, true, entries)
+                if (!viewModel.checkMoonReaderFolder(uri.toString(), books = false)) return@launch
+                val result = moonReaderProviderCall(60_000L) {
+                    MoonReaderImport.scan(context, uri, true, entries)
+                } ?: run {
+                    viewModel.setMoonReaderFolderAccess(uri.toString(), books = false, valid = false)
+                    return@launch
+                }
                 val linkedUris = entries.mapNotNull {
                     prefs.getString("moon_reader_file_uri_${it.id}", null)
                 }.toSet()
@@ -177,6 +198,8 @@ fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
                 preview = result.copy(matches = matches)
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: SecurityException) {
+                viewModel.setMoonReaderFolderAccess(uri.toString(), books = false, valid = false)
             } catch (e: Exception) {
                 message = "Moon+ Reader scan failed: ${e.message ?: "Unknown error"}"
             } finally {
@@ -193,15 +216,17 @@ fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
                 try {
                     context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     check(hasAccess(uri.toString())) { "Folder read permission was not retained" }
+                    check(viewModel.checkMoonReaderFolder(uri.toString(), books = false)) { MOON_READER_FOLDER_EXPIRED }
                     val previous = folder
-                    val name = withContext(Dispatchers.IO) { folderDisplayName(context, uri) }
+                    val name = folderDisplayName(context, uri)
                     check(prefs.edit().putString("moon_reader_folder", uri.toString())
                         .putString("moon_reader_folder_name", name).commit()) {
                         "Could not save the selected folder"
                     }
                     folder = uri.toString()
                     folderName = name
-                    folderAccess = true
+                    viewModel.setMoonReaderFolderAccess(uri.toString(), books = false, valid = true)
+                    viewModel.updateMoonReaderSchedule()
                     if (previous != null && previous != folder && previous != booksFolder) {
                         try {
                             context.contentResolver.releasePersistableUriPermission(
@@ -231,15 +256,16 @@ fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
                 try {
                     context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     check(hasAccess(uri.toString())) { "Books folder read permission was not retained" }
+                    check(viewModel.checkMoonReaderFolder(uri.toString(), books = true)) { MOON_READER_FOLDER_EXPIRED }
                     val previous = booksFolder
-                    val name = withContext(Dispatchers.IO) { folderDisplayName(context, uri) }
+                    val name = folderDisplayName(context, uri)
                     check(prefs.edit().putString("moon_reader_books_folder", uri.toString())
                         .putString("moon_reader_books_folder_name", name).commit()) {
                         "Could not save the selected books folder"
                     }
                     booksFolder = uri.toString()
                     booksFolderName = name
-                    booksFolderAccess = true
+                    viewModel.setMoonReaderFolderAccess(uri.toString(), books = true, valid = true)
                     if (previous != null && previous != booksFolder && previous != folder) {
                         try {
                             context.contentResolver.releasePersistableUriPermission(
@@ -260,86 +286,115 @@ fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
         }
     }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+    val actionColors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
+    val actionPadding = PaddingValues(horizontal = 8.dp)
+    Column(
+        modifier = Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Moon+ Reader progress", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text(
-                if (folder == null) "No folder linked"
-                else if (folderAccess) "Folder linked: ${folderName ?: "Selected folder"}"
-                else "Folder access lost. Change folder to grant access again.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            val actionColors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
-            val actionPadding = PaddingValues(horizontal = 8.dp)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    when {
-                        booksFolder == null -> "Books folder: Not set"
-                        !booksFolderAccess -> "Books folder: Access lost"
-                        else -> "Books folder: ${booksFolderName ?: "Selected folder"}"
-                    },
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                TextButton(
-                    onClick = { booksFolderPicker.launch(null) },
-                    enabled = !busy && !syncing,
-                    colors = actionColors,
-                    contentPadding = actionPadding
-                ) {
-                    Text(if (booksFolder == null) "Set folder" else "Change")
-                }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
             }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Moon+ Reader", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        ) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Progress Backup / Sync Folder (.po files)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    if (folder == null) "No progress folder selected" else folderName ?: "Selected folder",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (needsProgressReauth && folder != null) {
+                    TextButton(
+                        onClick = { folder?.let { folderPicker.launch(Uri.parse(it)) } },
+                        enabled = !busy,
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        contentPadding = actionPadding
+                    ) { Text("Access expired — re-select folder") }
+                }
                 TextButton(
-                    onClick = { folderPicker.launch(null) },
+                    onClick = { folderPicker.launch(folder?.let(Uri::parse)) },
+                    enabled = !busy && (!syncing || needsProgressReauth),
+                    colors = actionColors,
+                    contentPadding = actionPadding
+                ) { Text("Change progress folder") }
+            }
+        }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        ) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("EPUB Storage Folder (.epub files)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    if (booksFolder == null) "No EPUB folder selected" else booksFolderName ?: "Selected folder",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (needsBooksReauth && booksFolder != null) {
+                    TextButton(
+                        onClick = { booksFolder?.let { booksFolderPicker.launch(Uri.parse(it)) } },
+                        enabled = !busy,
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        contentPadding = actionPadding
+                    ) { Text("Access expired — re-select folder") }
+                }
+                TextButton(
+                    onClick = { booksFolderPicker.launch(booksFolder?.let(Uri::parse)) },
                     enabled = !busy && !syncing,
                     colors = actionColors,
                     contentPadding = actionPadding
-                ) {
-                    Text(if (folder == null) "Select folder" else "Change folder")
+                ) { Text("Change EPUB folder") }
+            }
+        }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        ) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Sync & Linked Books", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                if (needsProgressReauth) {
+                    Text("Re-select the progress folder to sync or link books.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                } else if (folder == null) {
+                    Text("Select a progress folder to sync or link books.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                if (folder != null) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     TextButton(
                         onClick = { viewModel.syncMoonReader(manual = true) },
-                        enabled = !busy && !syncing,
+                        enabled = folder != null && !needsProgressReauth && !busy && !syncing,
                         colors = actionColors,
                         contentPadding = actionPadding
                     ) {
                         Text("Sync now")
                     }
                     TextButton(
-                        onClick = { scan(Uri.parse(folder)) },
-                        enabled = !busy && !syncing && folderAccess,
+                        onClick = { folder?.let { scan(Uri.parse(it)) } },
+                        enabled = folder != null && !busy && !syncing && !needsProgressReauth,
                         colors = actionColors,
                         contentPadding = actionPadding
                     ) {
                         Text("Link books")
                     }
                 }
-                TextButton(
-                    onClick = { showLinks = !showLinks },
-                    enabled = linkedEntries.isNotEmpty(),
-                    colors = actionColors,
-                    contentPadding = actionPadding
-                ) {
-                    Text("${linkedEntries.size} linked ${if (linkedEntries.size == 1) "book" else "books"}" +
-                        if (showLinks && linkedEntries.isNotEmpty()) " \u25b4" else " \u25be")
-                }
-            }
-            if (showLinks && linkedEntries.isNotEmpty()) {
+                Text("${linkedEntries.size} linked ${if (linkedEntries.size == 1) "book" else "books"}", style = MaterialTheme.typography.bodyMedium)
                 linkedEntries.forEach { entry ->
                     val offsetKey = "moon_reader_chapter_offset_${entry.id}"
                     val offset = if (prefs.contains(offsetKey)) {
@@ -382,8 +437,8 @@ fun MoonReaderSyncCard(viewModel: SeriesViewModel) {
                         ) { Text("Unlink") }
                     }
                 }
+                if (busy || syncing) Text("Working…")
             }
-            if (busy || syncing) Text("Working…")
         }
     }
 

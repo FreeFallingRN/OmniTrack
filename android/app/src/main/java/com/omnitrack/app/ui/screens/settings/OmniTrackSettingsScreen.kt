@@ -1,6 +1,9 @@
 package com.omnitrack.app.ui.screens.settings
 
 import android.content.Context
+import android.content.SharedPreferences
+import android.net.Uri
+import android.util.Log
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -32,25 +35,36 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.omnitrack.app.ui.components.MoonReaderSyncCard
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
+import com.omnitrack.app.ui.components.MoonReaderSettingsScreen
 import com.omnitrack.app.ui.components.UpdateSettingsCard
+import com.omnitrack.app.ui.components.folderDisplayName
 import com.omnitrack.app.ui.viewmodel.SeriesViewModel
 import com.omnitrack.app.utils.LibrarySortOption
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 enum class SettingsPage {
     MAIN,
     SORT_ORDER,
     SHARE_STYLE,
-    SCRAPE_REPORTS
+    SCRAPE_REPORTS,
+    MOON_READER
 }
 
 enum class ShareFormatStyle(val label: String, val description: String) {
@@ -70,8 +84,61 @@ enum class ShareFormatStyle(val label: String, val description: String) {
 fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("omnitrack_prefs", Context.MODE_PRIVATE) }
+    val entries by viewModel.mediaEntries.collectAsState()
+    val needsProgressReauth by viewModel.needsProgressFolderReauth.collectAsState()
+    val scope = rememberCoroutineScope()
 
     var currentRoute by remember { mutableStateOf(SettingsPage.MAIN) }
+    var progressFolder by remember { mutableStateOf(prefs.getString("moon_reader_folder", null)) }
+    var progressFolderName by remember { mutableStateOf(prefs.getString("moon_reader_folder_name", null)) }
+    var linksVersion by remember { mutableStateOf(0) }
+    val linkedCount = remember(entries, linksVersion) {
+        entries.count { prefs.getString("moon_reader_file_uri_${it.id}", null) != null }
+    }
+
+    DisposableEffect(prefs) {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == null || key == "moon_reader_folder") {
+                progressFolder = prefs.getString("moon_reader_folder", null)
+            }
+            if (key == null || key == "moon_reader_folder_name") {
+                progressFolderName = prefs.getString("moon_reader_folder_name", null)
+            }
+            if (key == null || key.startsWith("moon_reader_file_uri_")) linksVersion++
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+    LaunchedEffect(progressFolder, currentRoute) {
+        if (currentRoute == SettingsPage.MAIN) {
+            progressFolder?.let { viewModel.checkMoonReaderFolder(it, books = false) }
+        }
+    }
+    LaunchedEffect(progressFolder) {
+        val savedFolder = progressFolder
+        if (savedFolder != null && progressFolderName == null) {
+            try {
+                val name = folderDisplayName(context, Uri.parse(savedFolder))
+                if (progressFolder == savedFolder && progressFolderName == null) progressFolderName = name
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("MoonReaderSync", "Could not resolve progress folder name", e)
+            }
+        }
+    }
+    DisposableEffect(context, progressFolder, currentRoute) {
+        val lifecycle = (context as? LifecycleOwner)?.lifecycle
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && currentRoute == SettingsPage.MAIN) {
+                scope.launch {
+                    progressFolder?.let { viewModel.checkMoonReaderFolder(it, books = false) }
+                }
+            }
+        }
+        lifecycle?.addObserver(observer)
+        onDispose { lifecycle?.removeObserver(observer) }
+    }
     var currentSort by remember {
         mutableStateOf(LibrarySortOption.fromKey(prefs.getString("sort_option", "last_updated")))
     }
@@ -114,7 +181,35 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                 ) {
                     UpdateSettingsCard()
 
-                    MoonReaderSyncCard(viewModel)
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                        ),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth().clickable { currentRoute = SettingsPage.MOON_READER }
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp).padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("Moon+ Reader", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text(
+                                    if (needsProgressReauth) "Folder access needed"
+                                    else "${if (progressFolder == null) "No progress folder" else progressFolderName ?: "Selected folder"} • $linkedCount linked ${if (linkedCount == 1) "book" else "books"}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Icon(
+                                Icons.Default.ChevronRight,
+                                contentDescription = "Open Moon+ Reader settings",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
 
                     Card(
                         colors = CardDefaults.cardColors(
@@ -222,6 +317,10 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
             }
 
             SettingsPage.SCRAPE_REPORTS -> ScrapeIssueReportsScreen(onBack = {
+                currentRoute = SettingsPage.MAIN
+            })
+
+            SettingsPage.MOON_READER -> MoonReaderSettingsScreen(viewModel, onBack = {
                 currentRoute = SettingsPage.MAIN
             })
 
