@@ -21,6 +21,15 @@ interface SeriesRepository {
         source: ProgressSource = ProgressSource.INCREMENT
     )
     suspend fun deleteMediaEntry(id: String)
+    suspend fun createMangaBakaEntry(
+        title: String,
+        type: String,
+        status: String,
+        publishingStatus: String,
+        progress: Double,
+        coverUrl: String?,
+        sourceUrl: String
+    ): MediaEntry
 
     fun getRecentActivityFeed(): Flow<List<ProgressHistoryItem>>
     fun getProgressStats(): Flow<OverallProgressStats>

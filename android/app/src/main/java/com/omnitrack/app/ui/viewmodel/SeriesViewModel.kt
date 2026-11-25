@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.net.Uri
 import android.os.SystemClock
 import android.util.Log
+import com.omnitrack.app.data.MangaBakaTitle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.omnitrack.app.domain.model.HistoryTimeframe
@@ -53,6 +54,7 @@ class SeriesViewModel(
 ) : ViewModel() {
 
     private val appContext = context.applicationContext
+    val mangaBaka = MangaBakaViewModel(appContext, repository)
     private val moonReaderPrefs = appContext.getSharedPreferences("omnitrack_prefs", Context.MODE_PRIVATE)
     private val moonReaderSync = MoonReaderSync(appContext, repository)
     private val _moonReaderBusy = MutableStateFlow(false)
@@ -72,6 +74,7 @@ class SeriesViewModel(
     }
 
     init {
+        viewModelScope.launch { mangaBaka.initialize() }
         moonReaderPrefs.registerOnSharedPreferenceChangeListener(moonReaderPrefsListener)
         viewModelScope.launch {
             repository.getMediaEntriesStream().collect { updateMoonReaderSchedule() }
@@ -79,8 +82,29 @@ class SeriesViewModel(
     }
 
     override fun onCleared() {
+        mangaBaka.close()
         moonReaderPrefs.unregisterOnSharedPreferenceChangeListener(moonReaderPrefsListener)
         super.onCleared()
+    }
+
+    fun handleMangaBakaCallback(uri: Uri) {
+        viewModelScope.launch { mangaBaka.completeAuthorization(uri) }
+    }
+
+    fun fetchMangaBakaLibrary() {
+        viewModelScope.launch { mangaBaka.fetch() }
+    }
+
+    fun addMangaBakaEntry(title: MangaBakaTitle, otherType: String? = null) {
+        viewModelScope.launch { mangaBaka.add(title, otherType) }
+    }
+
+    fun linkMangaBakaEntry(title: MangaBakaTitle, entryId: String, offset: Double) {
+        viewModelScope.launch { mangaBaka.link(title, entryId, offset) }
+    }
+
+    fun unlinkMangaBakaEntry(title: MangaBakaTitle) {
+        viewModelScope.launch { mangaBaka.unlink(title) }
     }
 
     fun updateMoonReaderSchedule() {

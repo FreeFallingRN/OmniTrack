@@ -64,7 +64,8 @@ enum class SettingsPage {
     SORT_ORDER,
     SHARE_STYLE,
     SCRAPE_REPORTS,
-    MOON_READER
+    MOON_READER,
+    MANGABAKA
 }
 
 enum class ShareFormatStyle(val label: String, val description: String) {
@@ -180,6 +181,24 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     UpdateSettingsCard()
+
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                        ),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth().clickable { currentRoute = SettingsPage.MANGABAKA }
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp).padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("MangaBaka", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Icon(Icons.Default.ChevronRight, contentDescription = "Open MangaBaka")
+                        }
+                    }
 
                     Card(
                         colors = CardDefaults.cardColors(
@@ -321,6 +340,10 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
             })
 
             SettingsPage.MOON_READER -> MoonReaderSettingsScreen(viewModel, onBack = {
+                currentRoute = SettingsPage.MAIN
+            })
+
+            SettingsPage.MANGABAKA -> MangaBakaScreen(viewModel, onBack = {
                 currentRoute = SettingsPage.MAIN
             })
 

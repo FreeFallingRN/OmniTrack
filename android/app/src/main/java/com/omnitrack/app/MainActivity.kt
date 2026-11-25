@@ -58,6 +58,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         seriesViewModel = ViewModelProvider(this, viewModelFactory)[SeriesViewModel::class.java]
+        handleMangaBakaIntent(intent)
         seriesViewModel.refreshData()
         lifecycleScope.launch {
             seriesViewModel.moonReaderMessages.collect { message ->
@@ -128,6 +129,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         pendingSharedUrl = extractSharedUrl(intent)
+        handleMangaBakaIntent(intent)
     }
 
     override fun onResume() {
@@ -144,5 +146,14 @@ class MainActivity : ComponentActivity() {
             }
         }
         return null
+    }
+
+    private fun handleMangaBakaIntent(intent: Intent?) {
+        val uri = intent?.data
+        if (intent?.action == Intent.ACTION_VIEW && uri?.scheme == "com.omnitrack.app" &&
+            uri.path == "/mangabaka/oauth") {
+            seriesViewModel.handleMangaBakaCallback(uri)
+            intent.data = null
+        }
     }
 }

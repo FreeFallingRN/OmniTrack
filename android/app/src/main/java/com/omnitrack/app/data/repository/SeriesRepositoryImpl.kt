@@ -2,6 +2,7 @@ package com.omnitrack.app.data.repository
 
 import android.util.Log
 import com.omnitrack.app.data.SupabaseService
+import com.omnitrack.app.data.model.CreateEntryRequest
 import com.omnitrack.app.data.local.MediaEntryDao
 import com.omnitrack.app.data.local.MediaEntryEntity
 import com.omnitrack.app.data.local.ProgressHistoryDao
@@ -32,6 +33,32 @@ class SeriesRepositoryImpl(
         return mediaEntryDao.getAllEntries().map { entities ->
             entities.map { it.toDomain() }
         }
+    }
+
+    override suspend fun createMangaBakaEntry(
+        title: String,
+        type: String,
+        status: String,
+        publishingStatus: String,
+        progress: Double,
+        coverUrl: String?,
+        sourceUrl: String
+    ): MediaEntry = progressMutex.withLock {
+        val created = supabaseService.createEntry(
+            CreateEntryRequest(
+                title = title,
+                type = type,
+                sequenceNumber = null,
+                userStatus = status,
+                publishingStatus = publishingStatus,
+                currentUnit = progress,
+                coverUrl = coverUrl,
+                sourceUrl = sourceUrl
+            )
+        )
+        val entity = created.toEntity(null, emptyList(), emptyList())
+        mediaEntryDao.insertAll(listOf(entity))
+        entity.toDomain()
     }
 
     override suspend fun fetchFromSupabase(): Unit = progressMutex.withLock {
