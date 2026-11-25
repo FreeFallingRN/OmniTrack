@@ -137,6 +137,16 @@ fun OmniTrackHomeScreen(
         }
     }
 
+    LaunchedEffect(mangaBakaState.editorDraft) {
+        mangaBakaState.editorDraft?.let { draft ->
+            draft.warning?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+            scrapedPrefill = draft
+            editorEntry = null
+            showEntryEditor = true
+            viewModel.mangaBaka.consumeEditorDraft()
+        }
+    }
+
     LaunchedEffect(bottomNavIndex) {
         sortOption = LibrarySortOption.fromKey(prefs.getString("sort_option", "last_updated"))
         if (bottomNavIndex != 0) fabExpanded = false
@@ -476,6 +486,8 @@ fun OmniTrackHomeScreen(
                 onSave = { form: MediaEntryEditorData ->
                     val importedUrl = scrapedPrefill?.normalizedUrl
                     val importedMangaBakaId = importedUrl?.let(::mangaBakaSeriesId)
+                    val mangaBakaLinkUrl = scrapedPrefill?.draft?.sourceUrl
+                        ?.takeIf { mangaBakaSeriesId(it) != null } ?: importedUrl
                     refreshScope.launch {
                         try {
                             val resolvedSeriesId: String? = when {
@@ -570,9 +582,9 @@ fun OmniTrackHomeScreen(
                                         ProgressSource.IMPORT
                                     )
                                 }
-                                if (importedMangaBakaId != null && importedUrl != null) {
+                                if (importedMangaBakaId != null && mangaBakaLinkUrl != null) {
                                     viewModel.linkImportedMangaBakaEntry(
-                                        importedMangaBakaId, created.id, form.unitName, importedUrl
+                                        importedMangaBakaId, created.id, form.unitName, mangaBakaLinkUrl
                                     )
                                 }
                             } else {
@@ -607,9 +619,9 @@ fun OmniTrackHomeScreen(
                                         ProgressSource.EDITOR
                                     )
                                 }
-                                if (importedMangaBakaId != null && importedUrl != null) {
+                                if (importedMangaBakaId != null && mangaBakaLinkUrl != null) {
                                     viewModel.linkImportedMangaBakaEntry(
-                                        importedMangaBakaId, targetUpdateId, form.unitName, importedUrl
+                                        importedMangaBakaId, targetUpdateId, form.unitName, mangaBakaLinkUrl
                                     )
                                 }
                             }

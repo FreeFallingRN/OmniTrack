@@ -11,8 +11,11 @@ import com.omnitrack.app.data.MangaBakaPreferences
 import com.omnitrack.app.data.MangaBakaProgressSync
 import com.omnitrack.app.data.MangaBakaService
 import com.omnitrack.app.data.MangaBakaTitle
+import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.repository.SeriesRepository
 import com.omnitrack.app.utils.ImportedMediaDraft
+import com.omnitrack.app.utils.ScrapedMediaDraft
+import com.omnitrack.app.utils.scraper.ExternalMediaScraper
 import com.omnitrack.app.utils.scraper.adapters.MangaBakaAdapter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -40,11 +43,13 @@ data class MangaBakaState(
     val busy: Boolean = false,
     val message: String = "",
     val titles: List<MangaBakaTitle> = emptyList(),
-    val links: Map<Long, MangaBakaLink> = emptyMap()
+    val links: Map<Long, MangaBakaLink> = emptyMap(),
+    val editorDraft: ImportedMediaDraft? = null
 )
 
 class MangaBakaViewModel(context: Context, private val repository: SeriesRepository) {
-    private val preferences = MangaBakaPreferences(context.applicationContext)
+    private val appContext = context.applicationContext
+    private val preferences = MangaBakaPreferences(appContext)
     private val service = MangaBakaService(preferences)
     private val progressSync = MangaBakaProgressSync(preferences, service, repository)
     private val _state = MutableStateFlow(MangaBakaState())
@@ -199,35 +204,67 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
             "considering", "plan_to_read" -> "planning"
             else -> error("Unsupported MangaBaka reading state: ${title.entry.state}")
         }
-        val publishingStatus = when (title.series.status) {
-            "upcoming" -> "announced"
-            "releasing", "unknown" -> "releasing"
-            "hiatus" -> "hiatus"
-            "completed" -> "completed"
-            "cancelled" -> "discontinued"
-            else -> error("Unsupported MangaBaka publication status: ${title.series.status}")
+        val selectedType = when (otherType) {
+            "novel" -> MediaType.NOVEL
+            "comic" -> MediaType.COMIC
+            null -> null
+            else -> error("Choose whether this title is a novel or comic")
         }
-        val type = when (title.series.type) {
-            "novel" -> "novel"
-            "manga", "manhwa", "manhua", "oel" -> "comic"
-            "other" -> otherType?.takeIf { it == "novel" || it == "comic" }
-                ?: error("Choose whether this title is a novel or comic")
-            else -> error("Unsupported MangaBaka media type: ${title.series.type}")
-        }
-        val entry = withContext(Dispatchers.IO) {
-            repository.createMangaBakaEntry(
-                title.title, type, status, publishingStatus, progress,
-                title.series.cover?.x250 ?: title.series.cover?.raw, mangaBakaSeriesUrl(title)
-            )
-        }
-        try {
-            saveLink(title.series.id, entry.id, 0.0)
+        val seriesUrl = "https://mangabaka.org/series/${title.series.id}"
+        check(mangaBakaSeriesId(seriesUrl) == title.series.id) { "Invalid MangaBaka series ID" }
+        val imported = try {
+            ExternalMediaScraper.scrape(appContext, seriesUrl, selectedType)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            throw IllegalStateException("Entry ${entry.title} was created, but its MangaBaka link could not be saved", e)
+            Log.w("MangaBaka", "Could not load full series metadata", e)
+            val type = when (title.series.type) {
+                "novel" -> MediaType.NOVEL
+                "manga", "manhwa", "manhua", "oel" -> MediaType.COMIC
+                "other" -> selectedType ?: error("Choose whether this title is a novel or comic")
+                else -> error("Unsupported MangaBaka media type: ${title.series.type}")
+            }
+            val publishingStatus = when (title.series.status) {
+                "upcoming" -> "announced"
+                "releasing", "unknown" -> "releasing"
+                "hiatus" -> "hiatus"
+                "completed" -> "completed"
+                "cancelled" -> "discontinued"
+                else -> error("Unsupported MangaBaka publication status: ${title.series.status}")
+            }
+            ImportedMediaDraft(
+                sourceUrl = seriesUrl,
+                normalizedUrl = seriesUrl,
+                adapterName = "MangaBaka",
+                draft = ScrapedMediaDraft(
+                    title = title.title,
+                    alternativeTitles = title.series.titles.orEmpty().map { it.title }
+                        .filterNot { it.equals(title.title, ignoreCase = true) }
+                        .distinctBy { it.lowercase() },
+                    type = type,
+                    platformHint = "MangaBaka",
+                    publishingStatus = publishingStatus,
+                    coverUrl = title.series.cover?.x250 ?: title.series.cover?.raw,
+                    sourceUrl = mangaBakaSeriesUrl(title),
+                    totalChapters = title.series.totalChapters
+                ),
+                warning = "Could not load full MangaBaka metadata; review the library details."
+            )
         }
-        _state.value = _state.value.copy(message = "Added and linked ${entry.title}.")
+        _state.update {
+            it.copy(editorDraft = imported.copy(
+                normalizedUrl = seriesUrl,
+                draft = imported.draft.copy(
+                    userStatus = status,
+                    currentUnit = progress,
+                    totalChapters = imported.draft.totalChapters ?: title.series.totalChapters
+                )
+            ))
+        }
+    }
+
+    fun consumeEditorDraft() {
+        _state.update { it.copy(editorDraft = null) }
     }
 
     suspend fun link(title: MangaBakaTitle, entryId: String, offset: Double) = operation {

@@ -7,6 +7,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.omnitrack.app.data.MangaBakaPreferences
 import com.omnitrack.app.data.mangaBakaAuthorization
+import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.utils.ScrapedMediaDraft
 import com.omnitrack.app.utils.ImportedMediaDraft
 import com.omnitrack.app.utils.scraper.adapters.AmazonAdapter
@@ -86,14 +87,14 @@ object ExternalMediaScraper {
         }
     }
 
-    suspend fun scrape(context: Context, rawUrl: String): ImportedMediaDraft {
+    suspend fun scrape(context: Context, rawUrl: String, mangaBakaOtherType: MediaType? = null): ImportedMediaDraft {
         val url = normalizeInputUrl(rawUrl)
         val host = runCatching { URI(url).host.orEmpty().lowercase() }.getOrDefault("")
         val adapter = adapters.firstOrNull { it.canHandle(host, url) }
         if (host in listOf("mangabaka.org", "www.mangabaka.org", "mangabaka.dev", "dev.mangabaka.dev")) {
             require(adapter === MangaBakaAdapter) { "Invalid MangaBaka series URL" }
         }
-        val draft = scrapeDraft(context, rawUrl, url, host, adapter)
+        val draft = scrapeDraft(context, rawUrl, url, host, adapter, mangaBakaOtherType)
         return ImportedMediaDraft(
             sourceUrl = rawUrl.trim(),
             normalizedUrl = if (adapter === MangaBakaAdapter) draft.sourceUrl else url,
@@ -107,7 +108,8 @@ object ExternalMediaScraper {
         rawUrl: String,
         url: String,
         host: String,
-        matchedAdapter: MediaSourceAdapter?
+        matchedAdapter: MediaSourceAdapter?,
+        mangaBakaOtherType: MediaType?
     ): ScrapedMediaDraft {
         val originalUrl = rawUrl.trim().let {
             if (it.startsWith("http://", true) || it.startsWith("https://", true)) it else "https://$it"
@@ -122,7 +124,7 @@ object ExternalMediaScraper {
             trace.log("host=$host matchedAdapter=${matchedAdapter?.name ?: "none"}")
 
             if (matchedAdapter === MangaBakaAdapter) {
-                val draft = requireNotNull(matchedAdapter.scrapeWithoutHtml(url, fetcher)) {
+                val draft = requireNotNull(MangaBakaAdapter.scrapeSeries(url, fetcher, mangaBakaOtherType)) {
                     "Could not load MangaBaka series"
                 }
                 resultTitle = draft.title

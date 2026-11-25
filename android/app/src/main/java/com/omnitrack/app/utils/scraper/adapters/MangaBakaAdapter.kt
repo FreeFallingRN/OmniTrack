@@ -37,7 +37,14 @@ object MangaBakaAdapter : MediaSourceAdapter {
     override fun canHandle(host: String, url: String): Boolean =
         host.lowercase() in listOf("mangabaka.org", "www.mangabaka.org", "mangabaka.dev", "dev.mangabaka.dev") && seriesId(url) != null
 
-    override suspend fun scrapeWithoutHtml(url: String, fetcher: HtmlFetchClient): ScrapedMediaDraft? {
+    override suspend fun scrapeWithoutHtml(url: String, fetcher: HtmlFetchClient): ScrapedMediaDraft? =
+        scrapeSeries(url, fetcher)
+
+    suspend fun scrapeSeries(
+        url: String,
+        fetcher: HtmlFetchClient,
+        otherType: MediaType? = null
+    ): ScrapedMediaDraft? {
         var id = seriesId(url) ?: return null
         fun text(obj: JsonObject, key: String): String? =
             (obj[key] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
@@ -106,6 +113,7 @@ object MangaBakaAdapter : MediaSourceAdapter {
             type = when (text(data, "type")?.lowercase()) {
                 "novel" -> MediaType.NOVEL
                 "manga", "manhwa", "manhua", "oel" -> MediaType.COMIC
+                "other" -> otherType ?: error("Choose whether this title is a novel or comic")
                 else -> error("Unsupported MangaBaka media type: ${text(data, "type")}")
             },
             creators = creators,
