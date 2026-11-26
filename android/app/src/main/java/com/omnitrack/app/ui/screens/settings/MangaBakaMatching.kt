@@ -8,6 +8,14 @@ import java.util.Locale
 private val subtitleSeparator = Regex("""\s*[:：]\s*|\s+[–—-]\s+""")
 private val titlePunctuation = Regex("""[^\p{L}\p{N}]+""")
 
+internal fun mangaBakaMatchesType(title: MangaBakaTitle, type: MediaType): Boolean =
+    when (title.series.type) {
+        "novel" -> type == MediaType.NOVEL
+        "manga", "manhwa", "manhua", "oel" -> type == MediaType.COMIC
+        "other" -> type == MediaType.NOVEL || type == MediaType.COMIC
+        else -> false
+    }
+
 private fun normalizedTitle(title: String): String =
     title.lowercase(Locale.ROOT).replace(titlePunctuation, " ").trim().replace(Regex("""\s+"""), " ")
 

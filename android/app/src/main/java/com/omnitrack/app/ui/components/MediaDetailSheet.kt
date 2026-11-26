@@ -91,7 +91,7 @@ fun MediaDetailSheet(
     var showShare by remember(entry.id) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val mangaBakaProgressLocked = mangaBakaLinked && entry.type != MediaType.NOVEL
+    val mangaBakaProgressLocked = mangaBakaLinked && entry.type == MediaType.COMIC
     val prefs = remember(context) { OmniTrackPreferences(context) }
     val linkKey = OmniTrackPreferenceKeys.moonReaderFileUri(entry.id)
     val moonReaderPackage = remember(context) { findMoonReaderPackage(context) }

@@ -9,6 +9,7 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import androidx.work.workDataOf
 import com.omnitrack.app.data.MangaBakaPreferences
 import com.omnitrack.app.data.MangaBakaProgressSync
 import com.omnitrack.app.data.MangaBakaService
@@ -26,15 +27,27 @@ class MangaBakaSyncWorker(context: Context, params: WorkerParameters) : Coroutin
             if (credentials.accessToken.isBlank() || credentials.userId.isBlank() ||
                 preferences.links(credentials.userId).isEmpty()
             ) {
-                Result.success()
+                Result.failure(workDataOf("skipped" to 1, "details" to "MangaBaka account or links are missing"))
             } else {
                 val database = AppDatabase.getInstance(applicationContext)
                 val repository = SeriesRepositoryImpl(database, database.mediaEntryDao(), database.progressHistoryDao(), preferences)
-                MangaBakaProgressSync(preferences, service, repository).syncMangaBakaProgress()
-                Result.success()
+                val outcome = MangaBakaProgressSync(preferences, service, repository).syncMangaBakaProgress()
+                val data = workDataOf(
+                    "updated" to outcome.updated,
+                    "skipped" to outcome.skipped.size,
+                    "errors" to outcome.errors.size,
+                    "details" to (outcome.skipped + outcome.errors).joinToString("; ").take(2000)
+                )
+                if (outcome.skipped.isNotEmpty() || outcome.errors.isNotEmpty()) {
+                    Log.w("MangaBakaSync", "Partial sync: ${data.getString("details")}")
+                    Result.failure(data)
+                } else Result.success(data)
             }
         } catch (e: CancellationException) {
             throw e
+        } catch (e: IllegalArgumentException) {
+            Log.e("MangaBakaSync", "Invalid MangaBaka sync state", e)
+            Result.failure(workDataOf("errors" to 1, "details" to (e.message ?: "Invalid sync state").take(2000)))
         } catch (e: Exception) {
             Log.e("MangaBakaSync", "Background sync failed", e)
             Result.retry()

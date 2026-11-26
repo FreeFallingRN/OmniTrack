@@ -3,6 +3,7 @@ package com.omnitrack.app.data.repository
 import android.util.Log
 import androidx.room.withTransaction
 import com.omnitrack.app.data.MangaBakaPreferences
+import com.omnitrack.app.data.MangaBakaProgressSync
 import com.omnitrack.app.data.SupabaseService
 import com.omnitrack.app.data.model.*
 import com.omnitrack.app.data.local.AppDatabase
@@ -166,10 +167,18 @@ class SeriesRepositoryImpl(
         request: UpdateEntryRequest,
         creators: List<Pair<String, String>>,
         alternativeTitles: List<String>
-    ) {
+    ): Unit = MangaBakaProgressSync.withLinkLock {
         var progressChanged = false
         mutateLibrary {
             val current = mediaEntryDao.getEntryById(id)
+            if (current != null && request.currentUnit < current.currentUnit) {
+                checkResetAllowed(current)
+                if (request.type == MediaType.COMIC.value && current.type != request.type) {
+                    check(!mangaBakaPreferences.isMangaBakaLinked(id)) {
+                        "Unlink the progress source before resetting ${current.title}"
+                    }
+                }
+            }
             check(current == null || current.seriesId == null || current.seriesAlternativeTitles != null) {
                 "Refresh the library before editing this entry so its aliases can be separated safely."
             }
@@ -192,7 +201,11 @@ class SeriesRepositoryImpl(
                 alternativeTitles = alternativeTitles
             )
         }
-        if (progressChanged) updateProgress(id, request.currentUnit, ProgressSource.EDITOR)
+        if (progressChanged) recordProgressInternal(
+            id, { current -> Pair(request.currentUnit, current?.userStatus) },
+            ProgressSource.EDITOR, blockReset = true
+        )
+        Unit
     }
 
     override suspend fun updateEntryStatus(id: String, status: String): Unit = mutateLibrary {
@@ -264,17 +277,27 @@ class SeriesRepositoryImpl(
     }
 
     // MangaBaka uploads first so a failed Supabase write can be retried without losing the delta.
+    private fun checkResetAllowed(current: MediaEntryEntity) {
+        val mangaBakaLocked = current.type == MediaType.COMIC.value &&
+            mangaBakaPreferences.isMangaBakaLinked(current.id)
+        check(!mangaBakaLocked && !mangaBakaPreferences.isMoonReaderLinked(current.id)) {
+            "Unlink the progress source before resetting ${current.title}"
+        }
+    }
+
     private suspend fun recordProgressInternal(
         id: String,
         computeTarget: (current: MediaEntryEntity?) -> Pair<Double, String?>?,
         source: ProgressSource,
-        uploadFirst: Boolean = false
+        uploadFirst: Boolean = false,
+        blockReset: Boolean = false
     ): Boolean {
         return progressMutex.withLock {
             val today = LocalDate.now().toString()
             val current = mediaEntryDao.getEntryById(id)
             val (nextUnit, targetStatus) = computeTarget(current) ?: return@withLock false
             checkNotNull(current) { "Entry $id no longer exists" }
+            if (blockReset && nextUnit < current.currentUnit) checkResetAllowed(current)
 
             var prevUnitForHistory = current.currentUnit
             val hasNetProgress = (nextUnit - prevUnitForHistory) > 0.0001
@@ -359,42 +382,66 @@ class SeriesRepositoryImpl(
         newProgress: Double,
         source: ProgressSource
     ) {
-        recordProgressInternal(
-            id = id,
-            computeTarget = { current -> Pair(newProgress, current?.userStatus) },
-            source = source
-        )
+        MangaBakaProgressSync.withLinkLock {
+            recordProgressInternal(
+                id = id,
+                computeTarget = { current -> Pair(newProgress, current?.userStatus) },
+                source = source,
+                blockReset = true
+            )
+        }
     }
 
     override suspend fun updateMoonReaderChapterIfHigher(id: String, newProgress: Double): Boolean =
         recordProgressInternal(
             id = id,
             computeTarget = { current ->
-                if (current != null &&
-                    (current.unitName.trim().equals("chapter", ignoreCase = true) ||
-                        current.unitName.trim().equals("chapters", ignoreCase = true)) &&
-                    newProgress > current.currentUnit
-                ) Pair(newProgress, current.userStatus) else null
+                checkNotNull(current) { "Linked entry $id no longer exists" }
+                check((current.type == MediaType.NOVEL.value || current.type == MediaType.COMIC.value) &&
+                    (current.unitName.trim().equals("chapter", true) ||
+                        current.unitName.trim().equals("chapters", true)) &&
+                    !(current.type == MediaType.COMIC.value && mangaBakaPreferences.isMangaBakaLinked(id))) {
+                    "${current.title} can no longer sync from Moon+ Reader"
+                }
+                if (newProgress > current.currentUnit) Pair(newProgress, current.userStatus) else null
             },
-            source = ProgressSource.DETAIL_SHEET
+            source = ProgressSource.IMPORT
         )
+
+    override suspend fun updateMoonReaderProgress(id: String, newProgress: Double, source: ProgressSource) {
+        recordProgressInternal(
+            id,
+            { current ->
+                check(current != null && (current.type == MediaType.NOVEL.value ||
+                    current.type == MediaType.COMIC.value)) { "Moon+ Reader requires a novel or comic" }
+                check(!(current.type == MediaType.COMIC.value && mangaBakaPreferences.isMangaBakaLinked(id))) {
+                    "Unlink MangaBaka before updating comic progress with Moon+ Reader"
+                }
+                Pair(newProgress, current.userStatus)
+            },
+            source,
+            blockReset = true
+        )
+    }
 
     override suspend fun updateMangaBakaChapterIfHigher(
         id: String, newProgress: Double, completed: Boolean, seriesStatus: String?
     ): Boolean = recordProgressInternal(
         id = id,
         computeTarget = { current ->
-            if (current != null &&
+            checkNotNull(current) { "Linked entry $id no longer exists" }
+            check(current.type == MediaType.COMIC.value &&
                 (current.unitName.trim().equals("chapter", true) ||
-                    current.unitName.trim().equals("chapters", true)) &&
-                newProgress > current.currentUnit
-            ) {
+                    current.unitName.trim().equals("chapters", true))) {
+                "${current.title} can no longer sync from MangaBaka"
+            }
+            if (newProgress > current.currentUnit) {
                 val shouldCompleteSeries = completed &&
                     seriesStatus?.trim()?.lowercase() in setOf("completed", "cancelled")
                 Pair(newProgress, if (shouldCompleteSeries) "completed" else current.userStatus)
             } else null
         },
-        source = ProgressSource.DETAIL_SHEET,
+        source = ProgressSource.IMPORT,
         uploadFirst = true
     )
 
@@ -403,37 +450,43 @@ class SeriesRepositoryImpl(
         delta: Double,
         source: ProgressSource
     ) {
-        recordProgressInternal(
-            id = id,
-            computeTarget = { current ->
-                val prev = current?.currentUnit ?: 0.0
-                val next = BigDecimal.valueOf(prev).add(BigDecimal.valueOf(delta))
-                    .max(BigDecimal.ZERO).toDouble()
-                val shouldAutoResume = delta > 0 &&
-                        (current?.userStatus == "paused" || current?.userStatus == "planning")
-                val statusToWrite = if (shouldAutoResume) "in_progress" else current?.userStatus
-                Pair(next, statusToWrite)
-            },
-            source = source
-        )
+        MangaBakaProgressSync.withLinkLock {
+            recordProgressInternal(
+                id = id,
+                computeTarget = { current ->
+                    val prev = current?.currentUnit ?: 0.0
+                    val next = BigDecimal.valueOf(prev).add(BigDecimal.valueOf(delta))
+                        .max(BigDecimal.ZERO).toDouble()
+                    val shouldAutoResume = delta > 0 &&
+                            (current?.userStatus == "paused" || current?.userStatus == "planning")
+                    val statusToWrite = if (shouldAutoResume) "in_progress" else current?.userStatus
+                    Pair(next, statusToWrite)
+                },
+                source = source,
+                blockReset = true
+            )
+        }
     }
 
-    override suspend fun deleteMediaEntry(id: String): Unit = progressMutex.withLock {
-        withContext(Dispatchers.IO) {
-            mangaBakaPreferences.unlinkEntry(id)
-        }
-        database.withTransaction {
-            mediaEntryDao.deleteEntryById(id)
-            progressHistoryDao.deleteHistoryForEntry(id)
-            database.pendingMutationDao().deleteForEntry(id)
-            database.pendingMutationDao().upsert(PendingMutation(id, "delete"))
-        }
-        try {
-            retryPendingMutations()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.e("SeriesRepository", "Failed to delete entry from Supabase", e)
+    override suspend fun deleteMediaEntry(id: String): Unit = MangaBakaProgressSync.withLinkLock {
+        progressMutex.withLock {
+            withContext(Dispatchers.IO) {
+                mangaBakaPreferences.unlinkEntry(id)
+                mangaBakaPreferences.unlinkMoonReader(id)
+            }
+            database.withTransaction {
+                mediaEntryDao.deleteEntryById(id)
+                progressHistoryDao.deleteHistoryForEntry(id)
+                database.pendingMutationDao().deleteForEntry(id)
+                database.pendingMutationDao().upsert(PendingMutation(id, "delete"))
+            }
+            try {
+                retryPendingMutations()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("SeriesRepository", "Failed to delete entry from Supabase", e)
+            }
         }
     }
 

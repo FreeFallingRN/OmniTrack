@@ -9,6 +9,7 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import androidx.work.workDataOf
 import com.omnitrack.app.data.MangaBakaPreferences
 import com.omnitrack.app.data.local.AppDatabase
 import com.omnitrack.app.data.repository.SeriesRepositoryImpl
@@ -26,15 +27,22 @@ class MoonReaderSyncWorker(context: Context, params: WorkerParameters) : Corouti
             database, database.mediaEntryDao(), database.progressHistoryDao(), MangaBakaPreferences(applicationContext)
         )
         try {
-            MoonReaderSync(applicationContext, repository).sync(manual = false) {
+            val outcome = MoonReaderSync(applicationContext, repository).sync(manual = false) {
                 Log.i("MoonReaderSync", it)
             }
-            Result.success()
+            val data = workDataOf(
+                "updated" to outcome.updated, "skipped" to outcome.skipped, "errors" to outcome.errors,
+                "details" to outcome.details.joinToString("; ").take(2000)
+            )
+            if (outcome.skipped > 0 || outcome.errors > 0) Result.failure(data) else Result.success(data)
         } catch (e: CancellationException) {
             throw e
         } catch (e: MoonReaderFolderAccessException) {
             Log.w("MoonReaderSync", "Background sync needs folder access", e)
-            Result.failure()
+            Result.failure(workDataOf("errors" to 1, "details" to (e.message ?: "Folder access expired")))
+        } catch (e: IllegalArgumentException) {
+            Log.e("MoonReaderSync", "Invalid Moon+ Reader sync state", e)
+            Result.failure(workDataOf("errors" to 1, "details" to (e.message ?: "Invalid sync state").take(2000)))
         } catch (e: Exception) {
             Log.e("MoonReaderSync", "Background sync failed", e)
             Result.retry()

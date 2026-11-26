@@ -118,7 +118,17 @@ class SeriesViewModel(
     }
 
     fun syncMangaBakaProgress(manual: Boolean = false) {
-        viewModelScope.launch { mangaBaka.sync(manual) }
+        viewModelScope.launch {
+            isRefreshing.first { !it }
+            mangaBaka.sync(manual)
+        }
+    }
+
+    fun syncAndMatchMangaBakaLibrary() {
+        viewModelScope.launch {
+            isRefreshing.first { !it }
+            mangaBaka.syncAndMatchLibrary()
+        }
     }
 
     fun addMangaBakaEntry(title: MangaBakaTitle, otherType: String? = null) {
@@ -308,7 +318,14 @@ class SeriesViewModel(
         source: ProgressSource = ProgressSource.DETAIL_SHEET
     ) {
         viewModelScope.launch {
-            repository.updateProgress(id, newProgress, source)
+            try {
+                repository.updateProgress(id, newProgress, source)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("SeriesViewModel", "Could not update progress", e)
+                Toast.makeText(appContext, e.message ?: "Could not update progress", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -352,8 +369,11 @@ class SeriesViewModel(
         viewModelScope.launch {
             try {
                 repository.incrementProgress(id, delta, source)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e("SeriesViewModel", "Could not update progress", e)
+                Toast.makeText(appContext, e.message ?: "Could not update progress", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -406,9 +426,9 @@ class SeriesViewModel(
     )
 
     fun refreshData() {
+        activeRefreshes++
+        _isRefreshing.value = true
         viewModelScope.launch {
-            activeRefreshes++
-            _isRefreshing.value = true
             try {
                 repository.fetchFromSupabase()
                 _refreshError.value = null

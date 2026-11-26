@@ -31,7 +31,14 @@ data class MoonReaderProgress(
     val lastModified: Long? = null
 )
 data class MoonReaderMatch(val entry: MediaEntry, val progress: MoonReaderProgress)
-data class MoonReaderScan(val matches: List<MoonReaderMatch>, val message: String, val hasProblems: Boolean)
+data class MoonReaderScan(
+    val matches: List<MoonReaderMatch>,
+    val message: String,
+    val skipped: Int,
+    val errors: Int
+) {
+    val hasProblems: Boolean get() = skipped > 0 || errors > 0
+}
 data class MoonReaderFile(val uri: String, val name: String, val lastModified: Long, val timestamp: Long)
 
 object MoonReaderImport {
@@ -114,6 +121,7 @@ object MoonReaderImport {
 
             var ambiguous = 0
             var unmatched = 0
+            val mappingProblems = mutableListOf<String>()
             val linkedCandidates = linkedFiles?.let { links ->
                 entries.mapNotNull { entry ->
                     val link = links[entry.id] ?: return@mapNotNull null
@@ -128,9 +136,17 @@ object MoonReaderImport {
                     } else emptyList()
                     val matching = if (exact.isNotEmpty()) exact else named
                     when (matching.size) {
-                        0 -> { unmatched++; null }
+                        0 -> {
+                            unmatched++
+                            mappingProblems.add("${entry.title}: linked file not found")
+                            null
+                        }
                         1 -> entry.id to matching.single()
-                        else -> { ambiguous++; null }
+                        else -> {
+                            ambiguous++
+                            mappingProblems.add("${entry.title}: multiple matching files")
+                            null
+                        }
                     }
                 }.toMap()
             }
@@ -167,6 +183,7 @@ object MoonReaderImport {
                 }.awaitAll()
             }
             problems += results.count { it.isEmpty() }
+            val unreadable = filesToRead.zip(results).filter { it.second.isEmpty() }.map { it.first.name }
             val found = results.flatten()
             val byTitle = entries.flatMap { entry ->
                 (listOf(entry.title) + entry.allAlternativeTitles).map { normalize(it) to entry }
@@ -198,8 +215,11 @@ object MoonReaderImport {
             MoonReaderScan(
                 matches,
                 "Found ${found.size} positions in ${filesToRead.size} files; $unmatched unmatched, " +
-                    "$ambiguous ambiguous, $problems unreadable or unsupported.",
-                unmatched > 0 || ambiguous > 0 || problems > 0
+                    "$ambiguous ambiguous, $problems unreadable or unsupported." +
+                    (mappingProblems + unreadable.map { "$it: unreadable or unsupported" })
+                        .take(10).joinToString(separator = "; ", prefix = " ").trimEnd(),
+                unmatched + ambiguous,
+                problems
             )
         }
 

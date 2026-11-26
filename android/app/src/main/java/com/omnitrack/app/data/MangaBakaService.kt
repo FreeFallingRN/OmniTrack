@@ -55,7 +55,19 @@ data class MangaBakaCredentials(
 class MangaBakaPreferences(context: Context) {
     private val file = AtomicFile(File(context.noBackupFilesDir, "mangabaka_credentials"))
     private val links = context.getSharedPreferences("mangabaka_links", Context.MODE_PRIVATE)
+    private val appPreferences = OmniTrackPreferences(context)
     private val json = Json { ignoreUnknownKeys = true }
+
+    fun isMoonReaderLinked(entryId: String): Boolean =
+        appPreferences.getString(OmniTrackPreferenceKeys.moonReaderFileUri(entryId)) != null ||
+            appPreferences.getString(OmniTrackPreferenceKeys.moonReaderFileName(entryId)) != null
+
+    fun unlinkMoonReader(entryId: String) = appPreferences.unlinkMoonReader(entryId)
+
+    fun isMangaBakaLinked(entryId: String): Boolean {
+        val credentials = read()
+        return credentials.userId.isNotBlank() && links(credentials.userId).values.any { it.entryId == entryId }
+    }
 
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }

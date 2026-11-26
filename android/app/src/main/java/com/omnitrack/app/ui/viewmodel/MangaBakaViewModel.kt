@@ -19,6 +19,7 @@ import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.repository.SeriesRepository
 import com.omnitrack.app.domain.repository.PartialMediaEntryCreateException
 import com.omnitrack.app.ui.screens.settings.findMangaBakaMatch
+import com.omnitrack.app.ui.screens.settings.mangaBakaMatchesType
 import com.omnitrack.app.utils.ImportedMediaDraft
 import com.omnitrack.app.utils.ScrapedMediaDraft
 import com.omnitrack.app.utils.scraper.ExternalMediaScraper
@@ -89,11 +90,11 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
     }
 
     suspend fun authorizationUrl(): String = mutex.withLock {
-        withContext(Dispatchers.IO) { service.authorizationUrl() }
+        MangaBakaProgressSync.withLinkLock { withContext(Dispatchers.IO) { service.authorizationUrl() } }
     }
 
     suspend fun completeAuthorization(uri: Uri) = operation {
-        credentials = service.completeAuthorization(uri)
+        credentials = MangaBakaProgressSync.withLinkLock { service.completeAuthorization(uri) }
         val links = withContext(Dispatchers.IO) { preferences.links(credentials.userId) }
         _state.value = _state.value.copy(
             username = credentials.username,
@@ -105,7 +106,7 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
     }
 
     suspend fun connectPersonalToken(token: String) = operation {
-        credentials = service.connectPersonalToken(token)
+        credentials = MangaBakaProgressSync.withLinkLock { service.connectPersonalToken(token) }
         val links = withContext(Dispatchers.IO) { preferences.links(credentials.userId) }
         _state.value = _state.value.copy(
             username = credentials.username,
@@ -138,7 +139,10 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
                 "considering", "plan_to_read" -> "planning"
                 else -> error("Unsupported MangaBaka reading state: ${remote.state}")
             }
-            imported.copy(draft = imported.draft.copy(userStatus = status, currentUnit = progress))
+            imported.copy(draft = imported.draft.copy(
+                userStatus = status,
+                currentUnit = if (imported.draft.type == MediaType.NOVEL) imported.draft.currentUnit else progress
+            ))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -148,6 +152,7 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
     }
 
     suspend fun linkImportedSeries(seriesId: Long, entryId: String, unitName: String, sourceUrl: String) = mutex.withLock {
+      MangaBakaProgressSync.withLinkLock {
         credentials = withContext(Dispatchers.IO) { preferences.read() }
         check(credentials.accessToken.isNotBlank() && credentials.userId.isNotBlank()) {
             "Connect MangaBaka in Settings to link this entry"
@@ -157,8 +162,15 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
         }
         withContext(Dispatchers.IO) { repository.fetchFromSupabase() }
         val entries = repository.getMediaEntriesStream().first()
-        check(entries.any { it.id == entryId }) {
+        val entry = entries.firstOrNull { it.id == entryId }
+        check(entry != null) {
             "The new entry could not be loaded for MangaBaka linking"
+        }
+        check(entry.type == MediaType.NOVEL || entry.type == MediaType.COMIC) {
+            "MangaBaka links require a novel or comic"
+        }
+        check(entry.unitName.trim().equals("chapter", true) || entry.unitName.trim().equals("chapters", true)) {
+            "MangaBaka links require chapter-based entries"
         }
         val links = withContext(Dispatchers.IO) { preferences.links(credentials.userId) }
         val existingLink = links[seriesId]
@@ -166,8 +178,6 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
             check(entries.none { it.id == existingLink.entryId }) {
                 "This MangaBaka title is already linked to another entry"
             }
-            withContext(Dispatchers.IO) { preferences.unlink(credentials.userId, seriesId) }
-            _state.update { it.copy(links = it.links - seriesId) }
         }
         check(links.none { (id, link) -> id != seriesId && link.entryId == entryId }) {
             "This entry is already linked to a MangaBaka title"
@@ -175,7 +185,15 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
         val remote = service.libraryEntryOrAdd(credentials, seriesId)
         check(remote.seriesId == seriesId) { "MangaBaka series ID does not match" }
         withContext(Dispatchers.IO) { repository.updateMangaBakaUrl(entryId, sourceUrl) }
+        check(preferences.read() == credentials && preferences.links(credentials.userId) == links) {
+            "MangaBaka account or links changed; try again"
+        }
+        val latest = repository.getMediaEntriesStream().first().firstOrNull { it.id == entryId }
+        check(latest != null && latest.type == entry.type && latest.unitName == entry.unitName) {
+            "The entry changed during MangaBaka linking; try again"
+        }
         saveLink(seriesId, entryId, existingLink?.takeIf { it.entryId == entryId }?.offset ?: 0.0)
+      }
     }
 
     suspend fun fetch() = operation {
@@ -227,11 +245,7 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
                 ) {
                     skipped++
                 } else {
-                    if (existing != null) {
-                        withContext(Dispatchers.IO) { preferences.unlink(credentials.userId, title.series.id) }
-                    }
-                    _state.update { it.copy(links = currentLinks - title.series.id) }
-                    linkEntry(title, entryId, 0.0)
+                    linkEntry(title, entryId, 0.0, replaceMissing = true)
                     linked++
                 }
             } catch (e: CancellationException) {
@@ -257,11 +271,14 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
         val now = SystemClock.elapsedRealtime()
         if (!manual && lastSyncAttempt?.let { now - it < 60_000L } == true) return@operation
         lastSyncAttempt = now
-        val (titles, updated) = progressSync.syncMangaBakaProgress()
+        val result = progressSync.syncMangaBakaProgress()
+        val details = (result.skipped + result.errors).joinToString("; ")
         _state.value = _state.value.copy(
-            titles = titles,
-            message = if (updated == 0) "MangaBaka progress is up to date."
-                else "Synced progress for $updated MangaBaka ${if (updated == 1) "title" else "titles"}."
+            titles = result.titles,
+            message = if (result.updated == 0 && result.skipped.isEmpty() && result.errors.isEmpty())
+                "MangaBaka progress is up to date."
+            else "MangaBaka: ${result.updated} updated, ${result.skipped.size} skipped, " +
+                "${result.errors.size} errors.${if (details.isEmpty()) "" else " $details"}"
         )
     }
 
@@ -336,7 +353,7 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
             normalizedUrl = seriesUrl,
             draft = imported.draft.copy(
                 userStatus = status,
-                currentUnit = progress,
+                currentUnit = if (imported.draft.type == MediaType.NOVEL) imported.draft.currentUnit else progress,
                 totalChapters = imported.draft.totalChapters ?: title.series.totalChapters
             )
         )
@@ -456,12 +473,18 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
             throw IllegalStateException("Entry may have been created; check the library before retrying: ${e.message}", e)
         }
         try {
+          MangaBakaProgressSync.withLinkLock {
             check(preferences.read() == credentials &&
                 !preferences.links(credentials.userId).containsKey(title.series.id)) {
                 "MangaBaka account or link changed"
             }
             repository.updateMangaBakaUrl(created.id, draft.sourceUrl)
+            check(preferences.read() == credentials &&
+                !preferences.links(credentials.userId).containsKey(title.series.id)) {
+                "MangaBaka account or link changed"
+            }
             saveLink(title.series.id, created.id, 0.0)
+          }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -510,31 +533,52 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
         }
     }
 
-    private suspend fun linkEntry(title: MangaBakaTitle, entryId: String, offset: Double): String {
+    private suspend fun linkEntry(
+        title: MangaBakaTitle, entryId: String, offset: Double, replaceMissing: Boolean = false
+    ): String = MangaBakaProgressSync.withLinkLock {
         check(title.entry.seriesId == title.series.id) { "MangaBaka series ID does not match" }
         check(offset.isFinite()) { "Enter a valid chapter offset" }
-        check(_state.value.links[title.series.id] == null) { "This MangaBaka title is already linked" }
+        check(preferences.read() == credentials && credentials.userId.isNotBlank() &&
+            credentials.accessToken.isNotBlank()) { "MangaBaka account changed; reconnect and try again" }
+        val links = preferences.links(credentials.userId)
         val entries = repository.getMediaEntriesStream().first()
+        val existing = links[title.series.id]
+        check(existing == null || (replaceMissing && entries.none { it.id == existing.entryId })) {
+            "This MangaBaka title is already linked"
+        }
         val entry = entries.firstOrNull { it.id == entryId } ?: error("Entry no longer exists")
+        check(mangaBakaMatchesType(title, entry.type)) {
+            "Choose a matching novel or comic"
+        }
         check(entry.unitName.trim().equals("chapter", true) || entry.unitName.trim().equals("chapters", true)) {
             "Choose an entry that tracks chapters"
         }
-        check(_state.value.links.values.none { it.entryId == entryId }) {
+        check(links.values.none { it.entryId == entryId }) {
             "This entry is already linked to a MangaBaka title"
         }
         withContext(Dispatchers.IO) { repository.updateMangaBakaUrl(entryId, mangaBakaSeriesUrl(title)) }
         try {
+            check(preferences.read() == credentials && preferences.links(credentials.userId) == links) {
+                "MangaBaka account or links changed; try again"
+            }
+            val latest = repository.getMediaEntriesStream().first().firstOrNull { it.id == entryId }
+            check(latest != null && latest.type == entry.type && latest.unitName == entry.unitName) {
+                "The entry changed during MangaBaka linking; try again"
+            }
             saveLink(title.series.id, entryId, offset)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             throw IllegalStateException("Updated ${entry.title}'s URL, but its MangaBaka link could not be saved", e)
         }
-        return entry.title
+        entry.title
     }
 
     suspend fun unlink(title: MangaBakaTitle) = operation {
-        withContext(Dispatchers.IO) { preferences.unlink(credentials.userId, title.series.id) }
+        MangaBakaProgressSync.withLinkLock {
+            check(preferences.read() == credentials) { "MangaBaka account changed; try again" }
+            withContext(Dispatchers.IO) { preferences.unlink(credentials.userId, title.series.id) }
+        }
         _state.value = _state.value.copy(
             links = _state.value.links - title.series.id,
             message = "Unlinked ${title.title}."

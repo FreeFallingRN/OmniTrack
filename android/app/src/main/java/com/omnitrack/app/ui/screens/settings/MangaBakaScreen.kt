@@ -190,7 +190,7 @@ fun MangaBakaScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Button(enabled = state.connected && !state.busy, onClick = {
-                scope.launch { viewModel.mangaBaka.syncAndMatchLibrary() }
+                viewModel.syncAndMatchMangaBakaLibrary()
             }) { Text("Sync & match library") }
             Button(enabled = state.connected && state.links.isNotEmpty() && !state.busy, onClick = {
                 viewModel.syncMangaBakaProgress(manual = true)
@@ -388,6 +388,7 @@ private fun LinkMangaBakaDialog(
     val offset = offsetText.toDoubleOrNull()?.takeIf { it.isFinite() }
     val available = entries.filter {
         it.id !in linkedIds &&
+            mangaBakaMatchesType(title, it.type) &&
             (it.unitName.trim().equals("chapter", true) || it.unitName.trim().equals("chapters", true)) &&
             it.title.contains(search, true)
     }
@@ -405,7 +406,7 @@ private fun LinkMangaBakaDialog(
                     isError = offset == null, singleLine = true, modifier = Modifier.fillMaxWidth()
                 )
                 Text(
-                    "The offset is added to MangaBaka's chapter on sync; linking does not change progress.",
+                    "For comics, the offset is added to MangaBaka's chapter on sync. Novel progress is not synced. Linking does not change progress.",
                     style = MaterialTheme.typography.bodySmall
                 )
                 LazyColumn(Modifier.weight(1f).fillMaxWidth()) {

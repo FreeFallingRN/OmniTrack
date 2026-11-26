@@ -220,14 +220,17 @@ fun MoonReaderSettingsScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
                 values = matches.associate { match ->
                     val key = OmniTrackPreferenceKeys.moonReaderChapterOffset(match.entry.id)
                     val chapter = match.progress.spineChapterIndex.toDouble() + 1.0
-                    val offset = if (prefs.contains(key)) {
+                    val calibrated = if (prefs.contains(key)) {
                         Double.fromBits(prefs.getLong(key)).also {
                             check(it.isFinite()) { "Invalid saved chapter offset for ${match.entry.title}" }
+                        }.let { offset ->
+                            java.math.BigDecimal.valueOf(offset)
+                                .add(java.math.BigDecimal.valueOf(chapter)).toPlainString()
                         }
-                    } else if (match.entry.currentUnit > 0.0) {
-                        (match.entry.currentUnit - chapter).coerceAtLeast(0.0)
-                    } else 0.0
-                    match.entry.id to (offset + chapter).toString()
+                    } else {
+                        match.entry.currentUnit.toString()
+                    }
+                    match.entry.id to calibrated
                 }
                 previewFolder = uri.toString()
                 preview = result.copy(matches = matches)

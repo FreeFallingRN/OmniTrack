@@ -82,6 +82,27 @@ class OmniTrackPreferences(context: Context) {
 
     fun contains(key: PreferenceKey<*>): Boolean = preferences.contains(key.name)
 
+    fun moonReaderLinkedEntryIds(): Set<String> =
+        preferences.all.keys.mapNotNull { name ->
+            when {
+                name.startsWith("moon_reader_file_uri_") -> name.removePrefix("moon_reader_file_uri_")
+                name.startsWith("moon_reader_file_name_") -> name.removePrefix("moon_reader_file_name_")
+                else -> null
+            }
+        }.toSet()
+
+    fun unlinkMoonReader(entryId: String) {
+        check(edit()
+            .remove(OmniTrackPreferenceKeys.moonReaderFileUri(entryId))
+            .remove(OmniTrackPreferenceKeys.moonReaderFileName(entryId))
+            .remove(OmniTrackPreferenceKeys.moonReaderChapterOffset(entryId))
+            .remove(OmniTrackPreferenceKeys.moonReaderSpineOffset(entryId))
+            .remove(OmniTrackPreferenceKeys.moonReaderTimestamp(entryId))
+            .remove(OmniTrackPreferenceKeys.moonReaderSpine(entryId))
+            .remove(OmniTrackPreferenceKeys.moonReaderLastModified(entryId))
+            .commit()) { "Could not unlink Moon+ Reader book" }
+    }
+
     fun edit(): Editor = Editor(preferences.edit())
 
     fun addListener(onChange: (PreferenceChange) -> Unit): Listener {
