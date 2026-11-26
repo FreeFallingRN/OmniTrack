@@ -250,11 +250,12 @@ fun MediaEntryEditorSheet(
     fun normalizeTitleKey(raw: String): String =
         raw.lowercase()
             .replace(Regex("""@\s*comic\b|\((?:novel|manga|comic|webtoon|light novel|ln|wn)\)|:\s*season\s*\d+|season\s*\d+"""), "")
-            .replace(Regex("[^a-z0-9]"), "")
+            .filter { it.isLetterOrDigit() }
 
     fun isSimilarTitle(a: String, b: String): Boolean {
-        if (a.length < 4 || b.length < 4) return false
+        if (a.isEmpty() || b.isEmpty()) return false
         if (a == b) return true
+        if (a.length < 4 || b.length < 4) return false
         val shorter = if (a.length <= b.length) a else b
         val longer = if (a.length > b.length) a else b
         // Prefix / substring containment when the shared core is substantial (>= 8 chars and >= 65% of longer)
@@ -264,29 +265,43 @@ fun MediaEntryEditorSheet(
         return false
     }
 
-    val duplicateMatch = remember(title, altTitles, newAltTitle, sourceUrl, type, entries, existing?.id) {
-        if (existing != null) return@remember null
+    val similarMatches = remember(title, altTitles, newAltTitle, sourceUrl, type, entries, existing?.id) {
         val cleanUrl = sourceUrl.trim().trimEnd('/').lowercase()
         val candidateKeys = (listOf(title, newAltTitle) + altTitles)
             .map(::normalizeTitleKey)
-            .filter { it.length >= 4 }
+            .filter { it.isNotEmpty() }
             .distinct()
 
-        entries.firstOrNull { candidate ->
+        entries.filter { it.type == type && it.id != existing?.id }.mapNotNull { candidate ->
             val urlMatch = cleanUrl.isNotBlank() &&
                     !candidate.sourceUrl.isNullOrBlank() &&
                     candidate.sourceUrl.trim().trimEnd('/').lowercase() == cleanUrl
 
-            val existingKeys = (listOf(candidate.title) + candidate.alternativeTitles + listOfNotNull(candidate.seriesTitle))
+            val existingKeys = (listOf(candidate.title) + candidate.alternativeTitles)
                 .map(::normalizeTitleKey)
-                .filter { it.length >= 4 }
+                .filter { it.isNotEmpty() }
 
             val titleMatch = existingKeys.any { ex -> candidateKeys.any { cand -> isSimilarTitle(ex, cand) } }
-            urlMatch || titleMatch
+            val seriesMatch = candidate.seriesTitle?.let(::normalizeTitleKey)
+                ?.let { seriesKey -> candidateKeys.any { isSimilarTitle(seriesKey, it) } } == true
+            if (urlMatch || titleMatch || seriesMatch) candidate to (urlMatch || titleMatch) else null
         }
     }
     var mergeTargetEntry by remember(draftKey) { mutableStateOf<MediaEntry?>(null) }
     var groupWithEntry by remember(draftKey) { mutableStateOf<MediaEntry?>(null) }
+    var previousSeriesId by remember(draftKey) { mutableStateOf<String?>(null) }
+    var previousCreateSeries by remember(draftKey) { mutableStateOf(false) }
+    var previousNewSeriesTitle by remember(draftKey) { mutableStateOf("") }
+
+    fun clearMatchSelection() {
+        if (groupWithEntry != null) {
+            seriesId = previousSeriesId
+            createSeries = previousCreateSeries
+            newSeriesTitle = previousNewSeriesTitle
+        }
+        mergeTargetEntry = null
+        groupWithEntry = null
+    }
 
     val targetEntryId = existing?.id ?: mergeTargetEntry?.id
     val position = sequence.toDoubleOrNull()?.takeIf { it.isFinite() }?.let {
@@ -296,6 +311,13 @@ fun MediaEntryEditorSheet(
         entries.firstOrNull { it.id == selected.id && it.seriesId == null }
     }?.takeIf { seriesId != null || createSeries }
     val groupedPosition = groupedEntry?.let { it.sequenceNumber ?: 1.0 }
+    val sameSeriesTitleConflict = if (existing == null && mergeTargetEntry == null && title.isNotBlank()) {
+        entries.firstOrNull {
+            it.type == type && it.title.trim().equals(title.trim(), ignoreCase = true) &&
+                ((seriesId != null && it.seriesId == seriesId) ||
+                    (groupWithEntry?.id == it.id && it.seriesId == null && createSeries))
+        }
+    } else null
     val positionConflict = if (seriesId != null && position != null) {
         entries.firstOrNull {
             it.seriesId == seriesId && it.id != targetEntryId && it.sequenceNumber == position
@@ -346,12 +368,17 @@ fun MediaEntryEditorSheet(
         val missingNewSeriesTitle = createSeries && newSeriesTitle.isBlank()
         if (hasIncompleteDraft) {
             error = "Please enter a creator name or choose an existing creator."
-        } else if (title.isBlank() || missingNewSeriesTitle || validCreators.isEmpty() ||
-            (platformId == null && (!createPlatform || newPlatformName.isBlank()))
+        } else if (mergeTargetEntry != null && entries.none { it.id == mergeTargetEntry?.id && it.type == type }) {
+            error = "The selected merge target is no longer available for this media type."
+        } else if (groupWithEntry != null && entries.none { it.id == groupWithEntry?.id && it.type == type }) {
+            error = "The selected series entry is no longer available for this media type."
+        } else if (title.isBlank() || (mergeTargetEntry == null && missingNewSeriesTitle) ||
+            (validCreators.isEmpty() && mergeTargetEntry?.creators.isNullOrEmpty() && mergeTargetEntry?.authors.isNullOrEmpty()) ||
+            (mergeTargetEntry?.platformId == null && platformId == null && (!createPlatform || newPlatformName.isBlank()))
         ) {
             error = if (missingNewSeriesTitle) "Please enter a name for the new series or clear it."
                 else "Title, at least one creator, and platform are required."
-        } else if (positionError != null) {
+        } else if (mergeTargetEntry == null && positionError != null) {
             showSeriesDetails = true
             error = positionError
         } else {
@@ -421,8 +448,7 @@ fun MediaEntryEditorSheet(
             contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 36.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            if (duplicateMatch != null && mergeTargetEntry == null && groupWithEntry == null) {
-                val match = duplicateMatch
+            if (similarMatches.isNotEmpty() || mergeTargetEntry != null || groupWithEntry != null) {
                 item {
                     Surface(
                         color = MaterialTheme.colorScheme.tertiaryContainer,
@@ -434,57 +460,84 @@ fun MediaEntryEditorSheet(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
-                                text = "Similar entry already in library",
+                                text = "Similar titles in your library",
                                 style = MaterialTheme.typography.titleSmall,
                                 color = MaterialTheme.colorScheme.onTertiaryContainer
                             )
-                            Text(
-                                text = "\"${match.title}\" (${match.type.singularLabel} • ${match.userStatus.label} • ${match.currentUnit} ${match.unitName})",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer
-                            )
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                FilterChip(
-                                    selected = false,
-                                    onClick = {
-                                        mergeTargetEntry = match
-                                        groupWithEntry = null
-                                        val currentParsed = currentUnit.toDoubleOrNull() ?: 0.0
-                                        if (match.currentUnit > currentParsed) {
-                                            currentUnit = match.currentUnit.toString()
-                                        }
-                                        if (userStatus == UserStatus.PLANNING.value && match.userStatus != UserStatus.PLANNING) {
-                                            userStatus = match.userStatus.value
-                                        }
-                                        altTitles = (altTitles + match.alternativeTitles + listOf(match.title))
-                                            .filter { !it.equals(title.trim(), ignoreCase = true) }
-                                            .distinctBy { it.lowercase() }
-                                    },
-                                    label = { Text("Merge into existing") }
+                            if (existing == null) {
+                                Text(
+                                    "Choose an entry or keep none selected. Merge preserves the existing entry's main title and saved fields.",
+                                    style = MaterialTheme.typography.bodySmall
                                 )
                                 FilterChip(
-                                    selected = false,
-                                    onClick = {
-                                        groupWithEntry = match
-                                        mergeTargetEntry = null
-                                        showSeriesDetails = true
-                                        if (match.seriesId != null) {
-                                            seriesId = match.seriesId
-                                            createSeries = false
-                                        } else {
-                                            seriesId = null
-                                            createSeries = true
-                                            newSeriesTitle = match.title
-                                        }
-                                    },
-                                    label = { Text("Same series") }
+                                    selected = mergeTargetEntry == null && groupWithEntry == null,
+                                    onClick = ::clearMatchSelection,
+                                    label = { Text("None") }
                                 )
+                            }
+                            mergeTargetEntry?.let {
+                                Text("Merging into \"${it.title}\" (${it.id}).", style = MaterialTheme.typography.bodySmall)
+                            }
+                            similarMatches.forEach { (match, entryMatch) ->
+                                Text(
+                                    text = "\"${match.title}\" (${match.type.singularLabel} • ${match.userStatus.label} • ${match.currentUnit} ${match.unitName})" +
+                                        (match.seriesTitle?.let { " • Series: $it" } ?: "") +
+                                        (match.platform?.let { " • Platform: $it" } ?: "") +
+                                        " • ID: ${match.id}" +
+                                        if (entryMatch) "" else " • Series title match only",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                                )
+                                if (existing == null) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        if (entryMatch) {
+                                            FilterChip(
+                                                selected = mergeTargetEntry?.id == match.id,
+                                                onClick = {
+                                                    clearMatchSelection()
+                                                    mergeTargetEntry = match
+                                                },
+                                                label = { Text("Merge") }
+                                            )
+                                        }
+                                        FilterChip(
+                                            selected = groupWithEntry?.id == match.id,
+                                            onClick = {
+                                                clearMatchSelection()
+                                                previousSeriesId = seriesId
+                                                previousCreateSeries = createSeries
+                                                previousNewSeriesTitle = newSeriesTitle
+                                                groupWithEntry = match
+                                                showSeriesDetails = true
+                                                if (match.seriesId != null) {
+                                                    seriesId = match.seriesId
+                                                    createSeries = false
+                                                } else {
+                                                    seriesId = null
+                                                    createSeries = true
+                                                    newSeriesTitle = match.title
+                                                }
+                                            },
+                                            label = { Text("Same series") }
+                                        )
+                                    }
+                                }
+                            }
+                            groupWithEntry?.let {
+                                Text("A new entry will be added to the series, not merged into \"${it.title}\".",
+                                    style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
+                }
+            }
+            sameSeriesTitleConflict?.let { conflict ->
+                item {
+                    Text(
+                        "Warning: \"${conflict.title}\" already has this exact main title in this series (${conflict.type.singularLabel}). Saving adds another entry.",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
             }
             item {
@@ -504,7 +557,10 @@ fun MediaEntryEditorSheet(
                             MediaType.entries.forEachIndexed { index, option ->
                                 SegmentedButton(
                                     selected = type == option,
-                                    onClick = { type = option },
+                                    onClick = {
+                                        if (type != option) clearMatchSelection()
+                                        type = option
+                                    },
                                     shape = SegmentedButtonDefaults.itemShape(index, MediaType.entries.size),
                                     icon = {},
                                     contentPadding = PaddingValues(horizontal = 2.dp)
@@ -633,14 +689,20 @@ fun MediaEntryEditorSheet(
                 seriesId = seriesId,
                 seriesTitle = existing?.seriesTitle?.takeIf { existing.seriesId == seriesId },
                 createSeries = createSeries,
-                onSelectSeries = { seriesId = it.id; createSeries = false },
+                onSelectSeries = {
+                    if (groupWithEntry != null) clearMatchSelection()
+                    seriesId = it.id
+                    createSeries = false
+                },
                 onClearSeries = {
+                    if (groupWithEntry != null) clearMatchSelection()
                     seriesId = null
                     createSeries = false
                     newSeriesTitle = ""
                     sequence = ""
                 },
                 onAddSeries = {
+                    if (groupWithEntry != null) clearMatchSelection()
                     createSeries = true
                     seriesId = null
                     if (newSeriesTitle.isBlank()) newSeriesTitle = title

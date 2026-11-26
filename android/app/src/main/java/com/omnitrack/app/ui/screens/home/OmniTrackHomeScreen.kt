@@ -69,6 +69,7 @@ import com.omnitrack.app.data.model.CreateEntryRequest
 import com.omnitrack.app.data.model.CreatePlatformRequest
 import com.omnitrack.app.data.model.CreateSeriesRequest
 import com.omnitrack.app.data.model.UpdateEntryRequest
+import com.omnitrack.app.domain.model.EntryCreator
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.model.ProgressSource
@@ -484,7 +485,43 @@ fun OmniTrackHomeScreen(
                         ?.takeIf { mangaBakaSeriesId(it) != null } ?: importedUrl
                     refreshScope.launch {
                         try {
+                            val mergeTarget = form.mergeIntoEntryId?.let { id ->
+                                check(editorEntry == null) { "Cannot merge while editing an existing entry." }
+                                checkNotNull(mediaEntries.firstOrNull { it.id == id && it.type == form.type }) {
+                                    "The selected merge target is no longer available for this media type."
+                                }
+                            }
+                            val groupedMatch = form.linkExistingEntryToSeriesId?.let { id ->
+                                check(mergeTarget == null && editorEntry == null) { "Cannot add this entry to a series." }
+                                val match = checkNotNull(mediaEntries.firstOrNull { it.id == id && it.type == form.type }) {
+                                    "The selected series entry is no longer available for this media type."
+                                }
+                                check(match.seriesId == null || match.seriesId == form.seriesId) {
+                                    "The selected entry's series changed. Please select it again."
+                                }
+                                match
+                            }
+                            val authors = if (mergeTarget != null || (groupedMatch != null && groupedMatch.seriesId == null)) {
+                                viewModel.getAuthors()
+                            } else emptyList()
+                            val knownAuthors = authors.associate { it.name.trim().lowercase() to it.id }.toMutableMap()
+                            val authorNames = authors.associate { it.id to it.name.trim().lowercase() }.toMutableMap()
+
+                            fun savedCreators(entry: MediaEntry): List<Pair<String, String>> {
+                                val creators = entry.creators.ifEmpty {
+                                    entry.authors.map { EntryCreator(name = it) }
+                                }
+                                return creators.map { creator ->
+                                    val id = creator.id ?: knownAuthors[creator.name.trim().lowercase()]
+                                    checkNotNull(id) { "Could not resolve saved creator \"${creator.name}\"." }
+                                    authorNames[id] = creator.name.trim().lowercase()
+                                    id to creator.role
+                                }
+                            }
+                            val existingCreators = mergeTarget?.let(::savedCreators).orEmpty()
+                            val groupedCreators = groupedMatch?.takeIf { it.seriesId == null }?.let(::savedCreators).orEmpty()
                             val resolvedSeriesId: String? = when {
+                                mergeTarget != null -> mergeTarget.seriesId
                                 form.seriesId != null -> form.seriesId
                                 !form.newSeries?.title.isNullOrBlank() -> {
                                     viewModel.createSeries(
@@ -501,9 +538,10 @@ fun OmniTrackHomeScreen(
                                     val id = if (row.createNew && row.newAuthorName.isNotBlank()) {
                                         val name = row.newAuthorName.trim()
                                         val key = name.lowercase()
-                                        val existingId = if (importedMangaBakaId != null) importedCreatorIds[key] else null
+                                        val existingId = knownAuthors[key] ?: importedCreatorIds[key]
                                         existingId ?: viewModel.createAuthor(name).id.also {
-                                            if (importedMangaBakaId != null) importedCreatorIds[key] = it
+                                            importedCreatorIds[key] = it
+                                            authorNames[it] = key
                                         }
                                     } else {
                                         row.authorId
@@ -512,7 +550,7 @@ fun OmniTrackHomeScreen(
                                 }
 
                             val resolvedPlatformId =
-                                form.platformId ?: viewModel.createPlatform(
+                                mergeTarget?.platformId ?: form.platformId ?: viewModel.createPlatform(
                                     CreatePlatformRequest(
                                         name = form.newPlatform!!.name,
                                         websiteUrl = form.newPlatform.websiteUrl,
@@ -521,8 +559,8 @@ fun OmniTrackHomeScreen(
                                 ).id
 
                             // 1. If "Same series" was selected on a standalone match, link that existing entry to the series too
-                            form.linkExistingEntryToSeriesId?.let { existingId ->
-                                val existingMatch = mediaEntries.firstOrNull { it.id == existingId }
+                            form.linkExistingEntryToSeriesId?.let {
+                                val existingMatch = groupedMatch
                                 if (existingMatch != null && existingMatch.seriesId == null && resolvedSeriesId != null) {
                                     viewModel.updateMediaEntry(
                                         id = existingMatch.id,
@@ -540,14 +578,14 @@ fun OmniTrackHomeScreen(
                                             unitName = existingMatch.unitName,
                                             isCanon = existingMatch.isCanon
                                         ),
-                                        creators = existingMatch.creators.mapNotNull { c -> c.id?.let { it to c.role } },
+                                        creators = groupedCreators,
                                         alternativeTitles = existingMatch.alternativeTitles
                                     )
                                 }
                             }
 
                             // 2. Determine target ID for create vs merge/edit
-                            val targetUpdateId = editorEntry?.id ?: form.mergeIntoEntryId
+                            val targetUpdateId = editorEntry?.id ?: mergeTarget?.id
                             if (targetUpdateId == null) {
                                 val created = viewModel.createMediaEntry(
                                     CreateEntryRequest(
@@ -573,30 +611,37 @@ fun OmniTrackHomeScreen(
                                     )
                                 }
                             } else {
-                                // Update the existing entry or merged target with all new fields & creators
+                                val mergedAliases = mergeTarget?.let { target ->
+                                    (target.alternativeTitles + form.title + form.alternativeTitles)
+                                        .map { it.trim() }
+                                        .filter { it.isNotBlank() && !it.equals(target.title.trim(), ignoreCase = true) }
+                                        .distinctBy { it.lowercase() }
+                                }
                                 viewModel.updateMediaEntry(
                                     id = targetUpdateId,
                                     request = UpdateEntryRequest(
-                                        title = form.title,
-                                        type = form.type.value,
+                                        title = mergeTarget?.title ?: form.title,
+                                        type = mergeTarget?.type?.value ?: form.type.value,
                                         seriesId = resolvedSeriesId,
                                         platformId = resolvedPlatformId,
-                                        coverUrl = form.coverUrl,
-                                        sourceUrl = form.sourceUrl,
-                                        userStatus = form.userStatus,
-                                        publishingStatus = form.publishingStatus,
-                                        sequenceNumber = form.sequenceNumber,
-                                        currentUnit = form.currentUnit,
-                                        unitName = form.unitName,
-                                        isCanon = form.isCanon
+                                        coverUrl = mergeTarget?.coverUrl?.takeIf { it.isNotBlank() } ?: form.coverUrl,
+                                        sourceUrl = mergeTarget?.sourceUrl?.takeIf { it.isNotBlank() } ?: form.sourceUrl,
+                                        userStatus = mergeTarget?.userStatus?.value ?: form.userStatus,
+                                        publishingStatus = mergeTarget?.publishingStatus ?: form.publishingStatus,
+                                        sequenceNumber = if (mergeTarget != null) mergeTarget.sequenceNumber else form.sequenceNumber,
+                                        currentUnit = mergeTarget?.currentUnit ?: form.currentUnit,
+                                        unitName = mergeTarget?.unitName ?: form.unitName,
+                                        isCanon = mergeTarget?.isCanon ?: form.isCanon
                                     ),
-                                    creators = resolvedCreators,
-                                    alternativeTitles = form.alternativeTitles
+                                    creators = (existingCreators + resolvedCreators).distinctBy { (id, role) ->
+                                        (authorNames[id] ?: id) to role.trim().lowercase().ifBlank { "author" }
+                                    },
+                                    alternativeTitles = mergedAliases ?: form.alternativeTitles
                                 )
 
                                 if (importedMangaBakaId != null && mangaBakaLinkUrl != null) {
                                     viewModel.linkImportedMangaBakaEntry(
-                                        importedMangaBakaId, targetUpdateId, form.unitName, mangaBakaLinkUrl
+                                        importedMangaBakaId, targetUpdateId, mergeTarget?.unitName ?: form.unitName, mangaBakaLinkUrl
                                     )
                                 }
                             }
