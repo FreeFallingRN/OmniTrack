@@ -283,7 +283,7 @@ fun MediaDetailSheet(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            DetailStatusPill(entry.userStatus.label)
+                            DetailStatusPill(entry.publishingStatus.toDisplayLabel())
                             if (!entry.isCanon) {
                                 Text(
                                     text = "Non-canon",
