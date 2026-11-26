@@ -75,6 +75,7 @@ class SeriesViewModel(
     val moonReaderMessages = _moonReaderMessages.asSharedFlow()
     private var lastMoonReaderCheck: Long? = null
     private var moonReaderScheduleJob: Job? = null
+    private var mangaBakaBatchJob: Job? = null
     private val moonReaderPrefsListener = moonReaderPrefs.addListener { change ->
         if (change == PreferenceChange.ALL ||
             change == PreferenceChange.MOON_READER_FOLDER ||
@@ -124,8 +125,17 @@ class SeriesViewModel(
         viewModelScope.launch { mangaBaka.add(title, otherType) }
     }
 
+    fun batchImportMangaBakaEntries(titles: List<MangaBakaTitle>) {
+        if (mangaBakaBatchJob?.isActive == true) return
+        mangaBakaBatchJob = viewModelScope.launch { mangaBaka.batchImport(titles) }
+    }
+
     fun linkMangaBakaEntry(title: MangaBakaTitle, entryId: String, offset: Double) {
         viewModelScope.launch { mangaBaka.link(title, entryId, offset) }
+    }
+
+    fun linkAllMatchedMangaBakaEntries(matches: List<Pair<MangaBakaTitle, String>>) {
+        viewModelScope.launch { mangaBaka.linkAllMatched(matches) }
     }
 
     fun unlinkMangaBakaEntry(title: MangaBakaTitle) {

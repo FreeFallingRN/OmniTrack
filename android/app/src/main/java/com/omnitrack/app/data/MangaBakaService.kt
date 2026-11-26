@@ -177,6 +177,25 @@ data class MangaBakaSeriesTitle(
     @SerialName("is_primary") val primary: Boolean? = false
 )
 
+internal fun mangaBakaImportTitles(
+    titles: List<MangaBakaSeriesTitle>,
+    defaultTitle: String
+): Pair<String, List<String>> {
+    val englishTitles = titles.filter {
+        it.title.isNotBlank() &&
+            (it.language.equals("en", ignoreCase = true) ||
+                it.language.startsWith("en-", ignoreCase = true))
+    }
+    val mainTitle = defaultTitle.trim().takeIf { default ->
+        englishTitles.any { it.title.trim().equals(default, ignoreCase = true) }
+    } ?: (englishTitles.firstOrNull { it.primary == true } ?: englishTitles.firstOrNull())?.title?.trim()
+        ?: defaultTitle.trim()
+    val alternatives = englishTitles.map { it.title.trim() }
+        .filterNot { it.equals(mainTitle, ignoreCase = true) }
+        .distinctBy { it.lowercase() }
+    return mainTitle to alternatives
+}
+
 @Serializable
 data class MangaBakaCover(val x250: String? = null, val raw: String? = null)
 

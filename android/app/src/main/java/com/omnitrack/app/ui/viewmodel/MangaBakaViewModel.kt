@@ -11,6 +11,10 @@ import com.omnitrack.app.data.MangaBakaPreferences
 import com.omnitrack.app.data.MangaBakaProgressSync
 import com.omnitrack.app.data.MangaBakaService
 import com.omnitrack.app.data.MangaBakaTitle
+import com.omnitrack.app.data.mangaBakaImportTitles
+import com.omnitrack.app.data.model.CreateEntryRequest
+import com.omnitrack.app.data.model.CreatePlatformRequest
+import com.omnitrack.app.data.model.CreateSeriesRequest
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.repository.SeriesRepository
 import com.omnitrack.app.utils.ImportedMediaDraft
@@ -44,7 +48,10 @@ data class MangaBakaState(
     val message: String = "",
     val titles: List<MangaBakaTitle> = emptyList(),
     val links: Map<Long, MangaBakaLink> = emptyMap(),
-    val editorDraft: ImportedMediaDraft? = null
+    val editorDraft: ImportedMediaDraft? = null,
+    val batchImporting: Boolean = false,
+    val batchCancelRequested: Boolean = false,
+    val batchMessage: String = ""
 )
 
 class MangaBakaViewModel(context: Context, private val repository: SeriesRepository) {
@@ -189,6 +196,11 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
     }
 
     suspend fun add(title: MangaBakaTitle, otherType: String? = null) = operation {
+        val imported = hydrateTitle(title, otherType)
+        _state.update { it.copy(editorDraft = imported) }
+    }
+
+    private suspend fun hydrateTitle(title: MangaBakaTitle, otherType: String? = null): ImportedMediaDraft {
         check(title.entry.seriesId == title.series.id) { "MangaBaka series ID does not match" }
         check(_state.value.links[title.series.id] == null) { "This MangaBaka title is already linked" }
         val progress = title.entry.progress ?: 0.0
@@ -232,15 +244,14 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
                 "cancelled" -> "discontinued"
                 else -> error("Unsupported MangaBaka publication status: ${title.series.status}")
             }
+            val (mainTitle, alternativeTitles) = mangaBakaImportTitles(title.series.titles.orEmpty(), title.title)
             ImportedMediaDraft(
                 sourceUrl = seriesUrl,
                 normalizedUrl = seriesUrl,
                 adapterName = "MangaBaka",
                 draft = ScrapedMediaDraft(
-                    title = title.title,
-                    alternativeTitles = title.series.titles.orEmpty().map { it.title }
-                        .filterNot { it.equals(title.title, ignoreCase = true) }
-                        .distinctBy { it.lowercase() },
+                    title = mainTitle,
+                    alternativeTitles = alternativeTitles,
                     type = type,
                     platformHint = "MangaBaka",
                     publishingStatus = publishingStatus,
@@ -251,23 +262,183 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
                 warning = "Could not load full MangaBaka metadata; review the library details."
             )
         }
-        _state.update {
-            it.copy(editorDraft = imported.copy(
-                normalizedUrl = seriesUrl,
-                draft = imported.draft.copy(
-                    userStatus = status,
-                    currentUnit = progress,
-                    totalChapters = imported.draft.totalChapters ?: title.series.totalChapters
-                )
-            ))
-        }
+        return imported.copy(
+            normalizedUrl = seriesUrl,
+            draft = imported.draft.copy(
+                userStatus = status,
+                currentUnit = progress,
+                totalChapters = imported.draft.totalChapters ?: title.series.totalChapters
+            )
+        )
     }
 
     fun consumeEditorDraft() {
         _state.update { it.copy(editorDraft = null) }
     }
 
+    fun cancelBatchImport() {
+        _state.update { if (it.batchImporting) it.copy(batchCancelRequested = true) else it }
+    }
+
+    suspend fun batchImport(titles: List<MangaBakaTitle>) = operation {
+        _state.update {
+            it.copy(batchImporting = true, batchCancelRequested = false,
+                batchMessage = "Batch import: 0 / ${titles.size} imported (0 processed).")
+        }
+        var imported = 0
+        var processed = 0
+        var skipped = 0
+        val failures = mutableListOf<String>()
+        try {
+            withContext(Dispatchers.IO) {
+                for (title in titles) {
+                    if (_state.value.batchCancelRequested) break
+                    if (_state.value.links.containsKey(title.series.id)) {
+                        skipped++
+                    } else {
+                        try {
+                            importNewTitle(title)
+                            imported++
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            Log.e("MangaBaka", "Could not import ${title.title}", e)
+                            failures.add("${title.title}: ${e.message ?: "Unknown error"}")
+                        }
+                    }
+                    processed++
+                    _state.update {
+                        it.copy(batchMessage = "Batch import: $imported / ${titles.size} imported " +
+                            "($processed processed, $skipped skipped, ${failures.size} failed).")
+                    }
+                }
+            }
+        } finally {
+            val cancelled = _state.value.batchCancelRequested || processed < titles.size
+            val details = if (failures.isEmpty()) "" else " Failures: ${failures.joinToString("; ")}"
+            _state.update {
+                it.copy(
+                    batchImporting = false,
+                    batchCancelRequested = false,
+                    batchMessage = "Batch import ${if (cancelled) "cancelled" else "finished"}: " +
+                        "$imported / ${titles.size} imported, $skipped skipped, ${failures.size} failed.$details"
+                )
+            }
+        }
+    }
+
+    private suspend fun importNewTitle(title: MangaBakaTitle) {
+        check(title.series.type != "other") { "Choose novel or comic using Add as new" }
+        val imported = hydrateTitle(title)
+        val draft = imported.draft
+        check(draft.title.isNotBlank()) { "Title is missing" }
+        check(draft.creators.any { it.name.isNotBlank() }) {
+            "Creator metadata is missing; use Add as new to review"
+        }
+        check(draft.unitName.trim().equals("chapter", true) || draft.unitName.trim().equals("chapters", true)) {
+            "MangaBaka links require chapter-based entries"
+        }
+        check(mangaBakaSeriesId(draft.sourceUrl) != null) { "Invalid MangaBaka source URL" }
+        val authors = repository.getAuthors().toMutableList()
+        val creators = draft.creators.filter { it.name.isNotBlank() }.map { creator ->
+            val name = creator.name.trim()
+            val author = authors.firstOrNull { it.name.trim().equals(name, ignoreCase = true) }
+                ?: repository.createAuthor(name, null, null, null).also { authors.add(it) }
+            author.id to creator.role
+        }
+        val platformName = draft.platformHint?.trim()?.takeIf { it.isNotBlank() }
+            ?: error("Platform metadata is missing")
+        val platform = repository.getPlatforms().firstOrNull {
+            it.name.replace(" ", "").trim().equals(platformName.replace(" ", "").trim(), ignoreCase = true)
+        } ?: repository.createPlatform(CreatePlatformRequest(name = platformName))
+        val seriesId = draft.seriesTitle?.trim()?.takeIf { it.isNotBlank() }?.let { name ->
+            repository.getSeries().firstOrNull { it.title.trim().equals(name, ignoreCase = true) }?.id
+                ?: repository.createSeries(CreateSeriesRequest(title = name)).id
+        }
+        check(preferences.read() == credentials && credentials.userId.isNotBlank() &&
+            credentials.accessToken.isNotBlank()) { "MangaBaka account changed; reconnect and try again" }
+        check(!preferences.links(credentials.userId).containsKey(title.series.id)) {
+            "This MangaBaka title is already linked"
+        }
+        val created = try {
+            repository.createMediaEntry(
+                CreateEntryRequest(
+                    seriesId = seriesId,
+                    title = draft.title.trim(),
+                    type = draft.type.value,
+                    sequenceNumber = draft.sequenceNumber,
+                    userStatus = draft.userStatus ?: "planning",
+                    publishingStatus = draft.publishingStatus,
+                    currentUnit = draft.currentUnit ?: 0.0,
+                    unitName = draft.unitName,
+                    sourceUrl = draft.sourceUrl,
+                    platformId = platform.id,
+                    coverUrl = draft.coverUrl
+                ),
+                creators,
+                draft.alternativeTitles
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            throw IllegalStateException("Entry may have been created; check the library before retrying: ${e.message}", e)
+        }
+        try {
+            check(preferences.read() == credentials &&
+                !preferences.links(credentials.userId).containsKey(title.series.id)) {
+                "MangaBaka account or link changed"
+            }
+            repository.updateMangaBakaUrl(created.id, draft.sourceUrl)
+            saveLink(title.series.id, created.id, 0.0)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            throw IllegalStateException(
+                "Entry ${created.id} was created but linking failed; link it manually: ${e.message}", e
+            )
+        }
+    }
+
     suspend fun link(title: MangaBakaTitle, entryId: String, offset: Double) = operation {
+        val entryTitle = linkEntry(title, entryId, offset)
+        _state.update { it.copy(message = "Linked ${title.title} to $entryTitle.") }
+    }
+
+    suspend fun linkAllMatched(matches: List<Pair<MangaBakaTitle, String>>) = operation {
+        withContext(Dispatchers.IO) {
+            var linked = 0
+            var skipped = 0
+            val failures = mutableListOf<String>()
+            _state.update { it.copy(message = "Linking matches: 0/${matches.size} processed.") }
+            matches.forEachIndexed { index, (title, entryId) ->
+                if (_state.value.links.containsKey(title.series.id) ||
+                    _state.value.links.values.any { it.entryId == entryId }
+                ) {
+                    skipped++
+                } else {
+                    try {
+                        linkEntry(title, entryId, 0.0)
+                        linked++
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.e("MangaBaka", "Could not link ${title.title}", e)
+                        failures.add("${title.title}: ${e.message ?: "Unknown error"}")
+                    }
+                }
+                _state.update {
+                    it.copy(message = "Linking matches: ${index + 1}/${matches.size} processed " +
+                        "($linked linked, $skipped skipped, ${failures.size} failed).")
+                }
+            }
+            val details = if (failures.isEmpty()) "" else " Failures: ${failures.joinToString("; ")}"
+            _state.update {
+                it.copy(message = "Link all matched: $linked linked, $skipped skipped, ${failures.size} failed.$details")
+            }
+        }
+    }
+
+    private suspend fun linkEntry(title: MangaBakaTitle, entryId: String, offset: Double): String {
         check(title.entry.seriesId == title.series.id) { "MangaBaka series ID does not match" }
         check(offset.isFinite()) { "Enter a valid chapter offset" }
         check(_state.value.links[title.series.id] == null) { "This MangaBaka title is already linked" }
@@ -287,7 +458,7 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
         } catch (e: Exception) {
             throw IllegalStateException("Updated ${entry.title}'s URL, but its MangaBaka link could not be saved", e)
         }
-        _state.value = _state.value.copy(message = "Linked ${title.title} to ${entry.title}.")
+        return entry.title
     }
 
     suspend fun unlink(title: MangaBakaTitle) = operation {
@@ -300,20 +471,20 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
 
     private suspend fun saveLink(seriesId: Long, entryId: String, offset: Double) {
         withContext(Dispatchers.IO) { preferences.link(credentials.userId, seriesId, entryId, offset) }
-        _state.value = _state.value.copy(links = _state.value.links + (seriesId to MangaBakaLink(entryId, offset)))
+        _state.update { it.copy(links = it.links + (seriesId to MangaBakaLink(entryId, offset))) }
     }
 
     private suspend fun operation(block: suspend () -> Unit) = mutex.withLock {
-        _state.value = _state.value.copy(busy = true, message = "")
+        _state.update { it.copy(busy = true, message = "") }
         try {
             block()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.e("MangaBaka", "MangaBaka operation failed: ${e.javaClass.simpleName}")
-            _state.value = _state.value.copy(message = e.message ?: "MangaBaka request failed")
+            _state.update { it.copy(message = e.message ?: "MangaBaka request failed") }
         } finally {
-            _state.value = _state.value.copy(busy = false)
+            _state.update { it.copy(busy = false) }
         }
     }
 

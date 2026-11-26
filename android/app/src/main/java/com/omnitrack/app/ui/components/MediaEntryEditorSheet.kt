@@ -317,10 +317,22 @@ fun MediaEntryEditorSheet(
 
     fun addAlias() {
         val cleaned = newAltTitle.trim()
-        if (cleaned.isNotBlank() && altTitles.none { it.equals(cleaned, ignoreCase = true) }) {
+        if (cleaned.isNotBlank() && !cleaned.equals(title.trim(), ignoreCase = true) &&
+            altTitles.none { it.trim().equals(cleaned, ignoreCase = true) }
+        ) {
             altTitles = altTitles + cleaned
         }
         newAltTitle = ""
+    }
+
+    fun makeMainTitle(alias: String) {
+        val newTitle = alias.trim()
+        val previousTitle = title.trim()
+        altTitles = (altTitles + previousTitle)
+            .map { it.trim() }
+            .filter { it.isNotBlank() && !it.equals(newTitle, ignoreCase = true) }
+            .distinctBy { it.lowercase() }
+        title = newTitle
     }
 
     fun saveEntry() {
@@ -344,7 +356,9 @@ fun MediaEntryEditorSheet(
             error = positionError
         } else {
             val pendingAlias = newAltTitle.trim()
-            val aliases = if (pendingAlias.isNotBlank() && altTitles.none { it.equals(pendingAlias, ignoreCase = true) }) {
+            val aliases = if (pendingAlias.isNotBlank() && !pendingAlias.equals(title.trim(), ignoreCase = true) &&
+                altTitles.none { it.trim().equals(pendingAlias, ignoreCase = true) }
+            ) {
                 altTitles + pendingAlias
             } else altTitles
             onSave(
@@ -505,19 +519,28 @@ fun MediaEntryEditorSheet(
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             altTitles.forEach { alt ->
-                                InputChip(
-                                    selected = false,
-                                    onClick = { altTitles = altTitles.filterNot { it == alt } },
-                                    modifier = Modifier.height(36.dp),
-                                    label = { Text(alt, style = MaterialTheme.typography.bodySmall) },
-                                    trailingIcon = {
-                                        Icon(
-                                            Icons.Default.Clear,
-                                            contentDescription = "Remove $alt",
-                                            modifier = Modifier.height(18.dp)
-                                        )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    InputChip(
+                                        selected = false,
+                                        onClick = { altTitles = altTitles.filterNot { it == alt } },
+                                        modifier = Modifier.weight(1f, fill = false).height(36.dp),
+                                        label = { Text(alt, style = MaterialTheme.typography.bodySmall) },
+                                        trailingIcon = {
+                                            Icon(
+                                                Icons.Default.Clear,
+                                                contentDescription = "Remove $alt",
+                                                modifier = Modifier.height(18.dp)
+                                            )
+                                        }
+                                    )
+                                    TextButton(
+                                        onClick = { makeMainTitle(alt) },
+                                        enabled = alt.isNotBlank(),
+                                        contentPadding = PaddingValues(horizontal = 8.dp)
+                                    ) {
+                                        Text("Set as main")
                                     }
-                                )
+                                }
                             }
                             InputChip(
                                 selected = showAliasInput,

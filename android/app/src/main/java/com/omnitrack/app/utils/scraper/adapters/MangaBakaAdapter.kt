@@ -1,5 +1,7 @@
 package com.omnitrack.app.utils.scraper.adapters
 
+import com.omnitrack.app.data.MangaBakaSeriesTitle
+import com.omnitrack.app.data.mangaBakaImportTitles
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.utils.ScrapedCreator
 import com.omnitrack.app.utils.ScrapedMediaDraft
@@ -71,19 +73,17 @@ object MangaBakaAdapter : MediaSourceAdapter {
                 URI(it).rawQuery == null && URI(it).rawFragment == null
         } ?: "https://mangabaka.org/series/$id"
 
-        val titles = (data["titles"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
-        val title = text(data, "title") ?: titles.firstOrNull {
-            text(it, "language") == "en" && (it["is_primary"] as? JsonPrimitive)?.booleanOrNull == true
-        }?.let { text(it, "title") }
-            ?: titles.firstNotNullOfOrNull { text(it, "title") }
+        val titles = (data["titles"] as? JsonArray).orEmpty().mapNotNull { value ->
+            val obj = value as? JsonObject ?: return@mapNotNull null
+            MangaBakaSeriesTitle(
+                title = text(obj, "title") ?: return@mapNotNull null,
+                language = text(obj, "language").orEmpty(),
+                primary = (obj["is_primary"] as? JsonPrimitive)?.booleanOrNull
+            )
+        }
+        val defaultTitle = text(data, "title") ?: titles.firstOrNull()?.title
             ?: error("Missing MangaBaka series title")
-        val secondaryTitles = (data["secondary_titles"] as? JsonObject).orEmpty().values
-            .flatMap { (it as? JsonArray).orEmpty() }
-            .mapNotNull { (it as? JsonObject)?.let { obj -> text(obj, "title") } }
-        val alternativeTitles = (titles.mapNotNull { text(it, "title") } + secondaryTitles +
-            listOfNotNull(text(data, "native_title"), text(data, "romanized_title")))
-            .filterNot { it.equals(title, ignoreCase = true) }
-            .distinctBy { it.lowercase() }
+        val (title, alternativeTitles) = mangaBakaImportTitles(titles, defaultTitle)
         val creators = buildList {
             for ((field, role) in listOf("authors" to "author", "artists" to "illustrator")) {
                 (data[field] as? JsonArray).orEmpty().forEach { value ->

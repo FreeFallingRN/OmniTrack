@@ -4,8 +4,10 @@ import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
@@ -29,6 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,7 +42,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import androidx.lifecycle.Lifecycle
@@ -49,7 +56,10 @@ import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.ui.viewmodel.SeriesViewModel
 import com.omnitrack.app.ui.viewmodel.mangaBakaSeriesUrl
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun MangaBakaScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
@@ -63,6 +73,7 @@ fun MangaBakaScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
     var otherTypeTitle by remember { mutableStateOf<MangaBakaTitle?>(null) }
     var localError by remember { mutableStateOf("") }
     var showTokenDialog by remember { mutableStateOf(false) }
+    var batchTitles by remember { mutableStateOf<List<MangaBakaTitle>?>(null) }
     var personalToken by remember { mutableStateOf("") }
     val entriesById = remember(entries) { entries.associateBy { it.id } }
     val availableEntries = remember(entries, state.links) {
@@ -72,6 +83,21 @@ fun MangaBakaScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
                 (it.unitName.trim().equals("chapter", true) || it.unitName.trim().equals("chapters", true))
         }
     }
+    val matchState = remember(state.titles, state.links, availableEntries) {
+        mutableStateOf<Map<Long, MediaEntry>>(emptyMap())
+    }
+    LaunchedEffect(state.titles, state.links, availableEntries) {
+        val allTitles = state.titles
+        val links = state.links
+        matchState.value = withContext(Dispatchers.Default) {
+            allTitles.mapNotNull { title ->
+                ensureActive()
+                if (links.containsKey(title.series.id)) null
+                else findMangaBakaMatch(title, availableEntries)?.let { title.series.id to it }
+            }.toMap()
+        }
+    }
+    val matches = matchState.value
     val titles = remember(state.titles, state.links, search, filter) {
         state.titles.filter { title ->
             val linked = state.links.containsKey(title.series.id)
@@ -79,6 +105,7 @@ fun MangaBakaScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
                 (filter == "All" || (filter == "Linked" && linked) || (filter == "Unlinked" && !linked))
         }
     }
+    val unlinkedTitles = titles.filterNot { state.links.containsKey(it.series.id) }
 
     DisposableEffect(context, viewModel) {
         val lifecycle = (context as? LifecycleOwner)?.lifecycle
@@ -90,10 +117,12 @@ fun MangaBakaScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
     }
 
     BackHandler(onBack = onBack)
-    Column(
+    LazyColumn(
         Modifier.fillMaxSize().statusBarsPadding().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        item {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -156,44 +185,118 @@ fun MangaBakaScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
                 }
             )
         }
-        Button(enabled = state.connected && state.links.isNotEmpty() && !state.busy, onClick = {
-            viewModel.syncMangaBakaProgress(manual = true)
-        }) { Text("Sync now") }
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(enabled = state.connected && state.links.isNotEmpty() && !state.busy, onClick = {
+                viewModel.syncMangaBakaProgress(manual = true)
+            }) { Text("Sync now") }
+            Button(enabled = state.connected && matches.isNotEmpty() && !state.busy, onClick = {
+                viewModel.linkAllMatchedMangaBakaEntries(
+                    state.titles.mapNotNull { title -> matches[title.series.id]?.let { title to it.id } }
+                )
+            }) { Text("Link all matched (${matches.size})") }
+            Button(enabled = state.connected && unlinkedTitles.isNotEmpty() && !state.busy, onClick = {
+                batchTitles = unlinkedTitles
+            }) { Text("Batch import all (${unlinkedTitles.size})") }
+            if (state.batchImporting) {
+                TextButton(enabled = !state.batchCancelRequested, onClick = {
+                    viewModel.mangaBaka.cancelBatchImport()
+                }) { Text(if (state.batchCancelRequested) "Stopping..." else "Cancel import") }
+            }
+        }
+        if (state.titles.isNotEmpty()) {
+            Text(
+                "${state.titles.count { state.links.containsKey(it.series.id) }}/${state.titles.size} linked. " +
+                    "Link all uses matches across the entire library; duplicate targets are skipped.",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
         if (state.message.isNotBlank()) Text(state.message, style = MaterialTheme.typography.bodyMedium)
+        if (state.batchMessage.isNotBlank()) Text(state.batchMessage, style = MaterialTheme.typography.bodyMedium)
         if (localError.isNotBlank()) Text(localError, color = MaterialTheme.colorScheme.error)
         OutlinedTextField(
             value = search, onValueChange = { search = it },
             label = { Text("Search titles") }, singleLine = true, modifier = Modifier.fillMaxWidth()
         )
-        Row {
+        Row(Modifier.horizontalScroll(rememberScrollState())) {
             listOf("All", "Linked", "Unlinked").forEach { option ->
                 TextButton(onClick = { filter = option }) {
                     Text(if (filter == option) "[$option]" else option)
                 }
             }
         }
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
+        }
+        }
+        run {
             items(titles, key = { it.series.id }) { title ->
                 val link = state.links[title.series.id]
-                val match = remember(title, link, availableEntries) {
-                    if (link == null) findMangaBakaMatch(title, availableEntries) else null
-                }
+                val match = matches[title.series.id]
                 Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(12.dp)) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             AsyncImage(
                                 model = title.series.cover?.x250 ?: title.series.cover?.raw,
                                 contentDescription = null,
-                                modifier = Modifier.size(width = 60.dp, height = 88.dp)
+                                modifier = Modifier.size(width = 48.dp, height = 70.dp)
                             )
                             Column(Modifier.weight(1f)) {
-                                Text(title.title, style = MaterialTheme.typography.titleMedium)
-                                Text("MangaBaka chapter: ${title.entry.progress?.toString() ?: "Not set"}")
+                                Text(
+                                    title.title, style = MaterialTheme.typography.titleSmall,
+                                    maxLines = 2, overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    "Chapter: ${title.entry.progress?.toString() ?: "Not set"}",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
                                 Text(
                                     if (link == null) "Not linked" else
-                                        "Linked: ${entriesById[link.entryId]?.title ?: "Entry unavailable"} (offset ${link.offset})"
+                                        "Linked: ${entriesById[link.entryId]?.title ?: "Entry unavailable"} (offset ${link.offset})",
+                                    style = MaterialTheme.typography.bodySmall
                                 )
-                                TextButton(onClick = {
+                                if (match != null) {
+                                    Text(
+                                        "Match: ${match.title}",
+                                        color = MaterialTheme.colorScheme.primary,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 2, overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (link == null) {
+                                if (match != null) {
+                                    TextButton(
+                                        enabled = !state.busy,
+                                        contentPadding = PaddingValues(horizontal = 6.dp),
+                                        onClick = { viewModel.linkMangaBakaEntry(title, match.id, 0.0) }
+                                    ) { Text("Link match", style = MaterialTheme.typography.labelMedium) }
+                                }
+                                TextButton(enabled = !state.busy, onClick = {
+                                    if (title.series.type == "other") otherTypeTitle = title
+                                    else viewModel.addMangaBakaEntry(title)
+                                }, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                                    Text("Add as new", style = MaterialTheme.typography.labelMedium)
+                                }
+                                TextButton(
+                                    enabled = !state.busy, onClick = { selected = title },
+                                    contentPadding = PaddingValues(horizontal = 6.dp)
+                                ) { Text("Link existing", style = MaterialTheme.typography.labelMedium) }
+                            } else {
+                                TextButton(enabled = !state.busy, onClick = {
+                                    viewModel.unlinkMangaBakaEntry(title)
+                                }, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                                    Text("Unlink", style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                            TextButton(
+                                modifier = Modifier.semantics { contentDescription = "View on MangaBaka" },
+                                onClick = {
                                     try {
                                         val uri = Uri.parse(mangaBakaSeriesUrl(title))
                                         require(uri.scheme == "https" && uri.host == "mangabaka.org")
@@ -202,39 +305,36 @@ fun MangaBakaScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
                                         Log.w("MangaBaka", "Could not open series page")
                                         localError = "Could not open the MangaBaka series page."
                                     }
-                                }) { Text("View on MangaBaka") }
+                                }, contentPadding = PaddingValues(horizontal = 6.dp)
+                            ) {
+                                Text("View", style = MaterialTheme.typography.labelMedium)
                             }
-                        }
-                        if (link == null) {
-                            if (match != null) {
-                                Text(
-                                    "Match found: ${match.title}",
-                                    color = MaterialTheme.colorScheme.primary,
-                                    style = MaterialTheme.typography.labelLarge
-                                )
-                                Button(enabled = !state.busy, onClick = {
-                                    viewModel.linkMangaBakaEntry(title, match.id, 0.0)
-                                }) { Text("Link to \"${match.title}\"") }
-                            }
-                            Row {
-                                TextButton(enabled = !state.busy, onClick = {
-                                    if (title.series.type == "other") otherTypeTitle = title
-                                    else viewModel.addMangaBakaEntry(title)
-                                }) { Text("Add as new entry") }
-                                TextButton(enabled = !state.busy, onClick = { selected = title }) {
-                                    Text("Link to existing entry")
-                                }
-                            }
-                        } else {
-                            TextButton(enabled = !state.busy, onClick = {
-                                viewModel.unlinkMangaBakaEntry(title)
-                            }) { Text("Unlink") }
                         }
                     }
                 }
             }
         }
-        Text("Data provided by MangaBaka and its source providers.", style = MaterialTheme.typography.bodySmall)
+    }
+
+    batchTitles?.let { selectedTitles ->
+        AlertDialog(
+            onDismissRequest = { batchTitles = null },
+            title = { Text("Batch import as new entries?") },
+            text = {
+                Text(
+                    "Import ${selectedTitles.size} unlinked titles from the current filters as new entries. " +
+                        "Existing matches will not be linked. Titles needing a media type or creator will be reported. " +
+                        "Cancellation stops after the current title."
+                )
+            },
+            confirmButton = {
+                TextButton(enabled = !state.busy, onClick = {
+                    batchTitles = null
+                    viewModel.batchImportMangaBakaEntries(selectedTitles)
+                }) { Text("Import") }
+            },
+            dismissButton = { TextButton(onClick = { batchTitles = null }) { Text("Cancel") } }
+        )
     }
 
     otherTypeTitle?.let { title ->
@@ -292,14 +392,20 @@ private fun LinkMangaBakaDialog(
         onDismissRequest = onDismiss,
         title = { Text("Link ${title.title}") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(search, { search = it }, label = { Text("Search entries") }, singleLine = true)
+            Column(Modifier.fillMaxWidth().heightIn(min = 360.dp, max = 560.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    search, { search = it }, label = { Text("Search entries") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 OutlinedTextField(
                     offsetText, { offsetText = it }, label = { Text("Chapter offset") },
-                    isError = offset == null, singleLine = true
+                    isError = offset == null, singleLine = true, modifier = Modifier.fillMaxWidth()
                 )
-                Text("The offset is added to MangaBaka's chapter on sync; linking does not change progress.")
-                LazyColumn(Modifier.heightIn(max = 300.dp)) {
+                Text(
+                    "The offset is added to MangaBaka's chapter on sync; linking does not change progress.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
                     items(available, key = { it.id }) { entry ->
                         TextButton(onClick = { selectedId = entry.id }, modifier = Modifier.fillMaxWidth()) {
                             Text(if (entry.id == selectedId) "[${entry.title}]" else entry.title)
