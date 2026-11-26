@@ -1,12 +1,19 @@
 package com.omnitrack.app.ui.library.detail
 
+import android.content.ClipData
 import android.content.Intent
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import android.util.Log
+import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import coil.compose.SubcomposeAsyncImage
@@ -51,6 +58,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -92,6 +100,8 @@ fun MediaDetailSheet(
     var showShare by remember(entry.id) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val clipboard = LocalClipboard.current
+    val hapticFeedback = LocalHapticFeedback.current
     val mangaBakaProgressLocked = mangaBakaLinked && entry.type == MediaType.COMIC
     val settings = LocalFeatureServices.current.settings
     val settingsState by settings.state.collectAsState()
@@ -202,7 +212,21 @@ fun MediaDetailSheet(
                         ) {
                             Text(
                                 text = entry.title,
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.weight(1f).combinedClickable(
+                                    hapticFeedbackEnabled = false,
+                                    onClick = {},
+                                    onLongClick = {
+                                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        scope.launch {
+                                            clipboard.setClipEntry(
+                                                ClipEntry(ClipData.newPlainText("Title", entry.title))
+                                            )
+                                            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                                                Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                                ),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold
                             )
