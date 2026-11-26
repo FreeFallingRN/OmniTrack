@@ -281,10 +281,16 @@ internal fun LazyListScope.libraryBreakdownSection(mediaEntries: List<MediaEntry
                             )
 
                             val total = mediaEntries.size.toFloat()
-                            val inProgressCountVal = mediaEntries.count { it.userStatus == UserStatus.IN_PROGRESS }
-                            val completedCountVal = mediaEntries.count { it.userStatus == UserStatus.COMPLETED }
-                            val pausedCount = mediaEntries.count { it.userStatus == UserStatus.PAUSED }
-                            val planningCount = mediaEntries.count { it.userStatus == UserStatus.PLANNING }
+                            val statusCounts = UserStatus.entries.associateWith { status ->
+                                mediaEntries.count { it.userStatus == status }
+                            }
+                            val statusColors = mapOf(
+                                UserStatus.PLANNING to MaterialTheme.colorScheme.outlineVariant,
+                                UserStatus.IN_PROGRESS to MaterialTheme.colorScheme.primary,
+                                UserStatus.PAUSED to MaterialTheme.colorScheme.secondary,
+                                UserStatus.COMPLETED to MaterialTheme.colorScheme.tertiary,
+                                UserStatus.DROPPED to MaterialTheme.colorScheme.error
+                            )
 
                             Row(
                                 modifier = Modifier
@@ -292,37 +298,16 @@ internal fun LazyListScope.libraryBreakdownSection(mediaEntries: List<MediaEntry
                                     .height(10.dp)
                                     .clip(CircleShape)
                             ) {
-                                if (inProgressCountVal > 0) {
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(inProgressCountVal / total)
-                                            .fillMaxHeight()
-                                            .background(MaterialTheme.colorScheme.primary)
-                                    )
-                                }
-                                if (completedCountVal > 0) {
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(completedCountVal / total)
-                                            .fillMaxHeight()
-                                            .background(MaterialTheme.colorScheme.tertiary)
-                                    )
-                                }
-                                if (pausedCount > 0) {
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(pausedCount / total)
-                                            .fillMaxHeight()
-                                            .background(MaterialTheme.colorScheme.secondary)
-                                    )
-                                }
-                                if (planningCount > 0) {
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(planningCount / total)
-                                            .fillMaxHeight()
-                                            .background(MaterialTheme.colorScheme.outlineVariant)
-                                    )
+                                UserStatus.entries.forEach { status ->
+                                    val count = statusCounts.getValue(status)
+                                    if (count > 0) {
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(count / total)
+                                                .fillMaxHeight()
+                                                .background(statusColors.getValue(status))
+                                        )
+                                    }
                                 }
                             }
 
@@ -331,10 +316,9 @@ internal fun LazyListScope.libraryBreakdownSection(mediaEntries: List<MediaEntry
                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                LegendItem("Reading: $inProgressCountVal", MaterialTheme.colorScheme.primary)
-                                LegendItem("Completed: $completedCountVal", MaterialTheme.colorScheme.tertiary)
-                                LegendItem("Paused: $pausedCount", MaterialTheme.colorScheme.secondary)
-                                LegendItem("Planning: $planningCount", MaterialTheme.colorScheme.outlineVariant)
+                                UserStatus.entries.forEach { status ->
+                                    LegendItem("${status.label}: ${statusCounts.getValue(status)}", statusColors.getValue(status))
+                                }
                             }
                         }
 

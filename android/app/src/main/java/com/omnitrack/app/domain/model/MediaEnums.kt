@@ -27,8 +27,8 @@ enum class MediaType(val value: String, val label: String) {
 enum class UserStatus(val value: String, val label: String) {
     PLANNING("planning", "Planning"),
     IN_PROGRESS("in_progress", "In Progress"),
-    COMPLETED("completed", "Completed"),
     PAUSED("paused", "Paused"),
+    COMPLETED("completed", "Completed"),
     DROPPED("dropped", "Dropped");
 
     companion object {
