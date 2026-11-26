@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LocalLibrary
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -133,6 +134,8 @@ fun OmniTrackHomeScreen(
     }
     var fabExpanded by remember { mutableStateOf(false) }
     var showImportUrlDialog by remember { mutableStateOf(false) }
+    var showOnlineSearchDialog by remember { mutableStateOf(false) }
+    var onlineImportUrl by remember { mutableStateOf<String?>(null) }
     var scrapedPrefill by remember { mutableStateOf<ImportedMediaDraft?>(null) }
 
     LaunchedEffect(viewModel) {
@@ -203,6 +206,19 @@ fun OmniTrackHomeScreen(
                             ExtendedFloatingActionButton(
                                 onClick = {
                                     fabExpanded = false
+                                    showOnlineSearchDialog = true
+                                },
+                                shape = CircleShape,
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                icon = { Icon(Icons.Default.Search, contentDescription = "Search online") },
+                                text = { Text("Search online") }
+                            )
+
+                            ExtendedFloatingActionButton(
+                                onClick = {
+                                    fabExpanded = false
+                                    onlineImportUrl = null
                                     showImportUrlDialog = true
                                 },
                                 shape = CircleShape,
@@ -457,9 +473,23 @@ fun OmniTrackHomeScreen(
             )
         }
 
+        if (showOnlineSearchDialog) {
+            OnlineSearchDialog(
+                onDismiss = { showOnlineSearchDialog = false },
+                onSelect = { result ->
+                    showOnlineSearchDialog = false
+                    onlineImportUrl = result.upstreamUrl
+                    showImportUrlDialog = true
+                }
+            )
+        }
+
         if (showImportUrlDialog) {
             ImportUrlDialog(
-                onDismiss = { showImportUrlDialog = false },
+                onDismiss = {
+                    showImportUrlDialog = false
+                    onlineImportUrl = null
+                },
                 onImport = { url ->
                     viewModel.mangaBaka.prepareImportedDraft(MediaUrlImporter.importFromUrl(context, url))
                 },
@@ -468,8 +498,10 @@ fun OmniTrackHomeScreen(
                     scrapedPrefill = draft
                     editorEntry = null
                     showImportUrlDialog = false
+                    onlineImportUrl = null
                     showEntryEditor = true
-                }
+                },
+                initialUrl = onlineImportUrl
             )
         }
 

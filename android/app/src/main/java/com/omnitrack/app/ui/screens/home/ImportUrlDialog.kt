@@ -10,6 +10,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
@@ -25,12 +26,31 @@ import kotlinx.coroutines.launch
 fun ImportUrlDialog(
     onDismiss: () -> Unit,
     onImport: suspend (String) -> ImportedMediaDraft,
-    onImported: (ImportedMediaDraft) -> Unit
+    onImported: (ImportedMediaDraft) -> Unit,
+    initialUrl: String? = null
 ) {
-    var importUrl by remember { mutableStateOf("") }
-    var isImporting by remember { mutableStateOf(false) }
+    var importUrl by remember { mutableStateOf(initialUrl.orEmpty()) }
+    var isImporting by remember { mutableStateOf(initialUrl != null) }
     var importError by remember { mutableStateOf<String?>(null) }
     val coroutineScope = rememberCoroutineScope()
+
+    suspend fun fetchUrl(url: String) {
+        isImporting = true
+        importError = null
+        try {
+            onImported(onImport(url))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            importError = e.message ?: "Failed to fetch media details"
+        } finally {
+            isImporting = false
+        }
+    }
+
+    LaunchedEffect(initialUrl) {
+        if (!initialUrl.isNullOrBlank()) fetchUrl(initialUrl)
+    }
 
     AlertDialog(
         onDismissRequest = { if (!isImporting) onDismiss() },
@@ -66,19 +86,7 @@ fun ImportUrlDialog(
             Button(
                 enabled = importUrl.isNotBlank() && !isImporting,
                 onClick = {
-                    coroutineScope.launch {
-                        isImporting = true
-                        importError = null
-                        try {
-                            onImported(onImport(importUrl))
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            importError = e.message ?: "Failed to fetch media details"
-                        } finally {
-                            isImporting = false
-                        }
-                    }
+                    coroutineScope.launch { fetchUrl(importUrl) }
                 }
             ) {
                 Text(if (isImporting) "Importing..." else "Fetch")

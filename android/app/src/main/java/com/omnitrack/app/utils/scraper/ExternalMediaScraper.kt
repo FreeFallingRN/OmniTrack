@@ -31,7 +31,7 @@ import java.net.URI
 object ExternalMediaScraper {
     internal const val TAG = "ExternalMediaScraper"
 
-    private val client = HttpClient(CIO) {
+    internal val client = HttpClient(CIO) {
         install(HttpTimeout) {
             connectTimeoutMillis = 15_000L
             requestTimeoutMillis = 20_000L
