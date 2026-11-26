@@ -1,19 +1,24 @@
 package com.omnitrack.app.ui.stats
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.omnitrack.app.domain.model.*
+import com.omnitrack.app.ui.LocalFeatureServices
 import com.omnitrack.app.ui.viewmodel.SeriesViewModel
 import com.omnitrack.app.utils.get7DDates
 import java.time.LocalDate
@@ -21,19 +26,26 @@ import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryStatsScreen(
     viewModel: SeriesViewModel,
     onSelectEntry: (MediaEntry) -> Unit
 ) {
     val uiState by viewModel.state.collectAsState()
+    val settings = LocalFeatureServices.current.settings
+    val settingsState by settings.state.collectAsState()
+    val selectedTimeframe = settingsState.selectedStatsPeriod
+    LaunchedEffect(viewModel, selectedTimeframe) {
+        viewModel.selectPeriodTab(selectedTimeframe, resetIfSelected = false)
+    }
+
     val mediaEntries = uiState.mediaEntries
     val recentActivity = uiState.recentActivity
-    val periodOffset = uiState.periodOffset
-    val canGoPrevious = uiState.canGoPrevious
-    val canGoNext = uiState.canGoNext
-
-    val selectedTimeframe = uiState.selectedPeriodTab
+    val periodSynced = uiState.selectedPeriodTab == selectedTimeframe
+    val periodOffset = if (periodSynced) uiState.periodOffset else 0
+    val canGoPrevious = periodSynced && uiState.canGoPrevious
+    val canGoNext = periodSynced && uiState.canGoNext
 
     // Calendar-aligned [start, end] bounds for the active timeframe & offset
     val periodBounds: Pair<LocalDate, LocalDate>? = remember(selectedTimeframe, periodOffset) {
@@ -159,28 +171,48 @@ fun HistoryStatsScreen(
                     fontWeight = FontWeight.Bold
                 )
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ScrollableTabRow(
+                    selectedTabIndex = selectedTimeframe.ordinal,
+                    edgePadding = 0.dp,
+                    containerColor = Color.Transparent,
+                    indicator = { tabPositions ->
+                        Box(
+                            modifier = Modifier
+                                .tabIndicatorOffset(tabPositions[selectedTimeframe.ordinal])
+                                .padding(horizontal = 4.dp, vertical = 4.dp)
+                                .fillMaxHeight()
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primaryContainer)
+                                .zIndex(-1f)
+                        )
+                    },
+                    divider = {}
                 ) {
                     HistoryTimeframe.entries.forEach { timeframe ->
                         val selected = selectedTimeframe == timeframe
-                        Surface(
+                        Box(
                             modifier = Modifier
-                                .clip(CircleShape)
-                                .clickable(
+                                .heightIn(min = 48.dp)
+                                .selectable(
+                                    selected = selected,
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null,
-                                    onClick = { viewModel.selectPeriodTab(timeframe) }
+                                    role = Role.Tab,
+                                    onClick = {
+                                        if (selected) {
+                                            viewModel.selectPeriodTab(timeframe)
+                                        } else {
+                                            settings.setSelectedStatsPeriod(timeframe)
+                                        }
+                                    }
+                                )
+                                .padding(horizontal = 4.dp, vertical = 4.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (selected) Color.Transparent
+                                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
                                 ),
-                            shape = CircleShape,
-                            color = if (selected) {
-                                MaterialTheme.colorScheme.primaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-                            }
+                            contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = timeframe.label,

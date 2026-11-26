@@ -21,6 +21,7 @@ object OmniTrackPreferenceKeys {
     val ShareFormatStyle = PreferenceKey.StringKey("share_format_style")
     val SelectedMediaType = PreferenceKey.StringKey("selected_media_type")
     val SelectedUserStatus = PreferenceKey.StringKey("selected_user_status")
+    val SelectedStatsPeriod = PreferenceKey.StringKey("selected_stats_period")
     val MoonReaderFolder = PreferenceKey.StringKey("moon_reader_folder")
     val MoonReaderFolderName = PreferenceKey.StringKey("moon_reader_folder_name")
     val MoonReaderBooksFolder = PreferenceKey.StringKey("moon_reader_books_folder")

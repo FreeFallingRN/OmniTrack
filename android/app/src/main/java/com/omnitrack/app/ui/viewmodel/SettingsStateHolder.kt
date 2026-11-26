@@ -3,6 +3,7 @@ package com.omnitrack.app.ui.viewmodel
 import android.content.Context
 import com.omnitrack.app.data.OmniTrackPreferenceKeys
 import com.omnitrack.app.data.OmniTrackPreferences
+import com.omnitrack.app.domain.model.HistoryTimeframe
 import com.omnitrack.app.domain.model.PublishingStatus
 import com.omnitrack.app.utils.LibrarySortOption
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,6 +20,7 @@ data class SettingsState(
     val shareStyle: String?,
     val selectedMediaType: String?,
     val selectedUserStatus: String?,
+    val selectedStatsPeriod: HistoryTimeframe,
     val revision: Long
 )
 
@@ -49,6 +51,9 @@ class SettingsStateHolder(context: Context) {
             shareStyle = preferences.getString(OmniTrackPreferenceKeys.ShareFormatStyle),
             selectedMediaType = preferences.getString(OmniTrackPreferenceKeys.SelectedMediaType),
             selectedUserStatus = preferences.getString(OmniTrackPreferenceKeys.SelectedUserStatus),
+            selectedStatsPeriod = HistoryTimeframe.entries.find {
+                it.name == preferences.getString(OmniTrackPreferenceKeys.SelectedStatsPeriod)
+            } ?: HistoryTimeframe.DAYS_30,
             revision = revision
         )
     }
@@ -97,6 +102,10 @@ class SettingsStateHolder(context: Context) {
 
     fun setSelectedUserStatus(value: String) {
         preferences.edit().putString(OmniTrackPreferenceKeys.SelectedUserStatus, value).apply()
+    }
+
+    fun setSelectedStatsPeriod(value: HistoryTimeframe) {
+        preferences.edit().putString(OmniTrackPreferenceKeys.SelectedStatsPeriod, value.name).apply()
     }
 
     fun setProgressFolderName(name: String) {

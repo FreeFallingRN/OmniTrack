@@ -122,7 +122,8 @@ class SeriesViewModel(
         )
     )
 
-    fun selectPeriodTab(tab: HistoryTimeframe) {
+    fun selectPeriodTab(tab: HistoryTimeframe, resetIfSelected: Boolean = true) {
+        if (!resetIfSelected && selectedPeriodTabFlow.value == tab) return
         selectedPeriodTabFlow.value = tab
         periodOffsetFlow.value = 0
     }
