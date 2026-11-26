@@ -14,6 +14,9 @@ object MangaDexAdapter : MediaSourceAdapter {
     override val name: String = "MangaDex"
     private val json = Json { ignoreUnknownKeys = true }
 
+    private fun isEnglishLocale(locale: String): Boolean =
+        locale.equals("en", ignoreCase = true) || locale.startsWith("en-", ignoreCase = true)
+
     override fun canHandle(host: String, url: String): Boolean =
         host.contains("mangadex.org", ignoreCase = true)
 
@@ -32,16 +35,18 @@ object MangaDexAdapter : MediaSourceAdapter {
         val attrs = data["attributes"]?.jsonObject ?: return null
 
         val titleObj = attrs["title"]?.jsonObject
-        val title = titleObj?.get("en")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+        val englishTitle = titleObj?.entries?.firstOrNull { isEnglishLocale(it.key) }?.value
+            ?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+        val title = englishTitle
             ?: titleObj?.values?.firstOrNull()?.jsonPrimitive?.content.orEmpty()
 
         val altTitles = buildList {
-            titleObj?.values?.forEach { elem ->
+            titleObj?.filterKeys(::isEnglishLocale)?.values?.forEach { elem ->
                 val t = elem.jsonPrimitive.content.trim()
                 if (t.isNotBlank() && !t.equals(title, ignoreCase = true)) add(t)
             }
             attrs["altTitles"]?.jsonArray.orEmpty().forEach { mapElem ->
-                mapElem.jsonObject.values.forEach { v ->
+                mapElem.jsonObject.filterKeys(::isEnglishLocale).values.forEach { v ->
                     val t = v.jsonPrimitive.content.trim()
                     if (t.isNotBlank() && !t.equals(title, ignoreCase = true)) add(t)
                 }
@@ -52,7 +57,8 @@ object MangaDexAdapter : MediaSourceAdapter {
             "completed" -> "completed"
             "hiatus" -> "hiatus"
             "cancelled" -> "discontinued"
-            else -> "releasing"
+            "ongoing" -> "releasing"
+            else -> ""
         }
 
         val relationships = data["relationships"]?.jsonArray.orEmpty()
@@ -80,7 +86,9 @@ object MangaDexAdapter : MediaSourceAdapter {
             publishingStatus = pubStatus,
             unitName = "Chapter",
             coverUrl = coverFileName?.let { "https://uploads.mangadex.org/covers/$mangaId/$it" },
-            sourceUrl = url
+            sourceUrl = url,
+            totalChapters = attrs["lastChapter"]?.jsonPrimitive?.content?.toDoubleOrNull()
+                ?.takeIf { it.isFinite() && it >= 0 }
         )
     }
 }

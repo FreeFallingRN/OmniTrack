@@ -94,7 +94,7 @@ object ExternalMediaScraper {
         if (host in listOf("mangabaka.org", "www.mangabaka.org", "mangabaka.dev", "dev.mangabaka.dev")) {
             require(adapter === MangaBakaAdapter) { "Invalid MangaBaka series URL" }
         }
-        val draft = scrapeDraft(context, rawUrl, url, host, adapter, mangaBakaOtherType, requireFetchedMetadata)
+        val draft = scrapeDraft(context, rawUrl, url, host, adapter, mangaBakaOtherType)
         return ImportedMediaDraft(
             sourceUrl = rawUrl.trim(),
             normalizedUrl = if (adapter === MangaBakaAdapter) draft.sourceUrl else url,
@@ -109,8 +109,7 @@ object ExternalMediaScraper {
         url: String,
         host: String,
         matchedAdapter: MediaSourceAdapter?,
-        mangaBakaOtherType: MediaType?,
-        requireFetchedMetadata: Boolean
+        mangaBakaOtherType: MediaType?
     ): ScrapedMediaDraft {
         val originalUrl = rawUrl.trim().let {
             if (it.startsWith("http://", true) || it.startsWith("https://", true)) it else "https://$it"
@@ -172,7 +171,7 @@ object ExternalMediaScraper {
                 ""
             }
             trace.log("html: finalLen=${html.length} blank=${html.isBlank()}")
-            check(!requireFetchedMetadata || html.isNotBlank()) { "Could not fetch metadata from this source" }
+            check(html.isNotBlank()) { "Could not fetch metadata from this source" }
 
             // 3. Let matched adapter parse HTML, then enrich missing fields with GenericFallbackAdapter
             val adapterDraft = if (matchedAdapter != null && html.isNotBlank()) {

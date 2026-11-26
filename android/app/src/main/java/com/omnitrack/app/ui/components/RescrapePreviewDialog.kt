@@ -34,6 +34,7 @@ internal data class RescrapeChange(
 internal fun RescrapePreviewDialog(
     changes: List<RescrapeChange>,
     totalChapters: Double?,
+    totalUnitName: String,
     onDismiss: () -> Unit,
     onApply: (Set<RescrapeField>) -> Unit
 ) {
@@ -69,8 +70,10 @@ internal fun RescrapePreviewDialog(
                 }
                 if (totalChapters != null) {
                     item {
+                        val unit = totalUnitName.trim().ifBlank { "chapter" }.lowercase()
+                        val pluralUnit = if (unit.endsWith("s", ignoreCase = true)) unit else "${unit}s"
                         Text(
-                            "Source total chapters: $totalChapters (informational; not stored on entries)",
+                            "Source total $pluralUnit: $totalChapters (informational; not stored on entries)",
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.padding(top = 8.dp)
                         )

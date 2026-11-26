@@ -56,6 +56,7 @@ import com.omnitrack.app.data.model.PlatformDto
 import com.omnitrack.app.data.model.SeriesDto
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.MediaType
+import com.omnitrack.app.domain.model.PublishingStatus
 import com.omnitrack.app.domain.model.UserStatus
 import com.omnitrack.app.utils.scraper.ExternalMediaScraper
 import com.omnitrack.app.utils.ScrapedMediaDraft
@@ -376,6 +377,8 @@ fun MediaEntryEditorSheet(
         val missingNewSeriesTitle = createSeries && newSeriesTitle.isBlank()
         if (hasIncompleteDraft) {
             error = "Please enter a creator name or choose an existing creator."
+        } else if (publishingStatus.isBlank()) {
+            error = "Publishing status was not available from the source. Please choose a status."
         } else if (mergeTargetEntry != null && entries.none { it.id == mergeTargetEntry?.id && it.type == type }) {
             error = "The selected merge target is no longer available for this media type."
         } else if (groupWithEntry != null && entries.none { it.id == groupWithEntry?.id && it.type == type }) {
@@ -779,7 +782,14 @@ fun MediaEntryEditorSheet(
                 onIsCanonChange = { isCanon = it }
             )
             prefill?.totalChapters?.let { total ->
-                item { Text("MangaBaka total chapters: $total", style = MaterialTheme.typography.bodySmall) }
+                val unit = prefill?.unitName?.trim().orEmpty().ifBlank { "chapter" }.lowercase()
+                val pluralUnit = if (unit.endsWith("s", ignoreCase = true)) unit else "${unit}s"
+                item {
+                    Text(
+                        "Source total $pluralUnit: $total (informational; not stored on entries)",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
             }
             publicationCoverSection(
                 sourceUrl = sourceUrl,
@@ -846,7 +856,7 @@ fun MediaEntryEditorSheet(
             if (!draft.coverUrl.isNullOrBlank() && draft.coverUrl != coverUrl) {
                 add(RescrapeChange(RescrapeField.COVER, "Cover URL", coverUrl, draft.coverUrl))
             }
-            if (draft.publishingStatus.isNotBlank() && draft.publishingStatus != publishingStatus) {
+            if (draft.publishingStatus in PublishingStatus.values && draft.publishingStatus != publishingStatus) {
                 add(RescrapeChange(RescrapeField.STATUS, "Publishing status", publishingStatus, draft.publishingStatus))
             }
             if (fetchedCreators.isNotEmpty() && fetchedCreators != currentCreators) {
@@ -863,11 +873,14 @@ fun MediaEntryEditorSheet(
         RescrapePreviewDialog(
             changes = changes,
             totalChapters = draft.totalChapters,
+            totalUnitName = draft.unitName,
             onDismiss = { rescraped = null },
             onApply = { selected ->
                 if (RescrapeField.TITLE in selected) title = draft.title
                 if (RescrapeField.COVER in selected) coverUrl = draft.coverUrl.orEmpty()
-                if (RescrapeField.STATUS in selected) publishingStatus = draft.publishingStatus
+                if (RescrapeField.STATUS in selected && draft.publishingStatus in PublishingStatus.values) {
+                    publishingStatus = draft.publishingStatus
+                }
                 if (RescrapeField.ALIASES in selected) {
                     altTitles = fetchedAliases
                     newAltTitle = ""

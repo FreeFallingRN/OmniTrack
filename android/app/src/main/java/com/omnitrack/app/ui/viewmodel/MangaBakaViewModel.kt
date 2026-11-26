@@ -10,11 +10,13 @@ import com.omnitrack.app.data.MangaBakaLink
 import com.omnitrack.app.data.MangaBakaPreferences
 import com.omnitrack.app.data.MangaBakaProgressSync
 import com.omnitrack.app.data.MangaBakaService
+import com.omnitrack.app.data.MangaBakaSeriesTitle
 import com.omnitrack.app.data.MangaBakaTitle
 import com.omnitrack.app.data.mangaBakaImportTitles
 import com.omnitrack.app.data.model.CreateEntryRequest
 import com.omnitrack.app.data.model.CreatePlatformRequest
 import com.omnitrack.app.data.model.CreateSeriesRequest
+import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.repository.SeriesRepository
 import com.omnitrack.app.domain.repository.PartialMediaEntryCreateException
@@ -375,6 +377,7 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
         var imported = 0
         var processed = 0
         var skipped = 0
+        val reviews = mutableListOf<String>()
         val failures = mutableListOf<String>()
         try {
             withContext(Dispatchers.IO) {
@@ -384,8 +387,8 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
                         skipped++
                     } else {
                         try {
-                            importNewTitle(title)
-                            imported++
+                            val review = importNewTitle(title)
+                            if (review == null) imported++ else reviews.add("${title.title}: $review")
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
@@ -396,31 +399,36 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
                     processed++
                     _state.update {
                         it.copy(batchMessage = "Batch import: $imported / ${titles.size} imported " +
-                            "($processed processed, $skipped skipped, ${failures.size} failed).")
+                            "($processed processed, $skipped skipped, ${reviews.size} need review, ${failures.size} failed).")
                     }
                 }
             }
         } finally {
             val cancelled = _state.value.batchCancelRequested || processed < titles.size
+            val reviewDetails = if (reviews.isEmpty()) "" else " Needs review: ${reviews.joinToString("; ")}."
             val details = if (failures.isEmpty()) "" else " Failures: ${failures.joinToString("; ")}"
             _state.update {
                 it.copy(
                     batchImporting = false,
                     batchCancelRequested = false,
                     batchMessage = "Batch import ${if (cancelled) "cancelled" else "finished"}: " +
-                        "$imported / ${titles.size} imported, $skipped skipped, ${failures.size} failed.$details"
+                        "$imported / ${titles.size} imported, $skipped skipped, ${reviews.size} need review, " +
+                        "${failures.size} failed.$reviewDetails$details"
                 )
             }
         }
     }
 
-    private suspend fun importNewTitle(title: MangaBakaTitle) {
-        check(title.series.type != "other") { "Choose novel or comic using Add as new" }
+    private suspend fun importNewTitle(title: MangaBakaTitle): String? {
+        findBatchDuplicate(title)?.let { return "Possible existing entry '${it.title}'; link or review manually" }
+        if (title.series.type == "other") return "Choose novel or comic using Add as new"
         val imported = hydrateTitle(title)
         val draft = imported.draft
         check(draft.title.isNotBlank()) { "Title is missing" }
-        check(draft.creators.any { it.name.isNotBlank() }) {
-            "Creator metadata is missing; use Add as new to review"
+        findBatchDuplicate(title, draft)?.let { return "Possible existing entry '${it.title}'; link or review manually" }
+        if (draft.creators.none { it.name.isNotBlank() }) {
+            return "${imported.warning?.let { "$it " }.orEmpty()}" +
+                "Creator metadata is missing; use Add as new to supply a creator"
         }
         check(draft.unitName.trim().equals("chapter", true) || draft.unitName.trim().equals("chapters", true)) {
             "MangaBaka links require chapter-based entries"
@@ -447,6 +455,7 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
         check(!preferences.links(credentials.userId).containsKey(title.series.id)) {
             "This MangaBaka title is already linked"
         }
+        findBatchDuplicate(title, draft)?.let { return "Possible existing entry '${it.title}'; link or review manually" }
         val created = try {
             repository.createMediaEntry(
                 CreateEntryRequest(
@@ -455,7 +464,7 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
                     type = draft.type.value,
                     sequenceNumber = draft.sequenceNumber,
                     userStatus = draft.userStatus ?: "planning",
-                    publishingStatus = draft.publishingStatus,
+                    publishingStatus = draft.publishingStatus.ifBlank { "releasing" },
                     currentUnit = draft.currentUnit ?: 0.0,
                     unitName = draft.unitName,
                     sourceUrl = draft.sourceUrl,
@@ -491,6 +500,24 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
             throw IllegalStateException(
                 "Entry ${created.id} was created but linking failed; link it manually: ${e.message}", e
             )
+        }
+        return null
+    }
+
+    private suspend fun findBatchDuplicate(title: MangaBakaTitle, draft: ScrapedMediaDraft? = null): MediaEntry? {
+        val hydratedId = draft?.sourceUrl?.let(::mangaBakaSeriesId)
+        val hydratedTitle = draft?.let {
+            title.copy(series = title.series.copy(
+                type = if (it.type == MediaType.NOVEL) "novel" else "manga",
+                titles = title.series.titles.orEmpty() +
+                    (listOf(it.title) + it.alternativeTitles).map { name -> MangaBakaSeriesTitle(name, "en") }
+            ))
+        }
+        return repository.getMediaEntriesStream().first().firstOrNull { entry ->
+            val sourceId = entry.sourceUrl?.let(::mangaBakaSeriesId)
+            sourceId != null && (sourceId == title.series.id || sourceId == hydratedId) ||
+                findMangaBakaMatch(title, listOf(entry)) != null ||
+                hydratedTitle != null && findMangaBakaMatch(hydratedTitle, listOf(entry)) != null
         }
     }
 

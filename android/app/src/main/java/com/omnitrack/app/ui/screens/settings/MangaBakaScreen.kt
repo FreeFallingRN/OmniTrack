@@ -326,7 +326,8 @@ fun MangaBakaScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
             text = {
                 Text(
                     "Import ${selectedTitles.size} unlinked titles from the current filters as new entries. " +
-                        "Existing matches will not be linked. Titles needing a media type or creator will be reported. " +
+                        "Possible existing matches will be flagged for review, not linked or imported. " +
+                        "Titles needing a media type or creator will also be reported for review. " +
                         "Cancellation stops after the current title."
                 )
             },

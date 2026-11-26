@@ -2,6 +2,9 @@ package com.omnitrack.app.utils.scraper
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import kotlinx.coroutines.Dispatchers
@@ -34,6 +37,13 @@ internal class WebViewHtmlFetcher {
             withTimeoutOrNull(15_000L.milliseconds) {
                 suspendCancellableCoroutine { cont ->
                     var finished = false
+
+                    fun failFetch(message: String) {
+                        if (!cont.isActive || finished) return
+                        finished = true
+                        trace?.log("webView: $message")
+                        cont.resume("")
+                    }
 
                     fun pollDom(attempt: Int) {
                         if (!cont.isActive || finished) return
@@ -69,6 +79,18 @@ internal class WebViewHtmlFetcher {
                     }
 
                     webView.webViewClient = object : WebViewClient() {
+                        override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+                            if (request?.isForMainFrame == true) {
+                                failFetch("load failed: ${error?.description}")
+                            }
+                        }
+
+                        override fun onReceivedHttpError(view: WebView?, request: WebResourceRequest?, errorResponse: WebResourceResponse?) {
+                            if (request?.isForMainFrame == true) {
+                                failFetch("HTTP ${errorResponse?.statusCode}")
+                            }
+                        }
+
                         override fun onPageFinished(view: WebView?, finishedUrl: String?) {
                             trace?.log("webView: onPageFinished url=$finishedUrl")
                             pollDom(1)

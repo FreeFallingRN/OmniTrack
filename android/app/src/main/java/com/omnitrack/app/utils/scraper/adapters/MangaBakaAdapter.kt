@@ -101,8 +101,8 @@ object MangaBakaAdapter : MediaSourceAdapter {
             "completed" -> "completed"
             "hiatus" -> "hiatus"
             "cancelled" -> "discontinued"
-            "releasing", "unknown", null -> "releasing"
-            else -> error("Unsupported MangaBaka publication status")
+            "releasing" -> "releasing"
+            else -> ""
         }
         val totalChapters = text(data, "total_chapters")?.toDoubleOrNull()
             ?.takeIf { it.isFinite() && it >= 0 }

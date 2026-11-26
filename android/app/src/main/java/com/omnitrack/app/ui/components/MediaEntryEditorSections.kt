@@ -267,6 +267,13 @@ internal fun LazyListScope.mediaSection(
                 StatusButtonGroup("User status", userStatus, UserStatus.entries.map { it.value to it.label }, onSelected = onUserStatusChange)
                 StatusButtonGroup("Publishing status", publishingStatus,
                     PublishingStatus.values.map { it to it.toDisplayLabel() }, onSelected = onPublishingStatusChange)
+                if (publishingStatus.isBlank()) {
+                    Text(
+                        "Publishing status was not available from the source. Please choose a status.",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     EntryField("Current ${unitName.trim().lowercase()}", currentUnit, onCurrentUnitChange, Modifier.weight(1f))
                     EntryField("Unit name", unitName, onUnitNameChange, Modifier.weight(1f), KeyboardType.Text)

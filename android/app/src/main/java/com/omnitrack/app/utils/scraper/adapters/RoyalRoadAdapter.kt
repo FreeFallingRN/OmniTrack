@@ -32,7 +32,8 @@ object RoyalRoadAdapter : MediaSourceAdapter {
             html.contains(">COMPLETED<", ignoreCase = true) -> "completed"
             html.contains(">HIATUS<", ignoreCase = true) -> "hiatus"
             html.contains(">STUB<", ignoreCase = true) || html.contains(">DROPPED<", ignoreCase = true) -> "discontinued"
-            else -> "releasing"
+            html.contains(">ONGOING<", ignoreCase = true) -> "releasing"
+            else -> ""
         }
 
         val creators = author

@@ -104,7 +104,9 @@ object MyAnimeListAdapter : MediaSourceAdapter {
             statusBlock.contains("not yet") -> "announced"
             statusBlock.contains("hiatus") -> "hiatus"
             statusBlock.contains("discontinued") -> "discontinued"
-            else -> "releasing"
+            statusBlock.contains("currently airing") || statusBlock.contains("currently publishing") ||
+                statusBlock.trim() == "publishing" -> "releasing"
+            else -> ""
         }
 
         val mediaType = if (isManga) MediaType.COMIC else MediaType.ANIME

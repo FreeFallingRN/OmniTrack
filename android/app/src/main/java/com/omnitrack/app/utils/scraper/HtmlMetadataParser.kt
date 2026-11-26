@@ -17,12 +17,7 @@ object HtmlMetadataParser {
     private val json = Json { ignoreUnknownKeys = true }
 
     fun extractGenericMetadata(html: String, url: String): ScrapedMediaDraft {
-        if (html.isBlank()) {
-            return ScrapedMediaDraft(
-                title = extractTitleFromSlug(url),
-                sourceUrl = url
-            )
-        }
+        require(html.isNotBlank()) { "Could not fetch metadata from this source" }
 
         val jsonLd = extractJsonLd(html)
         val ogTitle = meta(html, "og:title")

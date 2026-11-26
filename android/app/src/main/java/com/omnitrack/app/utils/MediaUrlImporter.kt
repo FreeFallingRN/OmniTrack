@@ -18,7 +18,7 @@ data class ScrapedMediaDraft(
     val type: MediaType = MediaType.NOVEL,
     val creators: List<ScrapedCreator> = emptyList(),
     val platformHint: String? = null,
-    val publishingStatus: String = "releasing",
+    val publishingStatus: String = "",
     val unitName: String = "Chapter",
     val coverUrl: String? = null,
     val sourceUrl: String = "",
@@ -39,7 +39,14 @@ data class ImportedMediaDraft(
 )
 
 object MediaUrlImporter {
-    suspend fun importFromUrl(context: Context, rawUrl: String): ImportedMediaDraft {
-        return ExternalMediaScraper.scrape(context, rawUrl)
+    suspend fun importFromUrl(
+        context: Context,
+        rawUrl: String,
+        fallbackTotalChapters: Double? = null
+    ): ImportedMediaDraft {
+        val imported = ExternalMediaScraper.scrape(context, rawUrl)
+        val fallbackTotal = fallbackTotalChapters?.takeIf { it.isFinite() && it >= 0 }
+        if (imported.draft.totalChapters != null || fallbackTotal == null) return imported
+        return imported.copy(draft = imported.draft.copy(totalChapters = fallbackTotal))
     }
 }

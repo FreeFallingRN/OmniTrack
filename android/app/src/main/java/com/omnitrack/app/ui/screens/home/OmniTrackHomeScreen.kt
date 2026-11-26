@@ -136,6 +136,7 @@ fun OmniTrackHomeScreen(
     var showImportUrlDialog by remember { mutableStateOf(false) }
     var showOnlineSearchDialog by remember { mutableStateOf(false) }
     var onlineImportUrl by remember { mutableStateOf<String?>(null) }
+    var onlineImportChapters by remember { mutableStateOf<Double?>(null) }
     var scrapedPrefill by remember { mutableStateOf<ImportedMediaDraft?>(null) }
 
     LaunchedEffect(viewModel) {
@@ -479,6 +480,7 @@ fun OmniTrackHomeScreen(
                 onSelect = { result ->
                     showOnlineSearchDialog = false
                     onlineImportUrl = result.upstreamUrl
+                    onlineImportChapters = result.chapters
                     showImportUrlDialog = true
                 }
             )
@@ -489,9 +491,16 @@ fun OmniTrackHomeScreen(
                 onDismiss = {
                     showImportUrlDialog = false
                     onlineImportUrl = null
+                    onlineImportChapters = null
                 },
                 onImport = { url ->
-                    viewModel.mangaBaka.prepareImportedDraft(MediaUrlImporter.importFromUrl(context, url))
+                    viewModel.mangaBaka.prepareImportedDraft(
+                        MediaUrlImporter.importFromUrl(
+                            context,
+                            url,
+                            fallbackTotalChapters = onlineImportChapters.takeIf { url == onlineImportUrl }
+                        )
+                    )
                 },
                 onImported = { draft ->
                     draft.warning?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
@@ -499,6 +508,7 @@ fun OmniTrackHomeScreen(
                     editorEntry = null
                     showImportUrlDialog = false
                     onlineImportUrl = null
+                    onlineImportChapters = null
                     showEntryEditor = true
                 },
                 initialUrl = onlineImportUrl

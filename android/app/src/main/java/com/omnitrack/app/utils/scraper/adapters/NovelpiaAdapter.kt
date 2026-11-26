@@ -49,7 +49,9 @@ object NovelpiaAdapter : MediaSourceAdapter {
         val pubStatus = when {
             Regex("""class=["'][^"']*\bnv-stat-badge\b[^"']*["'][^>]*>[\s\S]*?>\s*(Completed|Comp\.)\s*<""", RegexOption.IGNORE_CASE)
                 .containsMatchIn(html) -> "completed"
-            else -> "releasing"
+            Regex("""class=["'][^"']*\bnv-stat-badge\b[^"']*["'][^>]*>[\s\S]*?>\s*(Ongoing|Releasing)\s*<""", RegexOption.IGNORE_CASE)
+                .containsMatchIn(html) -> "releasing"
+            else -> ""
         }
 
         val creators = author

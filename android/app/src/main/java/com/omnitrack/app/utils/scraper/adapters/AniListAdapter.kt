@@ -55,8 +55,8 @@ object AniListAdapter : MediaSourceAdapter {
               Media($argUse, type: ${'$'}type) {
                 format
                 status
+                chapters
                 title { english romaji native }
-                synonyms
                 coverImage { extraLarge large }
                 studios(isMain: true) { nodes { name } }
                 staff(perPage: 12) {
@@ -96,14 +96,8 @@ object AniListAdapter : MediaSourceAdapter {
         val english = titleObj?.get("english")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() && it != "null" }
         val romaji = titleObj?.get("romaji")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() && it != "null" }
         val native = titleObj?.get("native")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() && it != "null" }
-        val synonyms = media["synonyms"]?.jsonArray?.mapNotNull {
-            it.jsonPrimitive.content.takeIf { s -> s.isNotBlank() && s != "null" }
-        }.orEmpty()
-
         val title = english ?: romaji ?: native.orEmpty()
-        val altTitles = (listOfNotNull(english, romaji, native) + synonyms)
-            .filter { !it.equals(title, ignoreCase = true) }
-            .distinctBy { it.lowercase() }
+        val altTitles = emptyList<String>()
 
         val coverObj = media["coverImage"]?.jsonObject
         val coverUrl = coverObj?.get("extraLarge")?.jsonPrimitive?.content?.takeIf { it != "null" }
@@ -114,7 +108,8 @@ object AniListAdapter : MediaSourceAdapter {
             "NOT_YET_RELEASED" -> "announced"
             "HIATUS" -> "hiatus"
             "CANCELLED" -> "discontinued"
-            else -> "releasing"
+            "RELEASING" -> "releasing"
+            else -> ""
         }
 
         val creators = buildList {
@@ -164,7 +159,9 @@ object AniListAdapter : MediaSourceAdapter {
             publishingStatus = pubStatus,
             unitName = if (mediaType == MediaType.ANIME) "Episode" else "Chapter",
             coverUrl = coverUrl,
-            sourceUrl = sourceUrl
+            sourceUrl = sourceUrl,
+            totalChapters = media["chapters"]?.jsonPrimitive?.content?.toDoubleOrNull()
+                ?.takeIf { it.isFinite() && it >= 0 }
         )
     }
 
