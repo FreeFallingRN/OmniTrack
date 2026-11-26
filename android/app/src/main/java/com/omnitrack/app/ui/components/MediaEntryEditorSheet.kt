@@ -61,7 +61,10 @@ import com.omnitrack.app.utils.scraper.ExternalMediaScraper
 import com.omnitrack.app.utils.ScrapedMediaDraft
 import com.omnitrack.app.utils.ImportedMediaDraft
 import com.omnitrack.app.ui.viewmodel.SeriesViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.math.BigDecimal
 import java.math.RoundingMode
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -116,6 +119,7 @@ fun MediaEntryEditorSheet(
     existing: MediaEntry?,
     prefill: ScrapedMediaDraft? = null,
     reportDraft: ImportedMediaDraft? = null,
+    mangaBakaSeriesIds: List<Long> = emptyList(),
     entries: List<MediaEntry>,
     onDismiss: () -> Unit,
     onSave: (MediaEntryEditorData) -> Unit,
@@ -179,6 +183,8 @@ fun MediaEntryEditorSheet(
 
     var isCanon by remember(draftKey) { mutableStateOf(existing?.isCanon ?: true) }
     var findingCover by remember(draftKey) { mutableStateOf(false) }
+    var rescraping by remember(draftKey) { mutableStateOf(false) }
+    var rescraped by remember(draftKey) { mutableStateOf<ScrapedMediaDraft?>(null) }
     var createSeries by remember(draftKey) { mutableStateOf(false) }
     var newSeriesTitle by remember(draftKey) { mutableStateOf("") }
     var newPlatformWebsiteUrl by remember(draftKey) { mutableStateOf("") }
@@ -450,6 +456,44 @@ fun MediaEntryEditorSheet(
             contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 36.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            if (existing != null) {
+                item {
+                    OutlinedButton(
+                        enabled = !rescraping && metadataLoaded,
+                        onClick = {
+                            scope.launch {
+                                rescraping = true
+                                try {
+                                    val url = sourceUrl.trim().ifBlank {
+                                        check(mangaBakaSeriesIds.size <= 1) {
+                                            "Multiple MangaBaka links found. Enter the source URL to rescrape."
+                                        }
+                                        mangaBakaSeriesIds.singleOrNull()?.let { "https://mangabaka.org/series/$it" }
+                                            ?: throw IllegalStateException("No source URL or MangaBaka link is set for this entry.")
+                                    }
+                                    val result = withContext(Dispatchers.IO) {
+                                        ExternalMediaScraper.scrape(
+                                            context.applicationContext, url, type, requireFetchedMetadata = true
+                                        ).draft
+                                    }
+                                    check(result.title.isNotBlank()) { "The source did not return a title." }
+                                    rescraped = result
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    Log.e("MediaEntryEditor", "Rescrape failed", e)
+                                    error = e.message ?: "Could not fetch details from the source."
+                                } finally {
+                                    rescraping = false
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (rescraping) "Rescraping..." else "Rescrape")
+                    }
+                }
+            }
             if (similarMatches.isNotEmpty() || mergeTargetEntry != null || groupWithEntry != null) {
                 item {
                     Surface(
@@ -778,6 +822,68 @@ fun MediaEntryEditorSheet(
 
     if (showReportDialog && reportDraft != null) {
         ScrapeIssueReportDialog(reportDraft) { showReportDialog = false }
+    }
+
+    rescraped?.let { draft ->
+        val pendingCreators = if (creatorDraft.authorId != null ||
+            (creatorDraft.createNew && creatorDraft.newAuthorName.isNotBlank())
+        ) {
+            val index = editingCreator
+            if (index == null) creatorRows + creatorDraft
+            else creatorRows.mapIndexed { i, row -> if (i == index) creatorDraft else row }
+        } else creatorRows
+        val currentCreators = pendingCreators.map { row ->
+            val name = if (row.createNew) row.newAuthorName else authors.firstOrNull { it.id == row.authorId }?.name.orEmpty()
+            name to row.role
+        }
+        val fetchedCreators = draft.creators.map { it.name.trim() to it.role }.filter { it.first.isNotBlank() }
+        val currentAliases = (altTitles + listOf(newAltTitle.trim()).filter { it.isNotBlank() }).distinct()
+        val fetchedAliases = draft.alternativeTitles.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+        val changes = buildList {
+            if (draft.title.isNotBlank() && draft.title != title) {
+                add(RescrapeChange(RescrapeField.TITLE, "Title", title, draft.title))
+            }
+            if (!draft.coverUrl.isNullOrBlank() && draft.coverUrl != coverUrl) {
+                add(RescrapeChange(RescrapeField.COVER, "Cover URL", coverUrl, draft.coverUrl))
+            }
+            if (draft.publishingStatus.isNotBlank() && draft.publishingStatus != publishingStatus) {
+                add(RescrapeChange(RescrapeField.STATUS, "Publishing status", publishingStatus, draft.publishingStatus))
+            }
+            if (fetchedCreators.isNotEmpty() && fetchedCreators != currentCreators) {
+                add(RescrapeChange(
+                    RescrapeField.CREATORS, "Creators",
+                    currentCreators.joinToString { "${it.first} (${it.second})" },
+                    fetchedCreators.joinToString { "${it.first} (${it.second})" }
+                ))
+            }
+            if (fetchedAliases.isNotEmpty() && fetchedAliases != currentAliases) {
+                add(RescrapeChange(RescrapeField.ALIASES, "Alternative titles", currentAliases.joinToString(), fetchedAliases.joinToString()))
+            }
+        }
+        RescrapePreviewDialog(
+            changes = changes,
+            totalChapters = draft.totalChapters,
+            onDismiss = { rescraped = null },
+            onApply = { selected ->
+                if (RescrapeField.TITLE in selected) title = draft.title
+                if (RescrapeField.COVER in selected) coverUrl = draft.coverUrl.orEmpty()
+                if (RescrapeField.STATUS in selected) publishingStatus = draft.publishingStatus
+                if (RescrapeField.ALIASES in selected) {
+                    altTitles = fetchedAliases
+                    newAltTitle = ""
+                }
+                if (RescrapeField.CREATORS in selected) {
+                    creatorRows = fetchedCreators.map { (name, role) ->
+                        val matched = authors.firstOrNull { it.name.trim().equals(name, ignoreCase = true) }
+                        if (matched != null) CreatorFormRow(authorId = matched.id, role = role)
+                        else CreatorFormRow(createNew = true, newAuthorName = name, role = role)
+                    }
+                    creatorDraft = CreatorFormRow()
+                    editingCreator = null
+                }
+                rescraped = null
+            }
+        )
     }
 
     error?.let {

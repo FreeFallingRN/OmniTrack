@@ -60,6 +60,7 @@ import androidx.core.graphics.drawable.toBitmap
 import coil.compose.AsyncImage
 import com.omnitrack.app.domain.model.EntryCreator
 import com.omnitrack.app.domain.model.MediaEntry
+import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.model.UserStatus
 import com.omnitrack.app.domain.model.toDisplayLabel
 import com.omnitrack.app.data.OmniTrackPreferenceKeys
@@ -90,6 +91,7 @@ fun MediaDetailSheet(
     var showShare by remember(entry.id) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val mangaBakaProgressLocked = mangaBakaLinked && entry.type != MediaType.NOVEL
     val prefs = remember(context) { OmniTrackPreferences(context) }
     val linkKey = OmniTrackPreferenceKeys.moonReaderFileUri(entry.id)
     val moonReaderPackage = remember(context) { findMoonReaderPackage(context) }
@@ -313,18 +315,18 @@ fun MediaDetailSheet(
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary
                     )
-                    if (mangaBakaLinked) {
+                    if (mangaBakaProgressLocked) {
                         Text("Synced via MangaBaka", style = MaterialTheme.typography.labelMedium)
                     }
-                    key(entry.id, moonReaderLinked, mangaBakaLinked) {
-                        Box(modifier = Modifier.alpha(if (moonReaderLinked || mangaBakaLinked) 0.4f else 1f)) {
+                    key(entry.id, moonReaderLinked, mangaBakaProgressLocked) {
+                        Box(modifier = Modifier.alpha(if (moonReaderLinked || mangaBakaProgressLocked) 0.4f else 1f)) {
                             ProgressWheel(
                                 entryId = entry.id,
                                 currentUnit = entry.currentUnit,
                                 unitName = entry.unitName,
-                                enabled = controlsEnabled && !moonReaderLinked && !mangaBakaLinked,
+                                enabled = controlsEnabled && !moonReaderLinked && !mangaBakaProgressLocked,
                                 onUpdateProgress = { value ->
-                                    if (!mangaBakaLinked && prefs.getString(linkKey, null) == null) onUpdateProgress(value)
+                                    if (!mangaBakaProgressLocked && prefs.getString(linkKey, null) == null) onUpdateProgress(value)
                                 }
                             )
                         }

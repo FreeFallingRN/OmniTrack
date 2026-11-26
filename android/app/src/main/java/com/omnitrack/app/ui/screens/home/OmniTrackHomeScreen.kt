@@ -479,6 +479,7 @@ fun OmniTrackHomeScreen(
                 existing = editorEntry,
                 prefill = scrapedPrefill?.draft,
                 reportDraft = scrapedPrefill,
+                mangaBakaSeriesIds = mangaBakaState.links.filterValues { it.entryId == editorEntry?.id }.keys.toList(),
                 entries = mediaEntries,
                 onDismiss = {
                     showEntryEditor = false

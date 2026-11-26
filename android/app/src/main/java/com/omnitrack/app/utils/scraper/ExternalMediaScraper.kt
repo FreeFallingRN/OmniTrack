@@ -76,14 +76,25 @@ object ExternalMediaScraper {
         }
     }
 
-    suspend fun scrape(context: Context, rawUrl: String, mangaBakaOtherType: MediaType? = null): ImportedMediaDraft {
+    suspend fun scrape(
+        context: Context,
+        rawUrl: String,
+        mangaBakaOtherType: MediaType? = null,
+        requireFetchedMetadata: Boolean = false
+    ): ImportedMediaDraft {
         val url = normalizeInputUrl(rawUrl)
+        if (requireFetchedMetadata) {
+            val uri = URI(url)
+            require(uri.scheme in listOf("http", "https") && !uri.host.isNullOrBlank() && uri.userInfo == null) {
+                "Enter a valid HTTP or HTTPS source URL"
+            }
+        }
         val host = runCatching { URI(url).host.orEmpty().lowercase() }.getOrDefault("")
         val adapter = adapters.firstOrNull { it.canHandle(host, url) }
         if (host in listOf("mangabaka.org", "www.mangabaka.org", "mangabaka.dev", "dev.mangabaka.dev")) {
             require(adapter === MangaBakaAdapter) { "Invalid MangaBaka series URL" }
         }
-        val draft = scrapeDraft(context, rawUrl, url, host, adapter, mangaBakaOtherType)
+        val draft = scrapeDraft(context, rawUrl, url, host, adapter, mangaBakaOtherType, requireFetchedMetadata)
         return ImportedMediaDraft(
             sourceUrl = rawUrl.trim(),
             normalizedUrl = if (adapter === MangaBakaAdapter) draft.sourceUrl else url,
@@ -98,7 +109,8 @@ object ExternalMediaScraper {
         url: String,
         host: String,
         matchedAdapter: MediaSourceAdapter?,
-        mangaBakaOtherType: MediaType?
+        mangaBakaOtherType: MediaType?,
+        requireFetchedMetadata: Boolean
     ): ScrapedMediaDraft {
         val originalUrl = rawUrl.trim().let {
             if (it.startsWith("http://", true) || it.startsWith("https://", true)) it else "https://$it"
@@ -127,6 +139,7 @@ object ExternalMediaScraper {
                 val fastDraft = runCatching {
                     matchedAdapter.scrapeWithoutHtml(url, fetcher)
                 }.onFailure { e ->
+                    if (e is CancellationException) throw e
                     trace.log("fastPath: error=${e.message}")
                     Log.w(TAG, "${matchedAdapter.name} fast-path failed: ${e.message}")
                 }.getOrNull()
@@ -159,6 +172,7 @@ object ExternalMediaScraper {
                 ""
             }
             trace.log("html: finalLen=${html.length} blank=${html.isBlank()}")
+            check(!requireFetchedMetadata || html.isNotBlank()) { "Could not fetch metadata from this source" }
 
             // 3. Let matched adapter parse HTML, then enrich missing fields with GenericFallbackAdapter
             val adapterDraft = if (matchedAdapter != null && html.isNotBlank()) {
