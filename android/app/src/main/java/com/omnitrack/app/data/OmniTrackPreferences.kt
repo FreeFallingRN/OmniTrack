@@ -16,6 +16,8 @@ sealed class PreferenceKey<T> protected constructor(internal val name: String) {
 
 object OmniTrackPreferenceKeys {
     val SortOption = PreferenceKey.StringKey("sort_option")
+    val SortDirection = PreferenceKey.StringKey("sort_direction")
+    val PublishingStatusFilter = PreferenceKey.StringKey("publishing_status_filter")
     val ShareFormatStyle = PreferenceKey.StringKey("share_format_style")
     val SelectedMediaType = PreferenceKey.StringKey("selected_media_type")
     val SelectedUserStatus = PreferenceKey.StringKey("selected_user_status")

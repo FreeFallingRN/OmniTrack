@@ -26,7 +26,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.omnitrack.app.utils.LibrarySortOption
 
 @Composable
 internal fun MainSettingsPage(
@@ -36,12 +35,10 @@ internal fun MainSettingsPage(
     progressFolder: String?,
     progressFolderName: String?,
     linkedCount: Int,
-    currentSort: LibrarySortOption,
     currentShareStyle: ShareFormatStyle,
     onOpenMangaBaka: () -> Unit,
     onOpenMoonReader: () -> Unit,
     onOpenScrapeReports: () -> Unit,
-    onOpenSortOrder: () -> Unit,
     onOpenShareStyle: () -> Unit
 ) {
     Column(
@@ -86,7 +83,6 @@ internal fun MainSettingsPage(
             onClick = onOpenMoonReader
         )
         SettingsNavigationCard("Scrape reports", "Open scrape reports", onOpenScrapeReports)
-        SettingsNavigationCard("Library Sort Order", currentSort.label, "Open Sort Order", onOpenSortOrder)
         SettingsNavigationCard("Discord Share Style", currentShareStyle.label, "Open Discord Share Style", onOpenShareStyle)
     }
 }

@@ -34,13 +34,11 @@ import com.omnitrack.app.ui.moonreader.MoonReaderSettingsScreen
 import com.omnitrack.app.ui.moonreader.folderDisplayName
 import com.omnitrack.app.ui.scrapeissues.ScrapeIssueReportsScreen
 import com.omnitrack.app.ui.viewmodel.SeriesViewModel
-import com.omnitrack.app.utils.LibrarySortOption
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 enum class SettingsPage {
     MAIN,
-    SORT_ORDER,
     SHARE_STYLE,
     SCRAPE_REPORTS,
     MOON_READER,
@@ -127,7 +125,6 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
         lifecycle?.addObserver(observer)
         onDispose { lifecycle?.removeObserver(observer) }
     }
-    val currentSort = LibrarySortOption.fromKey(settingsState.sortOption)
     val currentShareStyle = ShareFormatStyle.fromKey(settingsState.shareStyle)
 
     AnimatedContent(
@@ -166,12 +163,10 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                 progressFolder = progressFolder,
                 progressFolderName = progressFolderName,
                 linkedCount = linkedCount,
-                currentSort = currentSort,
                 currentShareStyle = currentShareStyle,
                 onOpenMangaBaka = { currentRoute = SettingsPage.MANGABAKA },
                 onOpenMoonReader = { currentRoute = SettingsPage.MOON_READER },
                 onOpenScrapeReports = { currentRoute = SettingsPage.SCRAPE_REPORTS },
-                onOpenSortOrder = { currentRoute = SettingsPage.SORT_ORDER },
                 onOpenShareStyle = { currentRoute = SettingsPage.SHARE_STYLE }
             )
 
@@ -188,13 +183,6 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                 currentStyle = currentShareStyle,
                 onSelect = { style ->
                     settings.setShareStyle(style.name)
-                },
-                onBack = { currentRoute = SettingsPage.MAIN }
-            )
-            SettingsPage.SORT_ORDER -> LibrarySortOrderSettingsPage(
-                currentSort = currentSort,
-                onSelect = { option ->
-                    settings.setSortOption(option.key)
                 },
                 onBack = { currentRoute = SettingsPage.MAIN }
             )

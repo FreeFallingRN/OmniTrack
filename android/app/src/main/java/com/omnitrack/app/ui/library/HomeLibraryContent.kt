@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
@@ -29,6 +30,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -49,7 +51,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.MediaType
+import com.omnitrack.app.domain.model.PublishingStatus
 import com.omnitrack.app.domain.model.UserStatus
+import com.omnitrack.app.domain.model.toDisplayLabel
+import com.omnitrack.app.ui.components.SortFilterDialog
 import com.omnitrack.app.ui.components.TrackedMediaRow
 import com.omnitrack.app.utils.LibrarySortOption
 import kotlinx.coroutines.CoroutineStart
@@ -69,7 +74,11 @@ fun HomeLibraryContent(
     onStatusSelected: (UserStatus) -> Unit,
     searchQuery: String,
     onSearchQueryChanged: (String) -> Unit,
+    selectedPublishingStatus: String?,
+    onPublishingStatusSelected: (String?) -> Unit,
     sortOption: LibrarySortOption,
+    sortDescending: Boolean,
+    onSortChanged: (LibrarySortOption, Boolean) -> Unit,
     onRefresh: () -> Unit,
     onSelectEntry: (MediaEntry) -> Unit
 ) {
@@ -80,6 +89,10 @@ fun HomeLibraryContent(
     val dragScope = rememberCoroutineScope()
     var pageWidth by remember { mutableIntStateOf(0) }
     var swipeGeneration by remember { mutableIntStateOf(0) }
+    var showFilterDialog by remember { mutableStateOf(false) }
+    val filterActive = selectedPublishingStatus != null ||
+        sortOption != LibrarySortOption.LAST_UPDATED ||
+        sortDescending != LibrarySortOption.LAST_UPDATED.defaultDescending
 
     Column(
         modifier = Modifier
@@ -185,43 +198,89 @@ fun HomeLibraryContent(
     ) {
         Spacer(modifier = Modifier.height(8.dp))
 
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = onSearchQueryChanged,
-            placeholder = {
-                Text(
-                    "Search library...",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                )
-            },
-            leadingIcon = {
-                Icon(
-                    Icons.Default.Search,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            trailingIcon = {
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { onSearchQueryChanged("") }) {
-                        Icon(
-                            Icons.Default.Close,
-                            contentDescription = "Clear",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = onSearchQueryChanged,
+                placeholder = {
+                    Text(
+                        "Search library...",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.Search,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { onSearchQueryChanged("") }) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Clear",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
-                }
-            },
-            singleLine = true,
-            shape = RoundedCornerShape(14.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                unfocusedBorderColor = Color.Transparent
-            ),
-            modifier = Modifier.fillMaxWidth()
-        )
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                    unfocusedBorderColor = Color.Transparent
+                ),
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(
+                onClick = { showFilterDialog = true },
+                colors = IconButtonDefaults.iconButtonColors(
+                    containerColor = if (filterActive) {
+                        MaterialTheme.colorScheme.primaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    },
+                    contentColor = if (filterActive) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+            ) {
+                Icon(
+                    Icons.Default.FilterList,
+                    contentDescription = if (filterActive) "Filter and sort (active)" else "Filter and sort"
+                )
+            }
+        }
+
+        if (showFilterDialog) {
+            SortFilterDialog(
+                sortItems = LibrarySortOption.entries,
+                sortLabel = { it.dialogLabel },
+                selectedSort = sortOption,
+                sortDescending = sortDescending,
+                onSortSelected = { option ->
+                    onSortChanged(
+                        option,
+                        if (sortOption == option) !sortDescending else option.defaultDescending
+                    )
+                },
+                filterTitle = "Publishing status",
+                filterItems = listOf<String?>(null) + PublishingStatus.values,
+                filterLabel = { it?.toDisplayLabel() ?: "All" },
+                selectedFilter = selectedPublishingStatus,
+                onFilterSelected = onPublishingStatusSelected,
+                onDismissRequest = { showFilterDialog = false }
+            )
+        }
 
         Spacer(modifier = Modifier.height(10.dp))
 
@@ -283,21 +342,26 @@ fun HomeLibraryContent(
                 .onSizeChanged { pageWidth = it.width }
         ) {
             val page: @Composable (MediaType, UserStatus) -> Unit = { mediaType, status ->
-                val filteredList = mediaEntries.filter { entry ->
-                    if (isSearching) {
-                        entry.title.contains(searchQuery, ignoreCase = true) ||
-                            entry.seriesTitle?.contains(searchQuery, ignoreCase = true) == true ||
-                            entry.allAlternativeTitles.any { it.contains(searchQuery, ignoreCase = true) } ||
-                            entry.authors.any { it.contains(searchQuery, ignoreCase = true) } ||
-                            entry.creators.any { it.name.contains(searchQuery, ignoreCase = true) }
-                    } else {
-                        entry.type == mediaType && entry.userStatus == status
-                    }
-                }.let { list ->
-                    when (sortOption) {
-                        LibrarySortOption.LAST_UPDATED -> list.sortedByDescending { it.updatedAt }
-                        LibrarySortOption.ALPHABETICAL -> list.sortedBy { it.title.lowercase() }
-                        LibrarySortOption.READ_CHAPTERS -> list.sortedByDescending { it.currentUnit }
+                val filteredList = remember(mediaEntries, mediaType, status, searchQuery, selectedPublishingStatus, sortOption, sortDescending) {
+                    mediaEntries.filter { entry ->
+                        (selectedPublishingStatus == null || entry.publishingStatus == selectedPublishingStatus) &&
+                            if (isSearching) {
+                                entry.title.contains(searchQuery, ignoreCase = true) ||
+                                    entry.seriesTitle?.contains(searchQuery, ignoreCase = true) == true ||
+                                    entry.allAlternativeTitles.any { it.contains(searchQuery, ignoreCase = true) } ||
+                                    entry.authors.any { it.contains(searchQuery, ignoreCase = true) } ||
+                                    entry.creators.any { it.name.contains(searchQuery, ignoreCase = true) }
+                            } else {
+                                entry.type == mediaType && entry.userStatus == status
+                            }
+                    }.let { list ->
+                        val base: Comparator<MediaEntry> = when (sortOption) {
+                            LibrarySortOption.LAST_UPDATED -> compareBy { it.updatedAt }
+                            LibrarySortOption.ALPHABETICAL -> compareBy { it.title.lowercase() }
+                            LibrarySortOption.READ_CHAPTERS -> compareBy { it.currentUnit }
+                            LibrarySortOption.DATE_ADDED -> compareBy { it.createdAt }
+                        }
+                        list.sortedWith((if (sortDescending) base.reversed() else base).thenBy { it.id })
                     }
                 }
 

@@ -89,7 +89,6 @@ import com.omnitrack.app.ui.viewmodel.SeriesViewModel
 import com.omnitrack.app.ui.LocalFeatureServices
 import com.omnitrack.app.ui.library.HomeLibraryStatusFilter
 import com.omnitrack.app.ui.viewmodel.mangaBakaSeriesId
-import com.omnitrack.app.utils.LibrarySortOption
 import com.omnitrack.app.utils.ImportedMediaDraft
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
@@ -105,6 +104,7 @@ fun OmniTrackHomeScreen(
     val mangaBaka = LocalFeatureServices.current.mangaBaka
     val moonReader = LocalFeatureServices.current.moonReader
     val settings = LocalFeatureServices.current.settings
+    val settingsState by settings.state.collectAsState()
     val mediaLookup = LocalFeatureServices.current.mediaLookup
     val mangaBakaState by mangaBaka.mangaBaka.state.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
@@ -135,9 +135,6 @@ fun OmniTrackHomeScreen(
     var deletingEntry by remember { mutableStateOf(false) }
     var deleteError by remember { mutableStateOf<String?>(null) }
     val refreshScope = rememberCoroutineScope()
-    var sortOption by remember {
-        mutableStateOf(LibrarySortOption.fromKey(settings.state.value.sortOption))
-    }
     var fabExpanded by remember { mutableStateOf(false) }
     var showImportUrlDialog by remember { mutableStateOf(false) }
     var showOnlineSearchDialog by remember { mutableStateOf(false) }
@@ -162,7 +159,6 @@ fun OmniTrackHomeScreen(
     }
 
     LaunchedEffect(bottomNavIndex) {
-        sortOption = LibrarySortOption.fromKey(settings.state.value.sortOption)
         if (bottomNavIndex != 0) fabExpanded = false
     }
 
@@ -370,7 +366,11 @@ fun OmniTrackHomeScreen(
                             onStatusSelected = onStatusSelected,
                             searchQuery = searchQuery,
                             onSearchQueryChanged = { searchQuery = it },
-                            sortOption = sortOption,
+                            selectedPublishingStatus = settingsState.selectedPublishingStatus,
+                            onPublishingStatusSelected = settings::setPublishingStatusFilter,
+                            sortOption = settingsState.sortOption,
+                            sortDescending = settingsState.sortDescending,
+                            onSortChanged = settings::setLibrarySort,
                             onRefresh = { viewModel.refreshData() },
                             onSelectEntry = { selectedEntryForDetail = it }
                         )
