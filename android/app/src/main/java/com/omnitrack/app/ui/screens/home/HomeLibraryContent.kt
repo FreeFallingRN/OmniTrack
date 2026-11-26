@@ -287,7 +287,7 @@ fun HomeLibraryContent(
                     if (isSearching) {
                         entry.title.contains(searchQuery, ignoreCase = true) ||
                             entry.seriesTitle?.contains(searchQuery, ignoreCase = true) == true ||
-                            entry.alternativeTitles.any { it.contains(searchQuery, ignoreCase = true) } ||
+                            entry.allAlternativeTitles.any { it.contains(searchQuery, ignoreCase = true) } ||
                             entry.authors.any { it.contains(searchQuery, ignoreCase = true) } ||
                             entry.creators.any { it.name.contains(searchQuery, ignoreCase = true) }
                     } else {

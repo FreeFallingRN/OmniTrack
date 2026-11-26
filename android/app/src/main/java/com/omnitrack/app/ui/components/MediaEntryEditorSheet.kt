@@ -277,7 +277,7 @@ fun MediaEntryEditorSheet(
                     !candidate.sourceUrl.isNullOrBlank() &&
                     candidate.sourceUrl.trim().trimEnd('/').lowercase() == cleanUrl
 
-            val existingKeys = (listOf(candidate.title) + candidate.alternativeTitles)
+            val existingKeys = (listOf(candidate.title) + candidate.allAlternativeTitles)
                 .map(::normalizeTitleKey)
                 .filter { it.isNotEmpty() }
 
@@ -310,7 +310,7 @@ fun MediaEntryEditorSheet(
     val groupedEntry = groupWithEntry?.let { selected ->
         entries.firstOrNull { it.id == selected.id && it.seriesId == null }
     }?.takeIf { seriesId != null || createSeries }
-    val groupedPosition = groupedEntry?.let { it.sequenceNumber ?: 1.0 }
+    val groupedPosition = groupedEntry?.sequenceNumber
     val sameSeriesTitleConflict = if (existing == null && mergeTargetEntry == null && title.isNotBlank()) {
         entries.firstOrNull {
             it.type == type && it.title.trim().equals(title.trim(), ignoreCase = true) &&
@@ -320,12 +320,14 @@ fun MediaEntryEditorSheet(
     } else null
     val positionConflict = if (seriesId != null && position != null) {
         entries.firstOrNull {
-            it.seriesId == seriesId && it.id != targetEntryId && it.sequenceNumber == position
+            it.seriesId == seriesId && it.type == type && it.id != targetEntryId &&
+                it.sequenceNumber == position
         }
     } else null
     val groupedPositionConflict = if (seriesId != null && groupedPosition != null) {
         entries.firstOrNull {
-            it.seriesId == seriesId && it.id != targetEntryId && it.sequenceNumber == groupedPosition
+            it.seriesId == seriesId && it.type == groupedEntry?.type &&
+                it.id != targetEntryId && it.sequenceNumber == groupedPosition
         }
     } else null
     val positionError = when {

@@ -17,6 +17,7 @@ import com.omnitrack.app.data.model.CreatePlatformRequest
 import com.omnitrack.app.data.model.CreateSeriesRequest
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.repository.SeriesRepository
+import com.omnitrack.app.domain.repository.PartialMediaEntryCreateException
 import com.omnitrack.app.utils.ImportedMediaDraft
 import com.omnitrack.app.utils.ScrapedMediaDraft
 import com.omnitrack.app.utils.scraper.ExternalMediaScraper
@@ -379,6 +380,8 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
                 draft.alternativeTitles
             )
         } catch (e: CancellationException) {
+            throw e
+        } catch (e: PartialMediaEntryCreateException) {
             throw e
         } catch (e: Exception) {
             throw IllegalStateException("Entry may have been created; check the library before retrying: ${e.message}", e)

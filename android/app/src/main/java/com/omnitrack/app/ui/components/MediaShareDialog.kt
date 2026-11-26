@@ -64,7 +64,7 @@ fun MediaShareDialog(entry: MediaEntry, onDismiss: () -> Unit) {
     }
     val coverUrl = entry.coverUrl?.takeIf { it.isNotBlank() }
     val sourceUrl = entry.sourceUrl?.takeIf { it.isNotBlank() }
-    val alternativeTitles = entry.alternativeTitles.filter { it.isNotBlank() }
+    val alternativeTitles = entry.allAlternativeTitles.filter { it.isNotBlank() }
     var includeTitle by remember(entry.id) { mutableStateOf(true) }
     var includeCover by remember(entry.id, coverUrl) { mutableStateOf(coverUrl != null) }
     var includeUrl by remember(entry.id, sourceUrl) { mutableStateOf(sourceUrl != null) }
@@ -228,7 +228,7 @@ private fun formatShareText(
     val details = buildList {
         if (includePublishing) add("Publishing: ${escape(entry.publishingStatus.toDisplayLabel())}")
         if (includeAlternatives) {
-            val alternatives = entry.alternativeTitles.filter { it.isNotBlank() }.joinToString(", ") { escape(it) }
+            val alternatives = entry.allAlternativeTitles.filter { it.isNotBlank() }.joinToString(", ") { escape(it) }
             if (alternatives.isNotEmpty()) add("Also known as: $alternatives")
         }
         if (includeProgress) add("${escape(entry.unitName)} ${formatUnit(entry.currentUnit)} · ${escape(entry.userStatus.label)}")

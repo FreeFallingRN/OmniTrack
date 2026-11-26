@@ -32,7 +32,11 @@ fun MediaEntryEntity.toDomain(): MediaEntry {
         isCanon = isCanon,
         authors = parsedCreators.map { it.name },
         creators = parsedCreators,
-        alternativeTitles = decodeAlternativeTitles(alternativeTitles),
+        alternativeTitles = if (seriesId != null && seriesAlternativeTitles == null) {
+            emptyList()
+        } else {
+            decodeAlternativeTitles(alternativeTitles)
+        },
         coverUrl = coverUrl,
         sourceUrl = sourceUrl,
         platformId = platformId,
@@ -41,6 +45,10 @@ fun MediaEntryEntity.toDomain(): MediaEntry {
         unitName = unitName,
         createdAt = createdAt.ifBlank { updatedAt },
         updatedAt = updatedAt,
+        seriesAlternativeTitles = decodeAlternativeTitles(
+            seriesAlternativeTitles ?: if (seriesId != null) alternativeTitles else ""
+        ),
+        aliasScopeUnverified = seriesId != null && seriesAlternativeTitles == null,
     )
 }
 
@@ -78,7 +86,8 @@ private fun decodeAlternativeTitles(value: String): List<String> {
 fun MediaEntryDto.toEntity(
     seriesTitle: String?,
     creators: List<EntryCreator>,
-    altTitles: List<String>
+    altTitles: List<String>,
+    seriesAltTitles: List<String>
 ): MediaEntryEntity = MediaEntryEntity(
     id = id,
     seriesId = seriesId,
@@ -105,4 +114,5 @@ fun MediaEntryDto.toEntity(
     unitName = unitName,
     createdAt = createdAt.ifBlank { updatedAt },
     updatedAt = updatedAt,
+    seriesAlternativeTitles = Json.encodeToString(seriesAltTitles.distinct()),
 )

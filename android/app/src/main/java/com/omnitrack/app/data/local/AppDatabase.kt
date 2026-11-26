@@ -40,7 +40,7 @@ interface PendingMutationDao {
 
 @Database(
     entities = [MediaEntryEntity::class, ProgressHistoryEntity::class, ScrapeIssueReport::class, PendingMutation::class],
-    version = 23,
+    version = 25,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -110,6 +110,21 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_23_24 = object : Migration(23, 24) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_media_entries_seriesId_type_sequenceNumber` " +
+                        "ON `media_entries` (`seriesId`, `type`, `sequenceNumber`)"
+                )
+            }
+        }
+
+        private val MIGRATION_24_25 = object : Migration(24, 25) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `media_entries` ADD COLUMN `seriesAlternativeTitles` TEXT")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -117,7 +132,14 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "omnitrack_database"
                 )
-                    .addMigrations(MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23)
+                    .addMigrations(
+                        MIGRATION_19_20,
+                        MIGRATION_20_21,
+                        MIGRATION_21_22,
+                        MIGRATION_22_23,
+                        MIGRATION_23_24,
+                        MIGRATION_24_25
+                    )
                     .fallbackToDestructiveMigration(false)
                     .build()
                 INSTANCE = instance

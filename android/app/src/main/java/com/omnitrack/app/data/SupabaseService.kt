@@ -21,6 +21,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import com.omnitrack.app.data.local.ScrapeIssueReport
 import io.ktor.http.isSuccess
+import com.omnitrack.app.domain.repository.PartialMediaEntryCreateException
+import kotlinx.coroutines.CancellationException
 
 object SupabaseService {
 
@@ -174,12 +176,18 @@ object SupabaseService {
     }
 
     suspend fun createEntry(request: CreateEntryRequest): MediaEntryDto {
-        val list: List<MediaEntryDto> = client.post("$supabaseUrl/rest/v1/media_entries") {
+        val response = client.post("$supabaseUrl/rest/v1/media_entries") {
             contentType(ContentType.Application.Json)
             header("Prefer", "return=representation")
             setBody(request)
-        }.body()
-        return list.first()
+        }
+        return try {
+            response.body<List<MediaEntryDto>>().single()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            throw PartialMediaEntryCreateException(null, "Entry response could not be read", e)
+        }
     }
 
     suspend fun getAuthors(): List<AuthorDto> =

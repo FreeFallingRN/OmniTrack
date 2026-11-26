@@ -14,6 +14,7 @@ import com.omnitrack.app.data.local.ProgressHistoryEntity
 import com.omnitrack.app.domain.model.*
 import com.omnitrack.app.domain.model.ProgressSource
 import com.omnitrack.app.domain.repository.SeriesRepository
+import com.omnitrack.app.domain.repository.PartialMediaEntryCreateException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -125,11 +126,39 @@ class SeriesRepositoryImpl(
         request: CreateEntryRequest,
         creators: List<Pair<String, String>>,
         alternativeTitles: List<String>
-    ): MediaEntryDto = mutateLibrary {
-        val created = supabaseService.createEntry(request)
-        supabaseService.replaceEntryAuthors(created.id, creators)
-        supabaseService.replaceEntryAlternateTitles(created.id, request.seriesId, alternativeTitles)
-        created
+    ): MediaEntryDto {
+        var createdId: String? = null
+        try {
+            return mutateLibrary {
+                val created = supabaseService.createEntry(request)
+                createdId = created.id
+                supabaseService.replaceEntryAuthors(created.id, creators)
+                supabaseService.replaceEntryAlternateTitles(created.id, request.seriesId, alternativeTitles)
+                created
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (createdId == null && e !is PartialMediaEntryCreateException) throw e
+            val reconciled = try {
+                fetchFromSupabase()
+                true
+            } catch (refreshError: CancellationException) {
+                throw refreshError
+            } catch (refreshError: Exception) {
+                Log.e("SeriesRepository", "Failed to reconcile partial entry creation", refreshError)
+                e.addSuppressed(refreshError)
+                false
+            }
+            val entryId = createdId ?: (e as? PartialMediaEntryCreateException)?.entryId
+            val entry = entryId?.let { "Entry $it" } ?: "The entry"
+            val guidance = if (reconciled) "Library refreshed." else "Library refresh failed; refresh it manually."
+            throw PartialMediaEntryCreateException(
+                entryId,
+                "$entry may already exist remotely. $guidance Check the library and edit its creators and aliases before retrying.",
+                e
+            )
+        }
     }
 
     override suspend fun updateMediaEntry(
@@ -141,6 +170,9 @@ class SeriesRepositoryImpl(
         var progressChanged = false
         mutateLibrary {
             val current = mediaEntryDao.getEntryById(id)
+            check(current == null || current.seriesId == null || current.seriesAlternativeTitles != null) {
+                "Refresh the library before editing this entry so its aliases can be separated safely."
+            }
             progressChanged = current != null && current.currentUnit != request.currentUnit
             supabaseService.updateEntry(
                 id = id,
@@ -196,15 +228,11 @@ class SeriesRepositoryImpl(
         val seriesTitles = series.associate { it.id to it.title }
 
         val entrySnapshot = entries.map { entry ->
-            val mergedAlts = (
-                    altTitlesByEntry[entry.id].orEmpty() +
-                            entry.seriesId?.let { altTitlesBySeries[it] }.orEmpty()
-                    ).map { it.title }.distinct()
-
             entry.toEntity(
                 seriesTitle = seriesTitles[entry.seriesId],
                 creators = creatorsByEntry[entry.id].orEmpty(),
-                altTitles = mergedAlts
+                altTitles = altTitlesByEntry[entry.id].orEmpty().map { it.title },
+                seriesAltTitles = entry.seriesId?.let { altTitlesBySeries[it] }.orEmpty().map { it.title }
             )
         }
         val historySnapshot = history.map { dto ->

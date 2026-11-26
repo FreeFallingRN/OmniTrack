@@ -15,6 +15,12 @@ import com.omnitrack.app.domain.model.ProgressHistoryItem
 import com.omnitrack.app.domain.model.ProgressSource
 import kotlinx.coroutines.flow.Flow
 
+class PartialMediaEntryCreateException(
+    val entryId: String?,
+    message: String,
+    cause: Throwable
+) : IllegalStateException(message, cause)
+
 interface SeriesRepository {
     fun getMediaEntriesStream(): Flow<List<MediaEntry>>
     suspend fun fetchFromSupabase()

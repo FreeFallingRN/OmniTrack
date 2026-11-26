@@ -1,9 +1,13 @@
 package com.omnitrack.app.data.local
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "media_entries")
+@Entity(
+    tableName = "media_entries",
+    indices = [Index(value = ["seriesId", "type", "sequenceNumber"], unique = true)]
+)
 data class MediaEntryEntity(
     @PrimaryKey val id: String,
     val seriesId: String?,
@@ -24,4 +28,5 @@ data class MediaEntryEntity(
     val unitName: String,
     val createdAt: String = "",
     val updatedAt: String,
+    val seriesAlternativeTitles: String? = null,
 )

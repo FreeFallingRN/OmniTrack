@@ -88,7 +88,16 @@ fun EntityDetailSheet(
                 item {
                     Text("Works", style = MaterialTheme.typography.titleMedium)
                 }
-                items(works.sortedBy { it.sequenceNumber }, key = { it.id }) { work ->
+                items(
+                    works.sortedWith(
+                        compareBy<MediaEntry> { it.type.ordinal }
+                            .thenBy { it.sequenceNumber == null }
+                            .thenBy { it.sequenceNumber ?: 0.0 }
+                            .thenBy { it.title.lowercase() }
+                            .thenBy { it.id }
+                    ),
+                    key = { it.id }
+                ) { work ->
                     MediaWorkRow(
                         work = work,
                         onClick = { onSelectWork(work) },

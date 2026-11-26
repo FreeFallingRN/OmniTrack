@@ -45,7 +45,7 @@ internal fun findMangaBakaMatch(title: MangaBakaTitle, entries: List<MediaEntry>
     val mangaTitles = (listOf(title.title) + title.series.titles.orEmpty().map { it.title })
         .map(::titleVariants).filter { it.first.length >= 2 }.distinct()
     val scores = entries.mapNotNull { entry ->
-        val entryTitles = (listOf(entry.title) + entry.alternativeTitles + listOfNotNull(entry.seriesTitle))
+        val entryTitles = (listOf(entry.title) + entry.allAlternativeTitles + listOfNotNull(entry.seriesTitle))
             .map(::titleVariants).filter { it.first.length >= 2 }.distinct()
         val score = mangaTitles.maxOfOrNull { (mangaFull, mangaBase) ->
             entryTitles.maxOfOrNull { (entryFull, entryBase) ->

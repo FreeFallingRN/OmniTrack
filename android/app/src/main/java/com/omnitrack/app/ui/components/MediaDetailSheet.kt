@@ -249,9 +249,9 @@ fun MediaDetailSheet(
                             }
                         }
 
-                        if (entry.alternativeTitles.isNotEmpty()) {
+                        if (entry.allAlternativeTitles.isNotEmpty()) {
                             Text(
-                                text = "Also known as: ${entry.alternativeTitles.take(3).joinToString(" • ")}",
+                                text = "Also known as: ${entry.allAlternativeTitles.take(3).joinToString(" • ")}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

@@ -169,7 +169,7 @@ object MoonReaderImport {
             problems += results.count { it.isEmpty() }
             val found = results.flatten()
             val byTitle = entries.flatMap { entry ->
-                (listOf(entry.title) + entry.alternativeTitles).map { normalize(it) to entry }
+                (listOf(entry.title) + entry.allAlternativeTitles).map { normalize(it) to entry }
             }.filter { it.first.isNotEmpty() }.groupBy({ it.first }, { it.second })
             val candidates = if (linkedFiles != null) {
                 entries.mapNotNull { entry ->

@@ -74,6 +74,7 @@ import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.model.ProgressSource
 import com.omnitrack.app.domain.model.UserStatus
+import com.omnitrack.app.domain.repository.PartialMediaEntryCreateException
 import com.omnitrack.app.ui.components.DeleteCountdownButton
 import com.omnitrack.app.ui.components.MediaDetailSheet
 import com.omnitrack.app.ui.components.MediaEntryEditorData
@@ -103,6 +104,8 @@ fun OmniTrackHomeScreen(
     val isRefreshing by viewModel.isRefreshing.collectAsState()
 
     val context = LocalContext.current
+    var partialCreateMessage by remember { mutableStateOf<String?>(null) }
+    var savingEntry by remember { mutableStateOf(false) }
     val prefs = remember { OmniTrackPreferences(context) }
     var selectedTabMediaType by remember {
         mutableStateOf(MediaType.fromValue(prefs.getString(OmniTrackPreferenceKeys.SelectedMediaType) ?: ""))
@@ -388,7 +391,13 @@ fun OmniTrackHomeScreen(
                 relatedEntries = if (!entry.seriesId.isNullOrBlank()) {
                     mediaEntries
                         .filter { it.seriesId == entry.seriesId && it.id != entry.id }
-                        .sortedBy { it.sequenceNumber }
+                        .sortedWith(
+                            compareBy<MediaEntry> { it.type.ordinal }
+                                .thenBy { it.sequenceNumber == null }
+                                .thenBy { it.sequenceNumber ?: 0.0 }
+                                .thenBy { it.title.lowercase() }
+                                .thenBy { it.id }
+                        )
                 } else {
                     emptyList()
                 },
@@ -478,18 +487,27 @@ fun OmniTrackHomeScreen(
                 onDelete = if (editorEntry != null) {
                     { showDeleteWarning = true }
                 } else null,
-                onSave = { form: MediaEntryEditorData ->
+                onSave = save@{ form: MediaEntryEditorData ->
+                    if (savingEntry) return@save
+                    savingEntry = true
                     val importedUrl = scrapedPrefill?.normalizedUrl
                     val importedMangaBakaId = importedUrl?.let(::mangaBakaSeriesId)
                     val mangaBakaLinkUrl = scrapedPrefill?.draft?.sourceUrl
                         ?.takeIf { mangaBakaSeriesId(it) != null } ?: importedUrl
                     refreshScope.launch {
+                        var createdEntryId: String? = null
                         try {
+                            check(editorEntry?.aliasScopeUnverified != true) {
+                                "Refresh the library and reopen this entry before editing its aliases."
+                            }
                             val mergeTarget = form.mergeIntoEntryId?.let { id ->
                                 check(editorEntry == null) { "Cannot merge while editing an existing entry." }
                                 checkNotNull(mediaEntries.firstOrNull { it.id == id && it.type == form.type }) {
                                     "The selected merge target is no longer available for this media type."
                                 }
+                            }
+                            check(mergeTarget?.aliasScopeUnverified != true) {
+                                "Refresh the library and reopen the editor before merging this entry."
                             }
                             val groupedMatch = form.linkExistingEntryToSeriesId?.let { id ->
                                 check(mergeTarget == null && editorEntry == null) { "Cannot add this entry to a series." }
@@ -573,7 +591,7 @@ fun OmniTrackHomeScreen(
                                             sourceUrl = existingMatch.sourceUrl,
                                             userStatus = existingMatch.userStatus.value,
                                             publishingStatus = existingMatch.publishingStatus,
-                                            sequenceNumber = existingMatch.sequenceNumber ?: 1.0,
+                                            sequenceNumber = existingMatch.sequenceNumber,
                                             currentUnit = existingMatch.currentUnit,
                                             unitName = existingMatch.unitName,
                                             isCanon = existingMatch.isCanon
@@ -605,6 +623,7 @@ fun OmniTrackHomeScreen(
                                     resolvedCreators,
                                     form.alternativeTitles
                                 )
+                                createdEntryId = created.id
                                 if (importedMangaBakaId != null && mangaBakaLinkUrl != null) {
                                     viewModel.linkImportedMangaBakaEntry(
                                         importedMangaBakaId, created.id, form.unitName, mangaBakaLinkUrl
@@ -653,13 +672,36 @@ fun OmniTrackHomeScreen(
                             throw e
                         } catch (e: Exception) {
                             Log.e("OmniTrackHomeScreen", "Failed to save entry", e)
-                            Toast.makeText(
-                                context,
-                                "Save failed: ${e.message ?: "Unknown error"}",
-                                Toast.LENGTH_LONG
-                            ).show()
+                            if (e is PartialMediaEntryCreateException || createdEntryId != null) {
+                                showEntryEditor = false
+                                scrapedPrefill = null
+                                partialCreateMessage = if (e is PartialMediaEntryCreateException) {
+                                    e.message
+                                } else {
+                                    "Entry $createdEntryId was created, but linking failed. Check the library and link it manually before retrying: ${e.message ?: "Unknown error"}"
+                                }
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    "Save failed: ${e.message ?: "Unknown error"}",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        } finally {
+                            savingEntry = false
                         }
                     }
+                }
+            )
+        }
+
+        partialCreateMessage?.let { message ->
+            AlertDialog(
+                onDismissRequest = { partialCreateMessage = null },
+                title = { Text("Entry may already exist") },
+                text = { Text(message) },
+                confirmButton = {
+                    TextButton(onClick = { partialCreateMessage = null }) { Text("OK") }
                 }
             )
         }

@@ -27,4 +27,9 @@ data class MediaEntry(
     val unitName: String = "Chapter",
     val createdAt: String = "",
     val updatedAt: String,
-)
+    val seriesAlternativeTitles: List<String> = emptyList(),
+    val aliasScopeUnverified: Boolean = false,
+) {
+    val allAlternativeTitles: List<String>
+        get() = (alternativeTitles + seriesAlternativeTitles).distinct()
+}
