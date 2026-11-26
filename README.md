@@ -1,95 +1,40 @@
 # OmniTrack
 
-> A personal, cross-platform media and webnovel tracking engine designed to replace platforms like MyAnimeList. OmniTrack provides custom catalog support for non-serialized webnovels, zero-latency progress logging, cross-device synchronization, and automated ingestion from Moon+ Reader.
+OmniTrack is a personal library for keeping track of what you read and watch. Save comics, manga and manhwa, novels and webnovels, anime, and movies in one place, and pick up where you left off across multiple entries in the same series.
 
----
+## What you can do
 
-## Architecture Overview
+- **Home and Library:** Browse and filter your collection, update chapter, episode, or volume progress, and open an entry for its details. Keep parallel tracks in a series, such as a novel and its comic adaptation, without combining their progress. Rescrape an entry to review refreshed details before applying them.
+- **Add media:** Search MangaBaka or AniList, import details from a web link, or create an entry yourself.
+- **Manage your library:** Organize series, authors and other creators, and platforms or sources.
+- **Stats:** Review reading and watching activity, streaks, and breakdowns of your library.
+- **Settings and integrations:** Connect a MangaBaka account to import, match, and sync eligible comic progress; link Moon+ Reader `.po` files for automatic novel progress updates; configure Supabase cloud sync; check for app updates; and report scraper issues.
 
-```
-                              ┌─────────────────────────────────────────┐
-                              │            Supabase Cloud               │
-                              │  - PostgreSQL 15+ (Relational Store)    │
-                              │  - PostgREST (Auto-generated REST API)  │
-                              └────────────────────┬────────────────────┘
-                                                   │
-                ┌──────────────────────────────────┼──────────────────────────────────┐
-                │ HTTPS (Ktor REST)                │ Planned                          │ HTTPS (PostgREST API)
-                ▼                                  ▼                                  ▼
-   ┌─────────────────────────┐        ┌─────────────────────────┐        ┌─────────────────────────┐
-   │       Android App       │        │  Planned Browser Ext.    │        │ Google Apps Script Sync │
-   │  - Kotlin / Compose     │        │  - In progress           │        │  - Headless Cron Worker │
-   │  - Room Local Cache     │        └─────────────────────────┘        │  - Clasp CI/CD via GHA  │
-   │  - Ktor HTTP REST Sync  │                                           └────────────▲────────────┘
-   │  - Android Share Target │                                                        │ Google Drive API
-   └────────────▲────────────┘                                                        │
-                │                                                          ┌────────────┴────────────┐
-   ┌────────────┴────────────┐                                           │   Moon+ Reader Pro      │
-   │ Android System Services │                                           │  - Syncs .po position   │
-   │  - BroadcastReceiver    │                                           │    files to Drive Cache │
-   │  - WorkManager Sync     │                                           └─────────────────────────┘
-   └─────────────────────────┘
-```
+## Getting started
 
----
+OmniTrack's main app is for Android. To build and run it:
 
-## Monorepo Layout
+1. Install Android Studio with JDK 17 and the Android SDK required by the project.
+2. Configure the app's Supabase project URL and anon key in `android/local.properties`:
 
-```
-omnitrack/
-├── .github/
-│   └── workflows/
-│       ├── deploy-database-migrations.yml # Auto-migrates Supabase DB on push to main
-│       ├── deploy-sync-worker.yml         # GAS Clasp deployment via GitHub Actions
-│       └── build-android.yml              # Android linting, tests, and APK build
-├── database/
-│   ├── src/
-│   │   ├── schema.ts            # Declarative TypeScript Entity Model (Drizzle ORM)
-│   │   ├── migrate.ts           # Migration runner + trigger/RLS installer
-│   │   └── index.ts             # Type exports for consumers
-│   ├── migrations/              # Auto-generated SQL migration files & journal
-│   │   ├── 0000_initial_schema.sql
-│   │   └── meta/_journal.json
-│   ├── manual/                  # Standalone raw SQL scripts (reference)
-│   ├── seed.sql                 # Sample development data
-│   ├── drizzle.config.ts        # Drizzle Kit configuration
-│   ├── package.json             # Database migration tooling dependencies
-│   └── verify_connection.ps1    # PostgREST verification test script
-├── sync-worker/                 # Google Apps Script syncing Moon+ Reader from Drive
-├── extension/                   # Planned Chrome Manifest V3 extension (in progress)
-└── android/                     # Native Android Application (Kotlin + Jetpack Compose)
-```
+   ```properties
+   SUPABASE_URL=https://your-project.supabase.co
+   SUPABASE_ANON_KEY=your-supabase-anon-key
+   ```
 
----
+   Alternatively, set those two values as environment variables before building. Do not commit credentials. The Supabase project must have the database schema and migrations from `database/` applied.
+3. Open the `android/` folder in Android Studio, sync Gradle, and run the `app` configuration. Or, from PowerShell:
 
-## Database Management & Entity Modeling
+   ```powershell
+   cd android
+   .\gradlew.bat :app:installDebug
+   ```
 
-OmniTrack uses **Drizzle ORM** for declarative TypeScript entity modeling and migration generation. You define and modify models in TypeScript—Drizzle automatically generates versioned, production-safe SQL migrations.
+Connect MangaBaka in **Settings > MangaBaka** using its sign-in flow or a personal access token. In **Settings > Moon+ Reader**, choose the `.po` progress folder and link books to entries. Android may delay background sync according to its battery and network policies.
 
-### How It Works:
-1. **Define / Update Models**: Edit [`database/src/schema.ts`](file:///c:/Users/benjv/Dev/OmniTrack/database/src/schema.ts) in TypeScript.
-2. **Generate Migration**: Run `npm run db:generate` in the `database/` folder. Drizzle computes the diff against your previous migrations and writes a new versioned SQL migration into `database/migrations/`.
-3. **Commit & Push to `main`**: GitHub Actions (`deploy-database-migrations.yml`) detects changes in `database/` and automatically applies the migration to your Supabase Cloud production database.
-4. **Local Migration (Optional)**: Run `npm run db:migrate` with `DATABASE_URL` configured in `.env`.
+## Project layout
 
----
-
-## Getting Started: Supabase & CI/CD Setup
-
-### 1. Create Supabase Cloud Project
-- Create a project on [supabase.com](https://supabase.com).
-- Under **Project Settings -> Database -> Connection string**, copy the URI (e.g. `postgresql://postgres:[password]@db.[project-ref].supabase.co:5432/postgres` or Connection Pooler on port 6543).
-
-### 2. Configure GitHub Secret for CI/CD Migrations
-- In your GitHub Repository: Go to **Settings -> Secrets and variables -> Actions**.
-- Add a new repository secret:
-  - **Name**: `SUPABASE_DB_URL`
-  - **Value**: Your Supabase PostgreSQL connection string.
-- Any push to `main` touching `database/**` will now automatically run the migrations and configure RLS, triggers, and Realtime!
-
-### 3. Local Verification
-- Copy `.env.example` to `.env` and fill in `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `DATABASE_URL`.
-- Run the PostgREST verification test:
-  ```powershell
-  powershell -NoProfile -ExecutionPolicy Bypass -File database/verify_connection.ps1
-  ```
+- `android/` - Android application (Kotlin and Jetpack Compose).
+- `database/` - Supabase database schema and migrations.
+- `sync-worker/` - Google Apps Script worker for Moon+ Reader files in Google Drive.
+- `extension/` - Planned browser extension; it is not implemented.
