@@ -25,6 +25,7 @@ import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.movableContentOf
@@ -89,17 +90,28 @@ fun HomeLibraryContent(
     val dragScope = rememberCoroutineScope()
     var pageWidth by remember { mutableIntStateOf(0) }
     var swipeGeneration by remember { mutableIntStateOf(0) }
+    var offsetJob by remember { mutableStateOf<Job?>(null) }
+    var offsetStatus by remember { mutableStateOf(selectedUserStatus) }
+    var settlingCommittedSwipe by remember { mutableStateOf(false) }
     var showFilterDialog by remember { mutableStateOf(false) }
     val filterActive = selectedPublishingStatus != null ||
         sortOption != LibrarySortOption.LAST_UPDATED ||
         sortDescending != LibrarySortOption.LAST_UPDATED.defaultDescending
 
+    LaunchedEffect(selectedUserStatus) {
+        if (offsetStatus != selectedUserStatus) {
+            offsetJob?.cancel()
+            dragOffsetPx = 0f
+            settlingCommittedSwipe = false
+            offsetStatus = selectedUserStatus
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .pointerInput(isSearching, selectedUserStatus, selectedTabMediaType) {
+            .pointerInput(isSearching, selectedTabMediaType) {
                 if (!isSearching) {
-                    var offsetJob: Job? = null
                     try {
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
@@ -134,6 +146,10 @@ fun HomeLibraryContent(
                                 ) {
                                     claimed = true
                                     offsetJob?.cancel()
+                                    if (settlingCommittedSwipe) {
+                                        dragOffsetPx = 0f
+                                        settlingCommittedSwipe = false
+                                    }
                                     baseOffset = dragOffsetPx
                                 }
                                 if (claimed) {
@@ -173,23 +189,29 @@ fun HomeLibraryContent(
                                 }
                                 offsetJob?.cancel()
                                 val commitStatus = targetStatus
+                                if (commitStatus != null && currentUserStatus == gestureStatus) {
+                                    Snapshot.withMutableSnapshot {
+                                        swipeGeneration++
+                                        offsetStatus = commitStatus
+                                        settlingCommittedSwipe = true
+                                        dragOffsetPx = (dragOffsetPx - targetOffset).coerceIn(
+                                            -pageWidth.toFloat(), pageWidth.toFloat()
+                                        )
+                                        selectStatus(commitStatus)
+                                    }
+                                }
                                 offsetJob = dragScope.launch(start = CoroutineStart.UNDISPATCHED) {
-                                    Animatable(dragOffsetPx).animateTo(targetOffset) {
+                                    Animatable(dragOffsetPx).animateTo(0f) {
                                         dragOffsetPx = value
                                     }
-                                    if (commitStatus != null && currentUserStatus == gestureStatus) {
-                                        Snapshot.withMutableSnapshot {
-                                            swipeGeneration++
-                                            selectStatus(commitStatus)
-                                            dragOffsetPx = 0f
-                                        }
-                                    }
+                                    settlingCommittedSwipe = false
                                 }
                             }
                         }
                     } finally {
                         offsetJob?.cancel()
                         dragOffsetPx = 0f
+                        settlingCommittedSwipe = false
                     }
                 }
             }
