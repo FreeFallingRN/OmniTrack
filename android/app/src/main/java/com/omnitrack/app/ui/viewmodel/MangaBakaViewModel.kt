@@ -13,18 +13,18 @@ import com.omnitrack.app.data.MangaBakaService
 import com.omnitrack.app.data.MangaBakaSeriesTitle
 import com.omnitrack.app.data.MangaBakaTitle
 import com.omnitrack.app.data.mangaBakaImportTitles
-import com.omnitrack.app.data.model.CreateEntryRequest
-import com.omnitrack.app.data.model.CreatePlatformRequest
-import com.omnitrack.app.data.model.CreateSeriesRequest
+import com.omnitrack.app.domain.model.CreateEntryCommand
+import com.omnitrack.app.domain.model.CreatePlatformCommand
+import com.omnitrack.app.domain.model.CreateSeriesCommand
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.repository.SeriesRepository
 import com.omnitrack.app.domain.repository.PartialMediaEntryCreateException
-import com.omnitrack.app.ui.screens.settings.findMangaBakaMatch
-import com.omnitrack.app.ui.screens.settings.mangaBakaMatchesType
+import com.omnitrack.app.feature.mangabaka.matching.findMangaBakaMatch
+import com.omnitrack.app.feature.mangabaka.matching.mangaBakaMatchesType
 import com.omnitrack.app.utils.ImportedMediaDraft
 import com.omnitrack.app.utils.ScrapedMediaDraft
-import com.omnitrack.app.utils.scraper.ExternalMediaScraper
+import com.omnitrack.app.feature.MediaLookupService
 import com.omnitrack.app.utils.scraper.adapters.MangaBakaAdapter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -61,7 +61,11 @@ data class MangaBakaState(
     val batchMessage: String = ""
 )
 
-class MangaBakaViewModel(context: Context, private val repository: SeriesRepository) {
+class MangaBakaViewModel(
+    context: Context,
+    private val repository: SeriesRepository,
+    private val mediaLookup: MediaLookupService
+) {
     private val appContext = context.applicationContext
     private val preferences = MangaBakaPreferences(appContext)
     private val service = MangaBakaService(preferences)
@@ -314,7 +318,7 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
         val seriesUrl = "https://mangabaka.org/series/${title.series.id}"
         check(mangaBakaSeriesId(seriesUrl) == title.series.id) { "Invalid MangaBaka series ID" }
         val imported = try {
-            ExternalMediaScraper.scrape(appContext, seriesUrl, selectedType)
+            mediaLookup.scrape(seriesUrl, selectedType)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -445,10 +449,10 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
             ?: error("Platform metadata is missing")
         val platform = repository.getPlatforms().firstOrNull {
             it.name.replace(" ", "").trim().equals(platformName.replace(" ", "").trim(), ignoreCase = true)
-        } ?: repository.createPlatform(CreatePlatformRequest(name = platformName))
+        } ?: repository.createPlatform(CreatePlatformCommand(name = platformName))
         val seriesId = draft.seriesTitle?.trim()?.takeIf { it.isNotBlank() }?.let { name ->
             repository.getSeries().firstOrNull { it.title.trim().equals(name, ignoreCase = true) }?.id
-                ?: repository.createSeries(CreateSeriesRequest(title = name)).id
+                ?: repository.createSeries(CreateSeriesCommand(title = name)).id
         }
         check(preferences.read() == credentials && credentials.userId.isNotBlank() &&
             credentials.accessToken.isNotBlank()) { "MangaBaka account changed; reconnect and try again" }
@@ -458,7 +462,7 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
         findBatchDuplicate(title, draft)?.let { return "Possible existing entry '${it.title}'; link or review manually" }
         val created = try {
             repository.createMediaEntry(
-                CreateEntryRequest(
+                CreateEntryCommand(
                     seriesId = seriesId,
                     title = draft.title.trim(),
                     type = draft.type.value,

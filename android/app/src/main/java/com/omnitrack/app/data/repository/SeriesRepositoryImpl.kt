@@ -5,7 +5,6 @@ import androidx.room.withTransaction
 import com.omnitrack.app.data.MangaBakaPreferences
 import com.omnitrack.app.data.MangaBakaProgressSync
 import com.omnitrack.app.data.SupabaseService
-import com.omnitrack.app.data.model.*
 import com.omnitrack.app.data.local.AppDatabase
 import com.omnitrack.app.data.local.MediaEntryDao
 import com.omnitrack.app.data.local.MediaEntryEntity
@@ -84,14 +83,20 @@ class SeriesRepositoryImpl(
         }
     }
 
-    override suspend fun getSeries(): List<SeriesDto> = progressMutex.withLock { supabaseService.getSeries() }
+    override suspend fun getSeries(): List<Series> = progressMutex.withLock {
+        supabaseService.getSeries().map { it.toDomain() }
+    }
 
-    override suspend fun getAuthors(): List<AuthorDto> = progressMutex.withLock { supabaseService.getAuthors() }
+    override suspend fun getAuthors(): List<Author> = progressMutex.withLock {
+        supabaseService.getAuthors().map { it.toDomain() }
+    }
 
-    override suspend fun getPlatforms(): List<PlatformDto> = progressMutex.withLock { supabaseService.getPlatforms() }
+    override suspend fun getPlatforms(): List<Platform> = progressMutex.withLock {
+        supabaseService.getPlatforms().map { it.toDomain() }
+    }
 
-    override suspend fun createSeries(request: CreateSeriesRequest): SeriesDto =
-        mutateLibrary { supabaseService.createSeries(request) }
+    override suspend fun createSeries(request: CreateSeriesCommand): Series =
+        mutateLibrary { supabaseService.createSeries(request.toDto()).toDomain() }
 
     override suspend fun updateSeries(id: String, title: String, rating: Int?) =
         mutateLibrary { supabaseService.updateSeries(id, title, rating) }
@@ -103,7 +108,7 @@ class SeriesRepositoryImpl(
         nativeName: String?,
         imageUrl: String?,
         bio: String?
-    ): AuthorDto = mutateLibrary { supabaseService.createAuthor(name, nativeName, imageUrl, bio) }
+    ): Author = mutateLibrary { supabaseService.createAuthor(name, nativeName, imageUrl, bio).toDomain() }
 
     override suspend fun updateAuthor(
         id: String,
@@ -115,27 +120,27 @@ class SeriesRepositoryImpl(
 
     override suspend fun deleteAuthor(id: String) = mutateLibrary { supabaseService.deleteAuthor(id) }
 
-    override suspend fun createPlatform(request: CreatePlatformRequest): PlatformDto =
-        mutateLibrary { supabaseService.createPlatform(request) }
+    override suspend fun createPlatform(request: CreatePlatformCommand): Platform =
+        mutateLibrary { supabaseService.createPlatform(request.toDto()).toDomain() }
 
-    override suspend fun updatePlatform(id: String, request: UpdatePlatformRequest) =
-        mutateLibrary { supabaseService.updatePlatform(id, request) }
+    override suspend fun updatePlatform(id: String, request: UpdatePlatformCommand) =
+        mutateLibrary { supabaseService.updatePlatform(id, request.toDto()) }
 
     override suspend fun deletePlatform(id: String) = mutateLibrary { supabaseService.deletePlatform(id) }
 
     override suspend fun createMediaEntry(
-        request: CreateEntryRequest,
+        request: CreateEntryCommand,
         creators: List<Pair<String, String>>,
         alternativeTitles: List<String>
-    ): MediaEntryDto {
+    ): CreatedMediaEntry {
         var createdId: String? = null
         try {
             return mutateLibrary {
-                val created = supabaseService.createEntry(request)
+                val created = supabaseService.createEntry(request.toDto())
                 createdId = created.id
                 supabaseService.replaceEntryAuthors(created.id, creators)
                 supabaseService.replaceEntryAlternateTitles(created.id, request.seriesId, alternativeTitles)
-                created
+                CreatedMediaEntry(created.id)
             }
         } catch (e: CancellationException) {
             throw e
@@ -164,7 +169,7 @@ class SeriesRepositoryImpl(
 
     override suspend fun updateMediaEntry(
         id: String,
-        request: UpdateEntryRequest,
+        request: UpdateEntryCommand,
         creators: List<Pair<String, String>>,
         alternativeTitles: List<String>
     ): Unit = MangaBakaProgressSync.withLinkLock {

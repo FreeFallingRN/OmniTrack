@@ -10,6 +10,8 @@ Native Android client built with Kotlin, Jetpack Compose, Room SQLite cache, and
 - **Discord Sharing**: Customize fields and preview Markdown from an entry's share button. The share style is selected in Settings; covers are attached when available, with text-only sharing if loading fails.
 - **Sync**: Supabase REST integration with local Room caching and WorkManager background sync.
 
+`MainActivity` wires the library ViewModel, separate MangaBaka and Moon+ Reader sync owners, settings state holder, scrape-report repository, and media lookup services. Feature owners schedule their existing background work; the library ViewModel owns library and progress state.
+
 Entry aliases are edited separately from shared series aliases. After upgrading, refresh the library and reopen a series entry before editing if its cached aliases have not yet been separated. If creating an entry only partially succeeds, check the refreshed library and complete its details before retrying; refresh manually if reconciliation fails.
 
 ## Moon+ Reader progress

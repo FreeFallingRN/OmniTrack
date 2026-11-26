@@ -14,6 +14,7 @@ These notes describe verified Android app code and repository conventions for Om
   - `.../data/local/` — Room database, entities, and DAOs.
   - `.../data/repository/` — repository implementation and entity mappers.
   - `.../data/` — Supabase service; `.../data/model/` — network DTOs.
+  - `.../feature/mangabaka/matching/` — shared MangaBaka matching logic.
   - `.../ui/` — `MainActivity`, `viewmodel/` (`SeriesViewModel`), `components/`, `screens/` (including split screen sections/calculations/editors), and `theme/`.
   - `.../utils/`, `.../worker/` — utilities and worker.
 

@@ -1,7 +1,6 @@
 package com.omnitrack.app.data
 
 import com.omnitrack.app.domain.model.MediaType
-import com.omnitrack.app.utils.scraper.ExternalMediaScraper
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
@@ -45,7 +44,7 @@ class MangaBakaSearchProvider : OnlineMediaSearchProvider {
     override val sourceName = "MangaBaka"
 
     override suspend fun search(title: String): List<OnlineSearchResult> {
-        val response = ExternalMediaScraper.client.get("https://api.mangabaka.org/v1/series/search") {
+        val response = MediaHttpClient.client.get("https://api.mangabaka.org/v1/series/search") {
             parameter("q", title)
             parameter("limit", 20)
         }
@@ -102,7 +101,7 @@ class AniListSearchProvider : OnlineMediaSearchProvider {
             put("query", query)
             put("variables", buildJsonObject { put("search", title) })
         }
-        val response = ExternalMediaScraper.client.post("https://graphql.anilist.co") {
+        val response = MediaHttpClient.client.post("https://graphql.anilist.co") {
             contentType(ContentType.Application.Json)
             setBody(payload.toString())
         }

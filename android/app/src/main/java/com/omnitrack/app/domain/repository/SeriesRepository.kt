@@ -1,18 +1,18 @@
 package com.omnitrack.app.domain.repository
 
-import com.omnitrack.app.data.model.AuthorDto
-import com.omnitrack.app.data.model.CreateEntryRequest
-import com.omnitrack.app.data.model.CreatePlatformRequest
-import com.omnitrack.app.data.model.CreateSeriesRequest
-import com.omnitrack.app.data.model.MediaEntryDto
-import com.omnitrack.app.data.model.PlatformDto
-import com.omnitrack.app.data.model.SeriesDto
-import com.omnitrack.app.data.model.UpdateEntryRequest
-import com.omnitrack.app.data.model.UpdatePlatformRequest
+import com.omnitrack.app.domain.model.Author
+import com.omnitrack.app.domain.model.CreateEntryCommand
+import com.omnitrack.app.domain.model.CreatePlatformCommand
+import com.omnitrack.app.domain.model.CreateSeriesCommand
+import com.omnitrack.app.domain.model.CreatedMediaEntry
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.OverallProgressStats
+import com.omnitrack.app.domain.model.Platform
 import com.omnitrack.app.domain.model.ProgressHistoryItem
 import com.omnitrack.app.domain.model.ProgressSource
+import com.omnitrack.app.domain.model.Series
+import com.omnitrack.app.domain.model.UpdateEntryCommand
+import com.omnitrack.app.domain.model.UpdatePlatformCommand
 import kotlinx.coroutines.flow.Flow
 
 class PartialMediaEntryCreateException(
@@ -24,26 +24,26 @@ class PartialMediaEntryCreateException(
 interface SeriesRepository {
     fun getMediaEntriesStream(): Flow<List<MediaEntry>>
     suspend fun fetchFromSupabase()
-    suspend fun getSeries(): List<SeriesDto>
-    suspend fun getAuthors(): List<AuthorDto>
-    suspend fun getPlatforms(): List<PlatformDto>
-    suspend fun createSeries(request: CreateSeriesRequest): SeriesDto
+    suspend fun getSeries(): List<Series>
+    suspend fun getAuthors(): List<Author>
+    suspend fun getPlatforms(): List<Platform>
+    suspend fun createSeries(request: CreateSeriesCommand): Series
     suspend fun updateSeries(id: String, title: String, rating: Int?)
     suspend fun deleteSeries(id: String)
-    suspend fun createAuthor(name: String, nativeName: String?, imageUrl: String?, bio: String?): AuthorDto
+    suspend fun createAuthor(name: String, nativeName: String?, imageUrl: String?, bio: String?): Author
     suspend fun updateAuthor(id: String, name: String, nativeName: String?, imageUrl: String?, bio: String?)
     suspend fun deleteAuthor(id: String)
-    suspend fun createPlatform(request: CreatePlatformRequest): PlatformDto
-    suspend fun updatePlatform(id: String, request: UpdatePlatformRequest)
+    suspend fun createPlatform(request: CreatePlatformCommand): Platform
+    suspend fun updatePlatform(id: String, request: UpdatePlatformCommand)
     suspend fun deletePlatform(id: String)
     suspend fun createMediaEntry(
-        request: CreateEntryRequest,
+        request: CreateEntryCommand,
         creators: List<Pair<String, String>>,
         alternativeTitles: List<String>
-    ): MediaEntryDto
+    ): CreatedMediaEntry
     suspend fun updateMediaEntry(
         id: String,
-        request: UpdateEntryRequest,
+        request: UpdateEntryCommand,
         creators: List<Pair<String, String>>,
         alternativeTitles: List<String>
     )

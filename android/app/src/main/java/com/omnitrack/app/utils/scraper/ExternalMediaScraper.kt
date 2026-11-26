@@ -3,6 +3,7 @@ package com.omnitrack.app.utils.scraper
 import android.content.Context
 import android.util.Log
 import com.omnitrack.app.data.MangaBakaPreferences
+import com.omnitrack.app.data.MediaHttpClient
 import com.omnitrack.app.data.mangaBakaAuthorization
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.utils.ScrapedMediaDraft
@@ -16,9 +17,6 @@ import com.omnitrack.app.utils.scraper.adapters.MyAnimeListAdapter
 import com.omnitrack.app.utils.scraper.adapters.NovelpiaAdapter
 import com.omnitrack.app.utils.scraper.adapters.RoyalRoadAdapter
 import com.omnitrack.app.utils.scraper.adapters.WebnovelAdapter
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
-import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsText
@@ -31,13 +29,7 @@ import java.net.URI
 object ExternalMediaScraper {
     internal const val TAG = "ExternalMediaScraper"
 
-    internal val client = HttpClient(CIO) {
-        install(HttpTimeout) {
-            connectTimeoutMillis = 15_000L
-            requestTimeoutMillis = 20_000L
-            socketTimeoutMillis = 15_000L
-        }
-    }
+    internal val client = MediaHttpClient.client
     private val mangaBakaClient = client.config { followRedirects = false }
     private val httpFastFetcher = HttpFastFetcher(client)
     private val webViewHtmlFetcher = WebViewHtmlFetcher()

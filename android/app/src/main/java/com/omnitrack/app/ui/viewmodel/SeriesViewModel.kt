@@ -1,15 +1,13 @@
 package com.omnitrack.app.ui.viewmodel
 
 import android.content.Context
-import android.net.Uri
-import android.os.SystemClock
 import android.util.Log
 import android.widget.Toast
-import com.omnitrack.app.data.MangaBakaTitle
-import com.omnitrack.app.data.OmniTrackPreferences
-import com.omnitrack.app.data.OmniTrackPreferenceKeys
-import com.omnitrack.app.data.PreferenceChange
-import com.omnitrack.app.data.model.*
+import com.omnitrack.app.domain.model.CreateEntryCommand
+import com.omnitrack.app.domain.model.CreatePlatformCommand
+import com.omnitrack.app.domain.model.CreateSeriesCommand
+import com.omnitrack.app.domain.model.UpdateEntryCommand
+import com.omnitrack.app.domain.model.UpdatePlatformCommand
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.omnitrack.app.domain.model.HistoryTimeframe
@@ -19,28 +17,15 @@ import com.omnitrack.app.domain.model.ProgressHistoryItem
 import com.omnitrack.app.domain.model.ProgressSource
 import com.omnitrack.app.domain.repository.SeriesRepository
 import com.omnitrack.app.utils.get7DDates
-import com.omnitrack.app.utils.MoonReaderMatch
-import com.omnitrack.app.utils.MoonReaderSync
-import com.omnitrack.app.utils.MoonReaderFolderAccessException
-import com.omnitrack.app.utils.MOON_READER_FOLDER_EXPIRED
-import com.omnitrack.app.utils.hasMoonReaderFolderAccess
-import com.omnitrack.app.worker.MoonReaderSyncWorker
-import com.omnitrack.app.worker.MangaBakaSyncWorker
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.temporal.ChronoUnit
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -60,144 +45,6 @@ class SeriesViewModel(
 ) : ViewModel() {
 
     private val appContext = context.applicationContext
-    val mangaBaka = MangaBakaViewModel(appContext, repository)
-    private val _mangaBakaImportMessages = MutableSharedFlow<String>(extraBufferCapacity = 16)
-    val mangaBakaImportMessages = _mangaBakaImportMessages.asSharedFlow()
-    private val moonReaderPrefs = OmniTrackPreferences(appContext)
-    private val moonReaderSync = MoonReaderSync(appContext, repository)
-    private val _moonReaderBusy = MutableStateFlow(false)
-    val moonReaderBusy: StateFlow<Boolean> = _moonReaderBusy.asStateFlow()
-    private val _needsProgressFolderReauth = MutableStateFlow(false)
-    val needsProgressFolderReauth: StateFlow<Boolean> = _needsProgressFolderReauth.asStateFlow()
-    private val _needsBooksFolderReauth = MutableStateFlow(false)
-    val needsBooksFolderReauth: StateFlow<Boolean> = _needsBooksFolderReauth.asStateFlow()
-    private val _moonReaderMessages = MutableSharedFlow<String>(extraBufferCapacity = 16)
-    val moonReaderMessages = _moonReaderMessages.asSharedFlow()
-    private var lastMoonReaderCheck: Long? = null
-    private var moonReaderScheduleJob: Job? = null
-    private var mangaBakaBatchJob: Job? = null
-    private val moonReaderPrefsListener = moonReaderPrefs.addListener { change ->
-        if (change == PreferenceChange.ALL ||
-            change == PreferenceChange.MOON_READER_FOLDER ||
-            change == PreferenceChange.MOON_READER_FILE_URI) {
-            updateMoonReaderSchedule()
-        }
-    }
-
-    init {
-        viewModelScope.launch { mangaBaka.initialize() }
-        viewModelScope.launch {
-            repository.getMediaEntriesStream().collect { updateMoonReaderSchedule() }
-        }
-        viewModelScope.launch {
-            combine(mangaBaka.state, repository.getMediaEntriesStream()) { state, entries ->
-                if (!state.initialized) null else
-                    state.connected && state.links.values.any { link -> entries.any { it.id == link.entryId } }
-            }.distinctUntilChanged().collect { enabled ->
-                when (enabled) {
-                    true -> MangaBakaSyncWorker.schedule(appContext)
-                    false -> MangaBakaSyncWorker.cancel(appContext)
-                    null -> Unit
-                }
-            }
-        }
-    }
-
-    override fun onCleared() {
-        mangaBaka.close()
-        moonReaderPrefs.removeListener(moonReaderPrefsListener)
-        super.onCleared()
-    }
-
-    fun handleMangaBakaCallback(uri: Uri) {
-        viewModelScope.launch { mangaBaka.completeAuthorization(uri) }
-    }
-
-    fun fetchMangaBakaLibrary() {
-        viewModelScope.launch { mangaBaka.fetch() }
-    }
-
-    fun syncMangaBakaProgress(manual: Boolean = false) {
-        viewModelScope.launch {
-            isRefreshing.first { !it }
-            mangaBaka.sync(manual)
-        }
-    }
-
-    fun syncAndMatchMangaBakaLibrary() {
-        viewModelScope.launch {
-            isRefreshing.first { !it }
-            mangaBaka.syncAndMatchLibrary()
-        }
-    }
-
-    fun addMangaBakaEntry(title: MangaBakaTitle, otherType: String? = null) {
-        viewModelScope.launch { mangaBaka.add(title, otherType) }
-    }
-
-    fun batchImportMangaBakaEntries(titles: List<MangaBakaTitle>) {
-        if (mangaBakaBatchJob?.isActive == true) return
-        mangaBakaBatchJob = viewModelScope.launch { mangaBaka.batchImport(titles) }
-    }
-
-    fun linkMangaBakaEntry(title: MangaBakaTitle, entryId: String, offset: Double) {
-        viewModelScope.launch { mangaBaka.link(title, entryId, offset) }
-    }
-
-    fun linkAllMatchedMangaBakaEntries(matches: List<Pair<MangaBakaTitle, String>>) {
-        viewModelScope.launch { mangaBaka.linkAllMatched(matches) }
-    }
-
-    fun unlinkMangaBakaEntry(title: MangaBakaTitle) {
-        viewModelScope.launch { mangaBaka.unlink(title) }
-    }
-
-    fun linkImportedMangaBakaEntry(seriesId: Long, entryId: String, unitName: String, sourceUrl: String) {
-        viewModelScope.launch {
-            try {
-                mangaBaka.linkImportedSeries(seriesId, entryId, unitName, sourceUrl)
-                _mangaBakaImportMessages.emit("Entry linked to MangaBaka.")
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.e("MangaBaka", "Could not link imported entry", e)
-                _mangaBakaImportMessages.emit("Entry saved. MangaBaka: ${e.message ?: "Unknown error"}")
-            }
-        }
-    }
-
-    fun updateMoonReaderSchedule() {
-        moonReaderScheduleJob?.cancel()
-        moonReaderScheduleJob = viewModelScope.launch {
-            val entries = repository.getMediaEntriesStream().first()
-            val folder = moonReaderPrefs.getString(OmniTrackPreferenceKeys.MoonReaderFolder)
-            val linked = entries.any {
-                moonReaderPrefs.getString(OmniTrackPreferenceKeys.moonReaderFileUri(it.id)) != null
-            }
-            if (linked && folder != null && checkMoonReaderFolder(folder, books = false)) {
-                MoonReaderSyncWorker.schedule(appContext)
-            } else {
-                MoonReaderSyncWorker.cancel(appContext)
-            }
-        }
-    }
-
-    suspend fun checkMoonReaderFolder(folder: String, books: Boolean): Boolean {
-        val valid = hasMoonReaderFolderAccess(appContext, Uri.parse(folder))
-        setMoonReaderFolderAccess(folder, books, valid)
-        return valid
-    }
-
-    suspend fun setMoonReaderFolderAccess(folder: String, books: Boolean, valid: Boolean) {
-        val key = if (books) OmniTrackPreferenceKeys.MoonReaderBooksFolder else OmniTrackPreferenceKeys.MoonReaderFolder
-        if (moonReaderPrefs.getString(key) == folder) {
-            val state = if (books) _needsBooksFolderReauth else _needsProgressFolderReauth
-            val wasExpired = state.value
-            state.value = !valid
-            if (!valid && !wasExpired) _moonReaderMessages.emit(MOON_READER_FOLDER_EXPIRED)
-        }
-    }
-
     private val selectedPeriodTabFlow = MutableStateFlow(HistoryTimeframe.DAYS_30)
     private val periodOffsetFlow = MutableStateFlow(0)
     private val _isRefreshing = MutableStateFlow(false)
@@ -329,38 +176,6 @@ class SeriesViewModel(
         }
     }
 
-    suspend fun importMoonReaderProgress(match: MoonReaderMatch, newProgress: Double, folder: String?) {
-        moonReaderSync.apply(match, newProgress, folder)
-    }
-
-    suspend fun unlinkMoonReaderBook(entryId: String) {
-        moonReaderSync.unlink(entryId)
-    }
-
-    fun syncMoonReader(manual: Boolean = false) {
-        if (_moonReaderBusy.value) return
-        val now = SystemClock.elapsedRealtime()
-        val lastCheck = lastMoonReaderCheck
-        if (!manual && lastCheck != null && now - lastCheck < 60_000L) return
-        lastMoonReaderCheck = now
-        _moonReaderBusy.value = true
-        viewModelScope.launch {
-            try {
-                isRefreshing.first { !it }
-                moonReaderSync.sync(manual) { _moonReaderMessages.emit(it) }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: MoonReaderFolderAccessException) {
-                setMoonReaderFolderAccess(e.folder, books = false, valid = false)
-            } catch (e: Exception) {
-                Log.e("MoonReaderSync", "Moon+ Reader sync failed", e)
-                _moonReaderMessages.emit("Moon+ Reader sync failed: ${e.message ?: "Unknown error"}")
-            } finally {
-                _moonReaderBusy.value = false
-            }
-        }
-    }
-
     fun incrementUnitCount(
         id: String,
         delta: Double = 1.0,
@@ -392,7 +207,7 @@ class SeriesViewModel(
     suspend fun getSeries() = repository.getSeries()
     suspend fun getAuthors() = repository.getAuthors()
     suspend fun getPlatforms() = repository.getPlatforms()
-    suspend fun createSeries(request: CreateSeriesRequest) = repository.createSeries(request)
+    suspend fun createSeries(request: CreateSeriesCommand) = repository.createSeries(request)
     suspend fun updateSeries(id: String, title: String, rating: Int?) =
         repository.updateSeries(id, title, rating)
     suspend fun deleteSeries(id: String) = repository.deleteSeries(id)
@@ -406,18 +221,18 @@ class SeriesViewModel(
         bio: String? = null
     ) = repository.updateAuthor(id, name, nativeName, imageUrl, bio)
     suspend fun deleteAuthor(id: String) = repository.deleteAuthor(id)
-    suspend fun createPlatform(request: CreatePlatformRequest) = repository.createPlatform(request)
-    suspend fun updatePlatform(id: String, request: UpdatePlatformRequest) =
+    suspend fun createPlatform(request: CreatePlatformCommand) = repository.createPlatform(request)
+    suspend fun updatePlatform(id: String, request: UpdatePlatformCommand) =
         repository.updatePlatform(id, request)
     suspend fun deletePlatform(id: String) = repository.deletePlatform(id)
     suspend fun createMediaEntry(
-        request: CreateEntryRequest,
+        request: CreateEntryCommand,
         creators: List<Pair<String, String>>,
         alternativeTitles: List<String>
     ) = repository.createMediaEntry(request, creators, alternativeTitles)
     suspend fun updateMediaEntry(
         id: String,
-        request: UpdateEntryRequest,
+        request: UpdateEntryCommand,
         creators: List<Pair<String, String>>,
         alternativeTitles: List<String>
     ) = repository.updateMediaEntry(id, request, creators, alternativeTitles)

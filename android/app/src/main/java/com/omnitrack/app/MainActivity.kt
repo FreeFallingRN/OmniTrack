@@ -16,24 +16,36 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import com.omnitrack.app.data.MangaBakaPreferences
+import com.omnitrack.app.data.MangaBakaSearchProvider
+import com.omnitrack.app.data.AniListSearchProvider
 import com.omnitrack.app.data.local.AppDatabase
 import com.omnitrack.app.data.repository.SeriesRepositoryImpl
 import com.omnitrack.app.domain.repository.SeriesRepository
-import com.omnitrack.app.ui.screens.home.OmniTrackHomeScreen
+import com.omnitrack.app.ui.home.OmniTrackHomeScreen
 import com.omnitrack.app.ui.theme.OmniTrackTheme
 import com.omnitrack.app.utils.UpdateCheckResult
 import com.omnitrack.app.utils.UpdateChecker
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.CompositionLocalProvider
+import com.omnitrack.app.data.repository.ScrapeIssueRepository
+import com.omnitrack.app.feature.MediaLookupService
+import com.omnitrack.app.ui.FeatureServices
+import com.omnitrack.app.ui.LocalFeatureServices
 import com.omnitrack.app.ui.viewmodel.SeriesViewModel
-import com.omnitrack.app.worker.ScrapeIssueSyncWorker
+import com.omnitrack.app.ui.viewmodel.SettingsStateHolder
+import com.omnitrack.app.ui.viewmodel.MangaBakaOwner
+import com.omnitrack.app.ui.viewmodel.MoonReaderViewModel
 
 class MainActivity : ComponentActivity() {
 
     var availableUpdate by mutableStateOf<Triple<String, String, String>?>(null)
     var pendingSharedUrl by mutableStateOf<String?>(null)
     private lateinit var seriesViewModel: SeriesViewModel
+    private lateinit var settings: SettingsStateHolder
+    private lateinit var mangaBaka: MangaBakaOwner
+    private lateinit var moonReader: MoonReaderViewModel
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,11 +54,9 @@ class MainActivity : ComponentActivity() {
         pendingSharedUrl = extractSharedUrl(intent)
 
         val database = AppDatabase.getInstance(applicationContext)
-        lifecycleScope.launch {
-            database.scrapeIssueReportDao().pendingIds().forEach {
-                ScrapeIssueSyncWorker.enqueue(applicationContext, it)
-            }
-        }
+        settings = SettingsStateHolder(applicationContext)
+        val scrapeIssues = ScrapeIssueRepository(applicationContext, database.scrapeIssueReportDao())
+        lifecycleScope.launch { scrapeIssues.enqueuePending() }
         val repository: SeriesRepository = SeriesRepositoryImpl(
             database = database,
             mediaEntryDao = database.mediaEntryDao(),
@@ -62,10 +72,27 @@ class MainActivity : ComponentActivity() {
             }
         }
         seriesViewModel = ViewModelProvider(this, viewModelFactory)[SeriesViewModel::class.java]
+        val mediaLookup = MediaLookupService(applicationContext)
+        val featureFactory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                return when (modelClass) {
+                    MangaBakaOwner::class.java -> MangaBakaOwner(applicationContext, repository, seriesViewModel.isRefreshing, mediaLookup)
+                    MoonReaderViewModel::class.java -> MoonReaderViewModel(applicationContext, repository, seriesViewModel.isRefreshing)
+                    else -> throw IllegalArgumentException("Unknown feature ViewModel: $modelClass")
+                } as T
+            }
+        }
+        mangaBaka = ViewModelProvider(this, featureFactory)[MangaBakaOwner::class.java]
+        moonReader = ViewModelProvider(this, featureFactory)[MoonReaderViewModel::class.java]
+        val featureServices = FeatureServices(
+            scrapeIssues, mediaLookup, settings, mangaBaka, moonReader,
+            listOf(MangaBakaSearchProvider(), AniListSearchProvider())
+        )
         handleMangaBakaIntent(intent)
         seriesViewModel.refreshData()
         lifecycleScope.launch {
-            seriesViewModel.moonReaderMessages.collect { message ->
+            moonReader.moonReaderMessages.collect { message ->
                 Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show()
             }
         }
@@ -88,11 +115,13 @@ class MainActivity : ComponentActivity() {
                 val coroutineScope = rememberCoroutineScope()
                 var isDownloadingUpdate by remember { mutableStateOf(false) }
 
-                OmniTrackHomeScreen(
-                    viewModel = seriesViewModel,
-                    initialSharedUrl = pendingSharedUrl,
-                    onSharedUrlConsumed = { pendingSharedUrl = null }
-                )
+                CompositionLocalProvider(LocalFeatureServices provides featureServices) {
+                    OmniTrackHomeScreen(
+                        viewModel = seriesViewModel,
+                        initialSharedUrl = pendingSharedUrl,
+                        onSharedUrlConsumed = { pendingSharedUrl = null }
+                    )
+                }
 
                 // Render Update Available dialog if a newer GitHub release is detected
                 availableUpdate?.let { (version, releaseName, downloadUrl) ->
@@ -138,11 +167,16 @@ class MainActivity : ComponentActivity() {
         handleMangaBakaIntent(intent)
     }
 
+    override fun onDestroy() {
+        if (::settings.isInitialized) settings.close()
+        super.onDestroy()
+    }
+
     override fun onResume() {
         super.onResume()
         if (::seriesViewModel.isInitialized) {
-            seriesViewModel.syncMoonReader()
-            seriesViewModel.syncMangaBakaProgress()
+            moonReader.syncMoonReader()
+            mangaBaka.syncMangaBakaProgress()
         }
     }
 
@@ -159,7 +193,7 @@ class MainActivity : ComponentActivity() {
         val uri = intent?.data
         if (intent?.action == Intent.ACTION_VIEW && uri?.scheme == "com.omnitrack.app" &&
             uri.path == "/mangabaka/oauth") {
-            seriesViewModel.handleMangaBakaCallback(uri)
+            mangaBaka.handleMangaBakaCallback(uri)
             intent.data = null
         }
     }
