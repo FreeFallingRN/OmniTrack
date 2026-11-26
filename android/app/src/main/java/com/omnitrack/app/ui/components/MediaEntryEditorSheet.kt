@@ -20,6 +20,12 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -66,8 +72,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.math.BigDecimal
-import java.math.RoundingMode
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -124,12 +128,13 @@ fun MediaEntryEditorSheet(
     entries: List<MediaEntry>,
     onDismiss: () -> Unit,
     onSave: (MediaEntryEditorData) -> Unit,
-    onDelete: (() -> Unit)? = null
+    onDelete: (() -> Unit)? = null,
+    saving: Boolean = false
 ) {
     val draftKey = existing to prefill
-    var series by remember { mutableStateOf<List<SeriesDto>>(emptyList()) }
-    var authors by remember { mutableStateOf<List<AuthorDto>>(emptyList()) }
-    var platforms by remember { mutableStateOf<List<PlatformDto>>(emptyList()) }
+    var series by remember(draftKey) { mutableStateOf<List<SeriesDto>>(emptyList()) }
+    var authors by remember(draftKey) { mutableStateOf<List<AuthorDto>>(emptyList()) }
+    var platforms by remember(draftKey) { mutableStateOf<List<PlatformDto>>(emptyList()) }
     var error by remember(draftKey) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -140,6 +145,8 @@ fun MediaEntryEditorSheet(
             series = viewModel.getSeries()
             authors = viewModel.getAuthors()
             platforms = viewModel.getPlatforms()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             error = e.message ?: "Could not load series and authors"
         } finally {
@@ -209,16 +216,7 @@ fun MediaEntryEditorSheet(
         }
 
         if (sourceCreators.isNotEmpty()) {
-            creatorRows = sourceCreators.map { (rawName, role) ->
-                val matched = authors.firstOrNull {
-                    it.name.trim().equals(rawName.trim(), ignoreCase = true)
-                }
-                if (matched != null) {
-                    CreatorFormRow(authorId = matched.id, role = role)
-                } else {
-                    CreatorFormRow(createNew = true, newAuthorName = rawName.trim(), role = role)
-                }
-            }
+            creatorRows = creatorRowsForNames(sourceCreators, authors)
         }
     }
 
@@ -253,46 +251,8 @@ fun MediaEntryEditorSheet(
         }
     }
 
-    // Duplicate detection against existing library entries
-    fun normalizeTitleKey(raw: String): String =
-        raw.lowercase()
-            .replace(Regex("""@\s*comic\b|\((?:novel|manga|comic|webtoon|light novel|ln|wn)\)|:\s*season\s*\d+|season\s*\d+"""), "")
-            .filter { it.isLetterOrDigit() }
-
-    fun isSimilarTitle(a: String, b: String): Boolean {
-        if (a.isEmpty() || b.isEmpty()) return false
-        if (a == b) return true
-        if (a.length < 4 || b.length < 4) return false
-        val shorter = if (a.length <= b.length) a else b
-        val longer = if (a.length > b.length) a else b
-        // Prefix / substring containment when the shared core is substantial (>= 8 chars and >= 65% of longer)
-        if (shorter.length >= 8 && longer.contains(shorter) && shorter.length.toDouble() / longer.length >= 0.65) {
-            return true
-        }
-        return false
-    }
-
     val similarMatches = remember(title, altTitles, newAltTitle, sourceUrl, type, entries, existing?.id) {
-        val cleanUrl = sourceUrl.trim().trimEnd('/').lowercase()
-        val candidateKeys = (listOf(title, newAltTitle) + altTitles)
-            .map(::normalizeTitleKey)
-            .filter { it.isNotEmpty() }
-            .distinct()
-
-        entries.filter { it.type == type && it.id != existing?.id }.mapNotNull { candidate ->
-            val urlMatch = cleanUrl.isNotBlank() &&
-                    !candidate.sourceUrl.isNullOrBlank() &&
-                    candidate.sourceUrl.trim().trimEnd('/').lowercase() == cleanUrl
-
-            val existingKeys = (listOf(candidate.title) + candidate.allAlternativeTitles)
-                .map(::normalizeTitleKey)
-                .filter { it.isNotEmpty() }
-
-            val titleMatch = existingKeys.any { ex -> candidateKeys.any { cand -> isSimilarTitle(ex, cand) } }
-            val seriesMatch = candidate.seriesTitle?.let(::normalizeTitleKey)
-                ?.let { seriesKey -> candidateKeys.any { isSimilarTitle(seriesKey, it) } } == true
-            if (urlMatch || titleMatch || seriesMatch) candidate to (urlMatch || titleMatch) else null
-        }
+        findSimilarEntries(title, altTitles, newAltTitle, sourceUrl, type, entries, existing?.id)
     }
     var mergeTargetEntry by remember(draftKey) { mutableStateOf<MediaEntry?>(null) }
     var groupWithEntry by remember(draftKey) { mutableStateOf<MediaEntry?>(null) }
@@ -311,13 +271,6 @@ fun MediaEntryEditorSheet(
     }
 
     val targetEntryId = existing?.id ?: mergeTargetEntry?.id
-    val position = sequence.toDoubleOrNull()?.takeIf { it.isFinite() }?.let {
-        BigDecimal.valueOf(it).setScale(2, RoundingMode.HALF_UP).toDouble()
-    }
-    val groupedEntry = groupWithEntry?.let { selected ->
-        entries.firstOrNull { it.id == selected.id && it.seriesId == null }
-    }?.takeIf { seriesId != null || createSeries }
-    val groupedPosition = groupedEntry?.sequenceNumber
     val sameSeriesTitleConflict = if (existing == null && mergeTargetEntry == null && title.isNotBlank()) {
         entries.firstOrNull {
             it.type == type && it.title.trim().equals(title.trim(), ignoreCase = true) &&
@@ -325,80 +278,33 @@ fun MediaEntryEditorSheet(
                     (groupWithEntry?.id == it.id && it.seriesId == null && createSeries))
         }
     } else null
-    val positionConflict = if (seriesId != null && position != null) {
-        entries.firstOrNull {
-            it.seriesId == seriesId && it.type == type && it.id != targetEntryId &&
-                it.sequenceNumber == position
-        }
-    } else null
-    val groupedPositionConflict = if (seriesId != null && groupedPosition != null) {
-        entries.firstOrNull {
-            it.seriesId == seriesId && it.type == groupedEntry?.type &&
-                it.id != targetEntryId && it.sequenceNumber == groupedPosition
-        }
-    } else null
-    val positionError = when {
-        positionConflict != null -> "This position is already used by \"${positionConflict.title}\"."
-        position != null && groupedPosition == position ->
-            "This position will be used by \"${groupedEntry.title}\" when it is added to the series."
-        groupedPositionConflict != null ->
-            "\"${groupedEntry?.title}\" cannot be added: its position is already used by \"${groupedPositionConflict.title}\"."
-        else -> null
-    }
+    val positionError = entryPositionError(sequence, seriesId, targetEntryId, groupWithEntry, createSeries, type, entries)
 
     fun addAlias() {
-        val cleaned = newAltTitle.trim()
-        if (cleaned.isNotBlank() && !cleaned.equals(title.trim(), ignoreCase = true) &&
-            altTitles.none { it.trim().equals(cleaned, ignoreCase = true) }
-        ) {
-            altTitles = altTitles + cleaned
-        }
+        altTitles = appendAlias(altTitles, title, newAltTitle)
         newAltTitle = ""
     }
 
     fun makeMainTitle(alias: String) {
         val newTitle = alias.trim()
-        val previousTitle = title.trim()
-        altTitles = (altTitles + previousTitle)
-            .map { it.trim() }
-            .filter { it.isNotBlank() && !it.equals(newTitle, ignoreCase = true) }
-            .distinctBy { it.lowercase() }
+        altTitles = aliasesAfterMainTitleChange(altTitles, title, newTitle)
         title = newTitle
     }
 
     fun saveEntry() {
-        val hasDraft = creatorDraft.authorId != null || (creatorDraft.createNew && creatorDraft.newAuthorName.isNotBlank())
-        val hasIncompleteDraft = creatorDraft.createNew && creatorDraft.newAuthorName.isBlank()
-        val validCreators = if (hasDraft) {
-            if (editingCreator != null) {
-                creatorRows.mapIndexed { index, row -> if (index == editingCreator) creatorDraft else row }
-            } else creatorRows + creatorDraft
-        } else creatorRows
-        val missingNewSeriesTitle = createSeries && newSeriesTitle.isBlank()
-        if (hasIncompleteDraft) {
-            error = "Please enter a creator name or choose an existing creator."
-        } else if (publishingStatus.isBlank()) {
-            error = "Publishing status was not available from the source. Please choose a status."
-        } else if (mergeTargetEntry != null && entries.none { it.id == mergeTargetEntry?.id && it.type == type }) {
-            error = "The selected merge target is no longer available for this media type."
-        } else if (groupWithEntry != null && entries.none { it.id == groupWithEntry?.id && it.type == type }) {
-            error = "The selected series entry is no longer available for this media type."
-        } else if (title.isBlank() || (mergeTargetEntry == null && missingNewSeriesTitle) ||
-            (validCreators.isEmpty() && mergeTargetEntry?.creators.isNullOrEmpty() && mergeTargetEntry?.authors.isNullOrEmpty()) ||
-            (mergeTargetEntry?.platformId == null && platformId == null && (!createPlatform || newPlatformName.isBlank()))
-        ) {
-            error = if (missingNewSeriesTitle) "Please enter a name for the new series or clear it."
-                else "Title, at least one creator, and platform are required."
-        } else if (mergeTargetEntry == null && positionError != null) {
-            showSeriesDetails = true
-            error = positionError
+        val validCreators = mergeCreatorDraft(creatorRows, creatorDraft, editingCreator)
+        val validationError = validateEntryDraft(
+            creatorDraft, validCreators, publishingStatus, mergeTargetEntry, groupWithEntry,
+            entries, type, title, createSeries, newSeriesTitle, platformId, createPlatform,
+            newPlatformName, positionError
+        )
+        if (validationError != null) {
+            if (mergeTargetEntry == null && positionError != null && validationError == positionError) {
+                showSeriesDetails = true
+            }
+            error = validationError
         } else {
-            val pendingAlias = newAltTitle.trim()
-            val aliases = if (pendingAlias.isNotBlank() && !pendingAlias.equals(title.trim(), ignoreCase = true) &&
-                altTitles.none { it.trim().equals(pendingAlias, ignoreCase = true) }
-            ) {
-                altTitles + pendingAlias
-            } else altTitles
+            val aliases = appendAlias(altTitles, title, newAltTitle)
             onSave(
                 MediaEntryEditorData(
                     title = title.trim(),
@@ -428,8 +334,13 @@ fun MediaEntryEditorSheet(
         }
     }
 
+    val currentSaving by rememberUpdatedState(saving)
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!saving) onDismiss() },
+        sheetState = rememberModalBottomSheetState(
+            skipPartiallyExpanded = false,
+            confirmValueChange = { !currentSaving || it != SheetValue.Hidden }
+        ),
         containerColor = MaterialTheme.colorScheme.surface,
         dragHandle = null
     ) {
@@ -438,7 +349,7 @@ fun MediaEntryEditorSheet(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onDismiss) {
+            IconButton(onClick = onDismiss, enabled = !saving) {
                 Icon(Icons.Default.Close, contentDescription = "Close editor")
             }
             Text(
@@ -451,8 +362,18 @@ fun MediaEntryEditorSheet(
                     Icon(Icons.Default.Flag, contentDescription = "Report issue")
                 }
             }
-            Button(onClick = ::saveEntry, contentPadding = PaddingValues(horizontal = 16.dp)) {
-                Text("Save")
+            Button(
+                onClick = ::saveEntry,
+                enabled = !saving,
+                contentPadding = PaddingValues(horizontal = 16.dp)
+            ) {
+                if (saving) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Saving…")
+                } else {
+                    Text("Save")
+                }
             }
         }
         LazyColumn(
@@ -835,13 +756,7 @@ fun MediaEntryEditorSheet(
     }
 
     rescraped?.let { draft ->
-        val pendingCreators = if (creatorDraft.authorId != null ||
-            (creatorDraft.createNew && creatorDraft.newAuthorName.isNotBlank())
-        ) {
-            val index = editingCreator
-            if (index == null) creatorRows + creatorDraft
-            else creatorRows.mapIndexed { i, row -> if (i == index) creatorDraft else row }
-        } else creatorRows
+        val pendingCreators = mergeCreatorDraft(creatorRows, creatorDraft, editingCreator)
         val currentCreators = pendingCreators.map { row ->
             val name = if (row.createNew) row.newAuthorName else authors.firstOrNull { it.id == row.authorId }?.name.orEmpty()
             name to row.role
@@ -886,11 +801,7 @@ fun MediaEntryEditorSheet(
                     newAltTitle = ""
                 }
                 if (RescrapeField.CREATORS in selected) {
-                    creatorRows = fetchedCreators.map { (name, role) ->
-                        val matched = authors.firstOrNull { it.name.trim().equals(name, ignoreCase = true) }
-                        if (matched != null) CreatorFormRow(authorId = matched.id, role = role)
-                        else CreatorFormRow(createNew = true, newAuthorName = name, role = role)
-                    }
+                    creatorRows = creatorRowsForNames(fetchedCreators, authors)
                     creatorDraft = CreatorFormRow()
                     editingCreator = null
                 }

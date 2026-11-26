@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -70,6 +71,7 @@ import com.omnitrack.app.domain.model.UserStatus
 import com.omnitrack.app.ui.viewmodel.SeriesViewModel
 import com.omnitrack.app.ui.components.DeleteCountdownButton
 import com.omnitrack.app.ui.components.EntityDetailSheet
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 private val seriesStatusPriority = listOf(
@@ -119,17 +121,28 @@ fun LibraryManagementScreen(
     LaunchedEffect(section) { selectedSection = section }
     var reloadToken by remember { mutableIntStateOf(0) }
     var error by remember { mutableStateOf<String?>(null) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    var isInitialLoading by remember { mutableStateOf(true) }
+    var hasLoaded by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     fun reload() {
         scope.launch {
+            if (!hasLoaded) isInitialLoading = true
+            loadError = null
             try {
                 series = viewModel.getSeries()
                 authors = viewModel.getAuthors()
                 platforms = viewModel.getPlatforms()
+                hasLoaded = true
                 viewModel.refreshData()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                error = e.message ?: "Could not load library management data"
+                loadError = e.message ?: "Could not load library management data"
+                if (hasLoaded) error = loadError
+            } finally {
+                isInitialLoading = false
             }
         }
     }
@@ -245,12 +258,25 @@ fun LibraryManagementScreen(
                 },
                 label = "management section transition"
             ) { section ->
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (!hasLoaded && isInitialLoading) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                } else if (!hasLoaded && loadError != null) {
+                    Column(
+                        Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(loadError ?: "", color = MaterialTheme.colorScheme.error)
+                        TextButton(onClick = { reload() }) { Text("Retry") }
+                    }
+                } else LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     when (section) {
                         0 -> {
                             val matches = series.filter { it.title.contains(query, ignoreCase = true) }
-                            if (matches.isEmpty() && query.isNotEmpty()) {
-                                item { Text("No matching series") }
+                            if (matches.isEmpty()) {
+                                item { Text(if (query.isEmpty()) "No series yet" else "No matching series") }
                             }
                             items(matches, key = { it.id }) { item ->
                                 val works = entries.filter { it.seriesId == item.id }
@@ -276,8 +302,8 @@ fun LibraryManagementScreen(
                                 it.name.contains(query, ignoreCase = true) ||
                                     it.nativeName?.contains(query, ignoreCase = true) == true
                             }
-                            if (matches.isEmpty() && query.isNotEmpty()) {
-                                item { Text("No matching authors") }
+                            if (matches.isEmpty()) {
+                                item { Text(if (query.isEmpty()) "No authors yet" else "No matching authors") }
                             }
                             items(matches, key = { it.id }) { author ->
                                 val works = entries.filter { entry -> entry.creators.any { it.id == author.id } }
@@ -297,8 +323,8 @@ fun LibraryManagementScreen(
                         }
                         2 -> {
                             val matches = platforms.filter { it.name.contains(query, ignoreCase = true) }
-                            if (matches.isEmpty() && query.isNotEmpty()) {
-                                item { Text("No matching platforms") }
+                            if (matches.isEmpty()) {
+                                item { Text(if (query.isEmpty()) "No platforms yet" else "No matching platforms") }
                             }
                             items(matches, key = { it.id }) { platform ->
                                 val works = entries.filter { it.platformId == platform.id }

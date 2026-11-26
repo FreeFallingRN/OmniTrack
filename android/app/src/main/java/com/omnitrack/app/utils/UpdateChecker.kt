@@ -12,6 +12,7 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.utils.io.readBuffer
+import kotlinx.coroutines.CancellationException
 import kotlinx.io.readByteArray
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -30,6 +31,12 @@ data class GitHubAsset(
     val browser_download_url: String
 )
 
+sealed interface UpdateCheckResult {
+    data class Available(val version: String, val title: String, val url: String) : UpdateCheckResult
+    data object UpToDate : UpdateCheckResult
+    data class Error(val message: String) : UpdateCheckResult
+}
+
 object UpdateChecker {
     private val client = HttpClient(CIO)
     private val json = Json { ignoreUnknownKeys = true }
@@ -37,7 +44,7 @@ object UpdateChecker {
     // Replace with your actual GitHub repository (e.g., "owner/repo")
     private const val GITHUB_REPO = "FreeFallingRN/OmniTrack"
 
-    suspend fun checkForUpdate(currentVersion: String): Triple<String, String, String>? {
+    suspend fun checkForUpdate(currentVersion: String): UpdateCheckResult {
         return try {
             val response: String = client.get("https://api.github.com/repos/$GITHUB_REPO/releases/latest") {
                 header("Accept", "application/vnd.github+json")
@@ -51,12 +58,14 @@ object UpdateChecker {
                 // Find the APK asset in the release
                 val apkAsset = release.assets.find { it.name.endsWith(".apk", ignoreCase = true) }
                 if (apkAsset != null) {
-                    Triple(latestVersion, release.name ?: release.tag_name, apkAsset.browser_download_url)
-                } else null
-            } else null
+                    UpdateCheckResult.Available(latestVersion, release.name ?: release.tag_name, apkAsset.browser_download_url)
+                } else UpdateCheckResult.UpToDate
+            } else UpdateCheckResult.UpToDate
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             e.printStackTrace()
-            null
+            UpdateCheckResult.Error(e.message ?: "Could not check for updates")
         }
     }
 

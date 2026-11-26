@@ -21,6 +21,7 @@ import com.omnitrack.app.data.repository.SeriesRepositoryImpl
 import com.omnitrack.app.domain.repository.SeriesRepository
 import com.omnitrack.app.ui.screens.home.OmniTrackHomeScreen
 import com.omnitrack.app.ui.theme.OmniTrackTheme
+import com.omnitrack.app.utils.UpdateCheckResult
 import com.omnitrack.app.utils.UpdateChecker
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
@@ -74,7 +75,9 @@ class MainActivity : ComponentActivity() {
             try {
                 val pInfo = packageManager.getPackageInfo(packageName, 0)
                 val currentVersion = pInfo.versionName ?: "1.0.0"
-                availableUpdate = UpdateChecker.checkForUpdate(currentVersion)
+                val result = UpdateChecker.checkForUpdate(currentVersion)
+                availableUpdate = (result as? UpdateCheckResult.Available)
+                    ?.let { Triple(it.version, it.title, it.url) }
             } catch (e: Exception) {
                 e.printStackTrace()
             }

@@ -19,6 +19,10 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -66,11 +70,6 @@ import androidx.compose.ui.unit.dp
 import com.omnitrack.app.data.OmniTrackPreferenceKeys
 import com.omnitrack.app.data.OmniTrackPreferences
 import androidx.compose.ui.zIndex
-import com.omnitrack.app.data.model.CreateEntryRequest
-import com.omnitrack.app.data.model.CreatePlatformRequest
-import com.omnitrack.app.data.model.CreateSeriesRequest
-import com.omnitrack.app.data.model.UpdateEntryRequest
-import com.omnitrack.app.domain.model.EntryCreator
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.model.ProgressSource
@@ -128,6 +127,8 @@ fun OmniTrackHomeScreen(
     var showEntryEditor by remember { mutableStateOf(false) }
     var editorEntry by remember { mutableStateOf<MediaEntry?>(null) }
     var showDeleteWarning by remember { mutableStateOf(false) }
+    var deletingEntry by remember { mutableStateOf(false) }
+    var deleteError by remember { mutableStateOf<String?>(null) }
     val refreshScope = rememberCoroutineScope()
     var sortOption by remember {
         mutableStateOf(LibrarySortOption.fromKey(prefs.getString(OmniTrackPreferenceKeys.SortOption, "last_updated")))
@@ -528,8 +529,9 @@ fun OmniTrackHomeScreen(
                     scrapedPrefill = null
                 },
                 onDelete = if (editorEntry != null) {
-                    { showDeleteWarning = true }
+                    { deleteError = null; showDeleteWarning = true }
                 } else null,
+                saving = savingEntry,
                 onSave = save@{ form: MediaEntryEditorData ->
                     if (savingEntry) return@save
                     savingEntry = true
@@ -540,174 +542,9 @@ fun OmniTrackHomeScreen(
                     refreshScope.launch {
                         var createdEntryId: String? = null
                         try {
-                            check(editorEntry?.aliasScopeUnverified != true) {
-                                "Refresh the library and reopen this entry before editing its aliases."
-                            }
-                            val mergeTarget = form.mergeIntoEntryId?.let { id ->
-                                check(editorEntry == null) { "Cannot merge while editing an existing entry." }
-                                checkNotNull(mediaEntries.firstOrNull { it.id == id && it.type == form.type }) {
-                                    "The selected merge target is no longer available for this media type."
-                                }
-                            }
-                            check(mergeTarget?.aliasScopeUnverified != true) {
-                                "Refresh the library and reopen the editor before merging this entry."
-                            }
-                            val groupedMatch = form.linkExistingEntryToSeriesId?.let { id ->
-                                check(mergeTarget == null && editorEntry == null) { "Cannot add this entry to a series." }
-                                val match = checkNotNull(mediaEntries.firstOrNull { it.id == id && it.type == form.type }) {
-                                    "The selected series entry is no longer available for this media type."
-                                }
-                                check(match.seriesId == null || match.seriesId == form.seriesId) {
-                                    "The selected entry's series changed. Please select it again."
-                                }
-                                match
-                            }
-                            val authors = if (mergeTarget != null || (groupedMatch != null && groupedMatch.seriesId == null)) {
-                                viewModel.getAuthors()
-                            } else emptyList()
-                            val knownAuthors = authors.associate { it.name.trim().lowercase() to it.id }.toMutableMap()
-                            val authorNames = authors.associate { it.id to it.name.trim().lowercase() }.toMutableMap()
-
-                            fun savedCreators(entry: MediaEntry): List<Pair<String, String>> {
-                                val creators = entry.creators.ifEmpty {
-                                    entry.authors.map { EntryCreator(name = it) }
-                                }
-                                return creators.map { creator ->
-                                    val id = creator.id ?: knownAuthors[creator.name.trim().lowercase()]
-                                    checkNotNull(id) { "Could not resolve saved creator \"${creator.name}\"." }
-                                    authorNames[id] = creator.name.trim().lowercase()
-                                    id to creator.role
-                                }
-                            }
-                            val existingCreators = mergeTarget?.let(::savedCreators).orEmpty()
-                            val groupedCreators = groupedMatch?.takeIf { it.seriesId == null }?.let(::savedCreators).orEmpty()
-                            val resolvedSeriesId: String? = when {
-                                mergeTarget != null -> mergeTarget.seriesId
-                                form.seriesId != null -> form.seriesId
-                                !form.newSeries?.title.isNullOrBlank() -> {
-                                    viewModel.createSeries(
-                                        CreateSeriesRequest(title = form.newSeries.title.trim())
-                                    ).id
-                                }
-
-                                else -> null
-                            }
-
-                            val importedCreatorIds = mutableMapOf<String, String>()
-                            val resolvedCreators: List<Pair<String, String>> =
-                                form.creators.mapNotNull { row ->
-                                    val id = if (row.createNew && row.newAuthorName.isNotBlank()) {
-                                        val name = row.newAuthorName.trim()
-                                        val key = name.lowercase()
-                                        val existingId = knownAuthors[key] ?: importedCreatorIds[key]
-                                        existingId ?: viewModel.createAuthor(name).id.also {
-                                            importedCreatorIds[key] = it
-                                            authorNames[it] = key
-                                        }
-                                    } else {
-                                        row.authorId
-                                    }
-                                    id?.let { it to row.role }
-                                }
-
-                            val resolvedPlatformId =
-                                mergeTarget?.platformId ?: form.platformId ?: viewModel.createPlatform(
-                                    CreatePlatformRequest(
-                                        name = form.newPlatform!!.name,
-                                        websiteUrl = form.newPlatform.websiteUrl,
-                                        logoUrl = form.newPlatform.logoUrl
-                                    )
-                                ).id
-
-                            // 1. If "Same series" was selected on a standalone match, link that existing entry to the series too
-                            form.linkExistingEntryToSeriesId?.let {
-                                val existingMatch = groupedMatch
-                                if (existingMatch != null && existingMatch.seriesId == null && resolvedSeriesId != null) {
-                                    viewModel.updateMediaEntry(
-                                        id = existingMatch.id,
-                                        request = UpdateEntryRequest(
-                                            title = existingMatch.title,
-                                            type = existingMatch.type.value,
-                                            seriesId = resolvedSeriesId,
-                                            platformId = existingMatch.platformId,
-                                            coverUrl = existingMatch.coverUrl,
-                                            sourceUrl = existingMatch.sourceUrl,
-                                            userStatus = existingMatch.userStatus.value,
-                                            publishingStatus = existingMatch.publishingStatus,
-                                            sequenceNumber = existingMatch.sequenceNumber,
-                                            currentUnit = existingMatch.currentUnit,
-                                            unitName = existingMatch.unitName,
-                                            isCanon = existingMatch.isCanon
-                                        ),
-                                        creators = groupedCreators,
-                                        alternativeTitles = existingMatch.alternativeTitles
-                                    )
-                                }
-                            }
-
-                            // 2. Determine target ID for create vs merge/edit
-                            val targetUpdateId = editorEntry?.id ?: mergeTarget?.id
-                            if (targetUpdateId == null) {
-                                val created = viewModel.createMediaEntry(
-                                    CreateEntryRequest(
-                                        seriesId = resolvedSeriesId,
-                                        title = form.title,
-                                        type = form.type.value,
-                                        sequenceNumber = form.sequenceNumber,
-                                        userStatus = form.userStatus,
-                                        publishingStatus = form.publishingStatus,
-                                        isCanon = form.isCanon,
-                                        currentUnit = form.currentUnit,
-                                        unitName = form.unitName,
-                                        sourceUrl = form.sourceUrl,
-                                        platformId = resolvedPlatformId,
-                                        coverUrl = form.coverUrl
-                                    ),
-                                    resolvedCreators,
-                                    form.alternativeTitles
-                                )
-                                createdEntryId = created.id
-                                if (importedMangaBakaId != null && mangaBakaLinkUrl != null) {
-                                    viewModel.linkImportedMangaBakaEntry(
-                                        importedMangaBakaId, created.id, form.unitName, mangaBakaLinkUrl
-                                    )
-                                }
-                            } else {
-                                val mergedAliases = mergeTarget?.let { target ->
-                                    (target.alternativeTitles + form.title + form.alternativeTitles)
-                                        .map { it.trim() }
-                                        .filter { it.isNotBlank() && !it.equals(target.title.trim(), ignoreCase = true) }
-                                        .distinctBy { it.lowercase() }
-                                }
-                                viewModel.updateMediaEntry(
-                                    id = targetUpdateId,
-                                    request = UpdateEntryRequest(
-                                        title = mergeTarget?.title ?: form.title,
-                                        type = mergeTarget?.type?.value ?: form.type.value,
-                                        seriesId = resolvedSeriesId,
-                                        platformId = resolvedPlatformId,
-                                        coverUrl = mergeTarget?.coverUrl?.takeIf { it.isNotBlank() } ?: form.coverUrl,
-                                        sourceUrl = mergeTarget?.sourceUrl?.takeIf { it.isNotBlank() } ?: form.sourceUrl,
-                                        userStatus = mergeTarget?.userStatus?.value ?: form.userStatus,
-                                        publishingStatus = mergeTarget?.publishingStatus ?: form.publishingStatus,
-                                        sequenceNumber = if (mergeTarget != null) mergeTarget.sequenceNumber else form.sequenceNumber,
-                                        currentUnit = mergeTarget?.currentUnit ?: form.currentUnit,
-                                        unitName = mergeTarget?.unitName ?: form.unitName,
-                                        isCanon = mergeTarget?.isCanon ?: form.isCanon
-                                    ),
-                                    creators = (existingCreators + resolvedCreators).distinctBy { (id, role) ->
-                                        (authorNames[id] ?: id) to role.trim().lowercase().ifBlank { "author" }
-                                    },
-                                    alternativeTitles = mergedAliases ?: form.alternativeTitles
-                                )
-
-                                if (importedMangaBakaId != null && mangaBakaLinkUrl != null) {
-                                    viewModel.linkImportedMangaBakaEntry(
-                                        importedMangaBakaId, targetUpdateId, mergeTarget?.unitName ?: form.unitName, mangaBakaLinkUrl
-                                    )
-                                }
-                            }
-
+                            saveMediaEntry(
+                                viewModel, form, editorEntry, mediaEntries, importedMangaBakaId, mangaBakaLinkUrl
+                            ) { createdEntryId = it }
                             showEntryEditor = false
                             scrapedPrefill = null
                             viewModel.refreshData()
@@ -752,21 +589,56 @@ fun OmniTrackHomeScreen(
         if (showDeleteWarning) {
             editorEntry?.let { entry ->
                 AlertDialog(
-                    onDismissRequest = { showDeleteWarning = false },
+                    onDismissRequest = { if (!deletingEntry) showDeleteWarning = false },
                     title = { Text("Delete entry permanently?") },
-                    text = { Text("This removes the entry, its author links, progress, and history.") },
+                    text = {
+                        Column {
+                            Text("This removes the entry, its author links, progress, and history.")
+                            deleteError?.let {
+                                Text(
+                                    text = it,
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.padding(top = 8.dp)
+                                )
+                            }
+                        }
+                    },
                     confirmButton = {
-                        DeleteCountdownButton {
-                            viewModel.deleteMediaEntry(entry.id)
-                            showDeleteWarning = false
-                            showEntryEditor = false
-                            selectedEntryForDetail = null
-                            editorEntry = null
-                            scrapedPrefill = null
+                        if (deletingEntry) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Deleting…")
+                            }
+                        } else {
+                            DeleteCountdownButton {
+                                deletingEntry = true
+                                deleteError = null
+                                refreshScope.launch {
+                                    try {
+                                        viewModel.deleteMediaEntry(entry.id)
+                                            .onSuccess {
+                                                showDeleteWarning = false
+                                                showEntryEditor = false
+                                                selectedEntryForDetail = null
+                                                editorEntry = null
+                                                scrapedPrefill = null
+                                            }
+                                            .onFailure {
+                                                deleteError = "Delete failed: ${it.message ?: "Unknown error"}"
+                                            }
+                                    } finally {
+                                        deletingEntry = false
+                                    }
+                                }
+                            }
                         }
                     },
                     dismissButton = {
-                        TextButton(onClick = { showDeleteWarning = false }) {
+                        TextButton(
+                            enabled = !deletingEntry,
+                            onClick = { showDeleteWarning = false }
+                        ) {
                             Text("Cancel")
                         }
                     }

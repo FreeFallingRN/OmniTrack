@@ -378,11 +378,16 @@ class SeriesViewModel(
         }
     }
 
-    fun deleteMediaEntry(id: String) {
-        viewModelScope.launch {
+    suspend fun deleteMediaEntry(id: String): Result<Unit> =
+        try {
             repository.deleteMediaEntry(id)
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e("SeriesViewModel", "Could not delete entry", e)
+            Result.failure(e)
         }
-    }
 
     suspend fun getSeries() = repository.getSeries()
     suspend fun getAuthors() = repository.getAuthors()

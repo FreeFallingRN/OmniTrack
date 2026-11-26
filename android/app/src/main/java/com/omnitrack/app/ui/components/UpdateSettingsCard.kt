@@ -15,6 +15,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.omnitrack.app.utils.UpdateCheckResult
 import com.omnitrack.app.utils.UpdateChecker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -31,6 +32,29 @@ fun UpdateSettingsCard() {
     var isChecking by remember { mutableStateOf(false) }
     var isDownloading by remember { mutableStateOf(false) }
     var downloadProgress by remember { mutableFloatStateOf(0f) }
+    var checkFailed by remember { mutableStateOf(false) }
+
+    fun runCheck() {
+        isChecking = true
+        checkFailed = false
+        updateStatusText = "Checking for updates..."
+        coroutineScope.launch {
+            when (val result = withContext(Dispatchers.IO) {
+                UpdateChecker.checkForUpdate(currentVersion)
+            }) {
+                is UpdateCheckResult.Available -> {
+                    availableUpdateInfo = Triple(result.version, result.title, result.url)
+                    updateStatusText = "New version v${result.version} available!"
+                }
+                UpdateCheckResult.UpToDate -> updateStatusText = "You are up to date."
+                is UpdateCheckResult.Error -> {
+                    checkFailed = true
+                    updateStatusText = "Update check failed: ${result.message}"
+                }
+            }
+            isChecking = false
+        }
+    }
 
     // Fetch app's actual version name on launch
     LaunchedEffect(Unit) {
@@ -78,22 +102,7 @@ fun UpdateSettingsCard() {
                 }
 
                 IconButton(
-                    onClick = {
-                        isChecking = true
-                        updateStatusText = "Checking for updates..."
-                        coroutineScope.launch {
-                            val update = withContext(Dispatchers.IO) {
-                                UpdateChecker.checkForUpdate(currentVersion)
-                            }
-                            isChecking = false
-                            if (update != null) {
-                                availableUpdateInfo = update
-                                updateStatusText = "New version v${update.first} available!"
-                            } else {
-                                updateStatusText = "You are up to date."
-                            }
-                        }
-                    },
+                    onClick = { runCheck() },
                     enabled = !isChecking && !isDownloading
                 ) {
                     Icon(
@@ -107,8 +116,14 @@ fun UpdateSettingsCard() {
             Text(
                 text = updateStatusText,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = if (checkFailed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            if (checkFailed) {
+                TextButton(onClick = { runCheck() }, enabled = !isChecking) {
+                    Text("Retry")
+                }
+            }
 
             if (isDownloading) {
                 Spacer(modifier = Modifier.height(4.dp))

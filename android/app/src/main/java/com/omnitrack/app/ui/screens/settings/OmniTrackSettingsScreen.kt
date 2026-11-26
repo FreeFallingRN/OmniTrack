@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -63,6 +64,9 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
     val scope = rememberCoroutineScope()
 
     var currentRoute by remember { mutableStateOf(SettingsPage.MAIN) }
+    BackHandler(enabled = currentRoute != SettingsPage.MAIN) {
+        currentRoute = SettingsPage.MAIN
+    }
     var progressFolder by remember {
         mutableStateOf(preferences.getString(OmniTrackPreferenceKeys.MoonReaderFolder))
     }
