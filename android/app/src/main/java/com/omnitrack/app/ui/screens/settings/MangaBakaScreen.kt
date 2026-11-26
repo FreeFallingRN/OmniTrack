@@ -189,6 +189,9 @@ fun MangaBakaScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
             modifier = Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            Button(enabled = state.connected && !state.busy, onClick = {
+                scope.launch { viewModel.mangaBaka.syncAndMatchLibrary() }
+            }) { Text("Sync & match library") }
             Button(enabled = state.connected && state.links.isNotEmpty() && !state.busy, onClick = {
                 viewModel.syncMangaBakaProgress(manual = true)
             }) { Text("Sync now") }

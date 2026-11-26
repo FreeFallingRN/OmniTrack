@@ -18,12 +18,14 @@ import com.omnitrack.app.data.model.CreateSeriesRequest
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.repository.SeriesRepository
 import com.omnitrack.app.domain.repository.PartialMediaEntryCreateException
+import com.omnitrack.app.ui.screens.settings.findMangaBakaMatch
 import com.omnitrack.app.utils.ImportedMediaDraft
 import com.omnitrack.app.utils.ScrapedMediaDraft
 import com.omnitrack.app.utils.scraper.ExternalMediaScraper
 import com.omnitrack.app.utils.scraper.adapters.MangaBakaAdapter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
@@ -31,6 +33,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.coroutineContext
 
 fun mangaBakaSeriesUrl(title: MangaBakaTitle): String {
     val uri = Uri.parse(title.series.url)
@@ -181,6 +184,72 @@ class MangaBakaViewModel(context: Context, private val repository: SeriesReposit
             titles = titles,
             message = "Fetched ${titles.size} MangaBaka titles."
         )
+    }
+
+    suspend fun syncAndMatchLibrary() = operation {
+        check(_state.value.connected) { "Connect your MangaBaka account first" }
+        val titles = service.library(credentials)
+        check(titles.all { it.entry.seriesId == it.series.id }) { "MangaBaka series ID does not match" }
+        _state.update { it.copy(titles = titles, message = "Matching MangaBaka library...") }
+        val entries = repository.getMediaEntriesStream().first()
+        val entryIds = entries.map { it.id }.toSet()
+        val links = withContext(Dispatchers.IO) { preferences.links(credentials.userId) }
+        val activeLinks = links.filterValues { it.entryId in entryIds }
+        val linkedEntryIds = activeLinks.values.map { it.entryId }.toSet()
+        val availableEntries = entries.filter {
+            it.id !in linkedEntryIds &&
+                (it.unitName.trim().equals("chapter", true) || it.unitName.trim().equals("chapters", true))
+        }
+        val matches = withContext(Dispatchers.Default) {
+            titles.mapNotNull { title ->
+                coroutineContext.ensureActive()
+                if (title.series.id in activeLinks) null
+                else findMangaBakaMatch(title, availableEntries)?.let { title to it.id }
+            }
+        }
+        var linked = 0
+        var skipped = 0
+        val failures = mutableListOf<String>()
+        matches.forEachIndexed { index, (title, entryId) ->
+            coroutineContext.ensureActive()
+            try {
+                check(withContext(Dispatchers.IO) { preferences.read() } == credentials) {
+                    "MangaBaka account changed; try again"
+                }
+                val currentEntries = repository.getMediaEntriesStream().first()
+                val currentIds = currentEntries.map { it.id }.toSet()
+                val currentLinks = withContext(Dispatchers.IO) { preferences.links(credentials.userId) }
+                val existing = currentLinks[title.series.id]
+                val currentEntry = currentEntries.firstOrNull { it.id == entryId }
+                if (currentEntry == null || findMangaBakaMatch(title, listOf(currentEntry)) == null ||
+                    currentLinks.values.any { it.entryId == entryId } ||
+                    (existing != null && existing.entryId in currentIds)
+                ) {
+                    skipped++
+                } else {
+                    if (existing != null) {
+                        withContext(Dispatchers.IO) { preferences.unlink(credentials.userId, title.series.id) }
+                    }
+                    _state.update { it.copy(links = currentLinks - title.series.id) }
+                    linkEntry(title, entryId, 0.0)
+                    linked++
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("MangaBaka", "Could not link ${title.title}", e)
+                failures.add("${title.title}: ${e.message ?: "Unknown error"}")
+            }
+            _state.update {
+                it.copy(message = "Sync & match: ${matches.size} matches found, $linked linked " +
+                    "(${index + 1}/${matches.size} processed).")
+            }
+        }
+        val details = if (failures.isEmpty()) "" else " Failures: ${failures.joinToString("; ")}"
+        _state.update {
+            it.copy(message = "Sync & match: ${matches.size} matches found, $linked linked, " +
+                "$skipped skipped, ${failures.size} failed.$details")
+        }
     }
 
     suspend fun sync(manual: Boolean) = operation {

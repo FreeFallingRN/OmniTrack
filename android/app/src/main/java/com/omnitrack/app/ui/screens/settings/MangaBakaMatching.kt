@@ -2,6 +2,7 @@ package com.omnitrack.app.ui.screens.settings
 
 import com.omnitrack.app.data.MangaBakaTitle
 import com.omnitrack.app.domain.model.MediaEntry
+import com.omnitrack.app.domain.model.MediaType
 import java.util.Locale
 
 private val subtitleSeparator = Regex("""\s*[:：]\s*|\s+[–—-]\s+""")
@@ -42,9 +43,14 @@ private fun titleSimilarity(a: String, b: String): Double {
 }
 
 internal fun findMangaBakaMatch(title: MangaBakaTitle, entries: List<MediaEntry>): MediaEntry? {
+    val type = when (title.series.type) {
+        "novel" -> MediaType.NOVEL
+        "manga", "manhwa", "manhua", "oel" -> MediaType.COMIC
+        else -> return null
+    }
     val mangaTitles = (listOf(title.title) + title.series.titles.orEmpty().map { it.title })
         .map(::titleVariants).filter { it.first.length >= 2 }.distinct()
-    val scores = entries.mapNotNull { entry ->
+    val scores = entries.filter { it.type == type }.mapNotNull { entry ->
         val entryTitles = (listOf(entry.title) + entry.allAlternativeTitles + listOfNotNull(entry.seriesTitle))
             .map(::titleVariants).filter { it.first.length >= 2 }.distinct()
         val score = mangaTitles.maxOfOrNull { (mangaFull, mangaBase) ->
