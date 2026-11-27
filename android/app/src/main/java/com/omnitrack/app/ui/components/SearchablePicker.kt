@@ -58,7 +58,8 @@ internal fun <T> SearchablePicker(
     noneSelected: Boolean = false,
     onClear: (() -> Unit)? = null,
     dismissOnSelection: Boolean = true,
-    itemContent: (@Composable (T, Boolean) -> Unit)? = null
+    itemContent: (@Composable (T, Boolean) -> Unit)? = null,
+    allowCreate: Boolean = true
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box {
@@ -80,7 +81,8 @@ internal fun <T> SearchablePicker(
             options.filter { itemKey(it) in selectedIds } +
                 options.filter { itemKey(it) !in selectedIds && itemText(it).contains(query, ignoreCase = true) }
         }
-        val canCreate = query.isNotEmpty() && options.none { itemText(it).trim().equals(query, ignoreCase = true) }
+        val canCreate = allowCreate && query.isNotEmpty() &&
+            options.none { itemText(it).trim().equals(query, ignoreCase = true) }
         val listState = rememberLazyListState()
         LaunchedEffect(query) { listState.scrollToItem(0) }
         Dialog(

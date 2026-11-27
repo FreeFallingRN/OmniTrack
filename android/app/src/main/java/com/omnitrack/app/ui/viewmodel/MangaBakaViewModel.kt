@@ -1,5 +1,6 @@
 package com.omnitrack.app.ui.viewmodel
 
+import com.omnitrack.app.worker.TrackerStatusSyncWorker
 import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
@@ -109,6 +110,7 @@ class MangaBakaViewModel(
             links = links,
             message = "MangaBaka connected. Fetch your library to browse titles."
         )
+        TrackerStatusSyncWorker.schedule(appContext)
     }
 
     suspend fun connectPersonalToken(token: String) = operation {
@@ -121,6 +123,7 @@ class MangaBakaViewModel(
             links = links,
             message = "MangaBaka connected. Fetch your library to browse titles."
         )
+        TrackerStatusSyncWorker.schedule(appContext)
     }
 
     suspend fun prepareImportedDraft(imported: ImportedMediaDraft): ImportedMediaDraft {

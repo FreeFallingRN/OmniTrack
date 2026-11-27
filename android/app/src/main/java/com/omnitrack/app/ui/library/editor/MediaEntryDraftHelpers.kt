@@ -168,7 +168,7 @@ internal fun entryPositionError(
     } else null
     val groupedPositionConflict = if (seriesId != null && groupedPosition != null) {
         entries.firstOrNull {
-            it.seriesId == seriesId && it.type == groupedEntry?.type &&
+            it.seriesId == seriesId && it.type == groupedEntry.type &&
                 it.id != targetEntryId && it.sequenceNumber == groupedPosition
         }
     } else null

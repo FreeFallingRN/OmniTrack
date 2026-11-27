@@ -4,6 +4,9 @@ import android.util.Log
 import androidx.room.withTransaction
 import com.omnitrack.app.data.MangaBakaPreferences
 import com.omnitrack.app.data.MangaBakaProgressSync
+import com.omnitrack.app.data.AniListProgressSync
+import com.omnitrack.app.data.AniListPreferences
+import com.omnitrack.app.data.OmniTrackPreferences
 import com.omnitrack.app.data.SupabaseService
 import com.omnitrack.app.data.local.AppDatabase
 import com.omnitrack.app.data.local.MediaEntryDao
@@ -18,6 +21,7 @@ import com.omnitrack.app.domain.repository.PartialMediaEntryCreateException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -30,6 +34,8 @@ class SeriesRepositoryImpl(
     private val mediaEntryDao: MediaEntryDao,
     private val progressHistoryDao: ProgressHistoryDao,
     private val mangaBakaPreferences: MangaBakaPreferences,
+    private val appPreferences: OmniTrackPreferences,
+    private val aniListPreferences: AniListPreferences,
     private val supabaseService: SupabaseService = SupabaseService
 ) : SeriesRepository {
 
@@ -41,6 +47,7 @@ class SeriesRepositoryImpl(
     private suspend fun retryPendingMutations() {
         val pendingDao = database.pendingMutationDao()
         for (mutation in pendingDao.getAll()) {
+            if (mutation.kind in setOf("anilist_status", "mangabaka_status", "anilist_unresolved", "mangabaka_unresolved")) continue
             when (mutation.kind) {
                 "delete" -> supabaseService.deleteEntry(mutation.entryId)
                 "progress" -> {
@@ -48,6 +55,25 @@ class SeriesRepositoryImpl(
                         "Pending progress entry ${mutation.entryId} is missing"
                     }
                     supabaseService.updateEntryProgress(entry.id, entry.currentUnit, mutation.userStatus)
+                }
+                "anilist_cover" -> {
+                    val entry = checkNotNull(mediaEntryDao.getEntryById(mutation.entryId)) {
+                        "Pending cover entry ${mutation.entryId} is missing"
+                    }
+                    val cover = checkNotNull(entry.coverUrl?.takeIf { it.isNotBlank() }) {
+                        "Pending cover for ${entry.id} is missing"
+                    }
+                    val remoteCover = supabaseService.backfillEntryCover(entry.id, cover)
+                    mediaEntryDao.insertAll(listOf(entry.copy(coverUrl = remoteCover)))
+                }
+                "anilist_url" -> {
+                    val entry = checkNotNull(mediaEntryDao.getEntryById(mutation.entryId)) {
+                        "Pending URL entry ${mutation.entryId} is missing"
+                    }
+                    val url = checkNotNull(entry.sourceUrl?.takeIf { it.isNotBlank() }) {
+                        "Pending URL for ${entry.id} is missing"
+                    }
+                    supabaseService.updateEntrySourceUrl(entry.id, url)
                 }
                 "history" -> {
                     val history = checkNotNull(
@@ -172,8 +198,9 @@ class SeriesRepositoryImpl(
         request: UpdateEntryCommand,
         creators: List<Pair<String, String>>,
         alternativeTitles: List<String>
-    ): Unit = MangaBakaProgressSync.withLinkLock {
+    ): Boolean = AniListProgressSync.withLinkLock { MangaBakaProgressSync.withLinkLock {
         var progressChanged = false
+        var statusChanged = false
         mutateLibrary {
             val current = mediaEntryDao.getEntryById(id)
             if (current != null && request.currentUnit < current.currentUnit) {
@@ -188,6 +215,7 @@ class SeriesRepositoryImpl(
                 "Refresh the library before editing this entry so its aliases can be separated safely."
             }
             progressChanged = current != null && current.currentUnit != request.currentUnit
+            statusChanged = current != null && current.userStatus != request.userStatus
             supabaseService.updateEntry(
                 id = id,
                 title = request.title,
@@ -210,17 +238,105 @@ class SeriesRepositoryImpl(
             id, { current -> Pair(request.currentUnit, current?.userStatus) },
             ProgressSource.EDITOR, blockReset = true
         )
-        Unit
+        if (statusChanged) updateEntryStatus(id, request.userStatus)
+        statusChanged
+    } }
+
+    override suspend fun updateEntryStatus(id: String, status: String): Unit = progressMutex.withLock {
+        require(UserStatus.entries.any { it.value == status }) { "Invalid user status" }
+        val entry = checkNotNull(mediaEntryDao.getEntryById(id)) { "Entry no longer exists" }
+        val aniLinks = try {
+            val credentials = aniListPreferences.read()
+            if (credentials.userId > 0) appPreferences.aniListLinks(credentials.userId)
+                .filterValues { it.entryId == id }.keys.map { "${credentials.userId}:$it" }
+            else emptyList()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e("SeriesRepository", "Could not identify AniList links; status sync pending", e)
+            null
+        }
+        val mangaLinks = try {
+            val credentials = mangaBakaPreferences.read()
+            if (credentials.userId.isNotBlank()) mangaBakaPreferences.links(credentials.userId)
+                .filterValues { it.entryId == id }.keys.map { "${credentials.userId}:$it" }
+            else emptyList()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e("SeriesRepository", "Could not identify MangaBaka links; status sync pending", e)
+            null
+        }
+        database.withTransaction {
+            mediaEntryDao.insertAll(listOf(entry.copy(userStatus = status)))
+            val pending = database.pendingMutationDao()
+            pending.upsert(PendingMutation(id, "progress", userStatus = status))
+            if (aniLinks == null) {
+                pending.getAll().filter { it.entryId == id && it.kind == "anilist_status" }
+                    .forEach { pending.upsert(it.copy(userStatus = status)) }
+                pending.upsert(PendingMutation(id, "anilist_unresolved", userStatus = status))
+            } else {
+                pending.delete(id, "anilist_unresolved", "")
+                aniLinks.forEach { key -> pending.upsert(PendingMutation(id, "anilist_status", key, status)) }
+            }
+            if (mangaLinks == null) {
+                pending.getAll().filter { it.entryId == id && it.kind == "mangabaka_status" }
+                    .forEach { pending.upsert(it.copy(userStatus = status)) }
+                pending.upsert(PendingMutation(id, "mangabaka_unresolved", userStatus = status))
+            } else {
+                pending.delete(id, "mangabaka_unresolved", "")
+                mangaLinks.forEach { key -> pending.upsert(PendingMutation(id, "mangabaka_status", key, status)) }
+            }
+        }
     }
 
-    override suspend fun updateEntryStatus(id: String, status: String): Unit = mutateLibrary {
-        supabaseService.updateEntryProgress(id, null, status)
+    override suspend fun pendingTrackerStatus(id: String, service: String, linkKey: String): String? =
+        progressMutex.withLock { database.pendingMutationDao().get(id, service, linkKey)?.userStatus }
+
+    override suspend fun clearPendingTrackerStatus(id: String, service: String, linkKey: String, status: String) {
+        progressMutex.withLock {
+            val pending = database.pendingMutationDao()
+            if (pending.get(id, service, linkKey)?.userStatus == status) {
+                pending.delete(id, service, linkKey)
+            }
+        }
+    }
+
+    override suspend fun resolvePendingTrackerStatuses(service: String, links: Map<String, List<String>>) {
+        progressMutex.withLock {
+            val pending = database.pendingMutationDao()
+            database.withTransaction {
+                for (mutation in pending.getAll().filter { it.kind == "${service}_unresolved" }) {
+                    val keys = links[mutation.entryId].orEmpty()
+                    if (keys.isEmpty()) continue
+                    for (key in keys) {
+                        if (pending.get(mutation.entryId, "${service}_status", key) == null) {
+                            pending.upsert(PendingMutation(mutation.entryId, "${service}_status", key, mutation.userStatus))
+                        }
+                    }
+                    pending.delete(mutation.entryId, mutation.kind, mutation.activityDate)
+                }
+            }
+        }
     }
 
     override suspend fun updateMangaBakaUrl(id: String, sourceUrl: String): Unit = progressMutex.withLock {
         val entry = mediaEntryDao.getEntryById(id) ?: error("Entry no longer exists")
         supabaseService.updateMangaBakaUrl(id, sourceUrl)
         mediaEntryDao.insertAll(listOf(entry.copy(sourceUrl = sourceUrl)))
+    }
+
+    override suspend fun updateAniListUrl(id: String, sourceUrl: String): Boolean = progressMutex.withLock {
+        val entry = checkNotNull(mediaEntryDao.getEntryById(id)) { "Entry no longer exists" }
+        val changed = entry.sourceUrl != sourceUrl
+        if (changed) {
+            database.withTransaction {
+                mediaEntryDao.insertAll(listOf(entry.copy(sourceUrl = sourceUrl)))
+                database.pendingMutationDao().upsert(PendingMutation(id, "anilist_url"))
+            }
+        }
+        retryPendingMutations()
+        changed
     }
 
     private suspend fun refreshFromSupabaseLocked() {
@@ -245,13 +361,18 @@ class SeriesRepositoryImpl(
         val altTitlesBySeries = altTitles.filter { it.entryId == null && it.seriesId != null }.groupBy { it.seriesId!! }
         val seriesTitles = series.associate { it.id to it.title }
 
+        val localEntries = mediaEntryDao.getAllEntries().first().associateBy { it.id }
         val entrySnapshot = entries.map { entry ->
             entry.toEntity(
                 seriesTitle = seriesTitles[entry.seriesId],
                 creators = creatorsByEntry[entry.id].orEmpty(),
                 altTitles = altTitlesByEntry[entry.id].orEmpty().map { it.title },
                 seriesAltTitles = entry.seriesId?.let { altTitlesBySeries[it] }.orEmpty().map { it.title }
-            )
+            ).copy(totalEpisodes = localEntries[entry.id]?.totalEpisodes?.takeIf {
+                entry.type == MediaType.ANIME.value &&
+                    (entry.unitName.trim().equals("episode", true) ||
+                        entry.unitName.trim().equals("episodes", true))
+            })
         }
         val historySnapshot = history.map { dto ->
             ProgressHistoryEntity(
@@ -281,6 +402,10 @@ class SeriesRepositoryImpl(
         }
     }
 
+    override suspend fun retryPendingLibraryMutations(): Unit = progressMutex.withLock {
+        retryPendingMutations()
+    }
+
     // MangaBaka uploads first so a failed Supabase write can be retried without losing the delta.
     private fun checkResetAllowed(current: MediaEntryEntity) {
         val mangaBakaLocked = current.type == MediaType.COMIC.value &&
@@ -292,7 +417,7 @@ class SeriesRepositoryImpl(
 
     private suspend fun recordProgressInternal(
         id: String,
-        computeTarget: (current: MediaEntryEntity?) -> Pair<Double, String?>?,
+        computeTarget: suspend (current: MediaEntryEntity?) -> Pair<Double, String?>?,
         source: ProgressSource,
         uploadFirst: Boolean = false,
         blockReset: Boolean = false,
@@ -440,6 +565,73 @@ class SeriesRepositoryImpl(
         )
     }
 
+    override suspend fun updateAniListEpisodeIfHigher(
+        id: String,
+        newProgress: Double,
+        initial: Boolean,
+        status: String?
+    ): Boolean =
+        recordProgressInternal(
+            id = id,
+            computeTarget = { current ->
+                checkNotNull(current) { "Linked entry $id no longer exists" }
+                check(newProgress.isFinite() && newProgress in 0.0..99999.99) {
+                    "${current.title}: AniList episode progress cannot be represented in OmniTrack"
+                }
+                check(current.type == MediaType.ANIME.value &&
+                    (current.unitName.trim().equals("episode", true) ||
+                        current.unitName.trim().equals("episodes", true))) {
+                    "${current.title} can no longer sync from AniList"
+                }
+                val credentials = aniListPreferences.read()
+                val links = if (credentials.userId > 0) appPreferences.aniListLinks(credentials.userId) else emptyMap()
+                val statusPending = links.any { (mediaId, link) ->
+                    link.entryId == id && database.pendingMutationDao()
+                        .get(id, "anilist_status", "${credentials.userId}:$mediaId") != null
+                }
+                val targetStatus = when (if (statusPending) null else status?.uppercase()) {
+                    "CURRENT", "REPEATING" -> "in_progress"
+                    "COMPLETED" -> "completed"
+                    "PAUSED" -> "paused"
+                    "DROPPED" -> "dropped"
+                    "PLANNING" -> "planning"
+                    else -> current.userStatus
+                }
+                val targetProgress = maxOf(current.currentUnit, newProgress)
+                if (targetProgress > current.currentUnit || targetStatus != current.userStatus) {
+                    Pair(targetProgress, targetStatus)
+                } else null
+            },
+            source = if (initial) ProgressSource.IMPORT else ProgressSource.TRACKING_SYNC
+        )
+
+    override suspend fun updateAniListMetadata(
+        id: String,
+        coverUrl: String?,
+        totalEpisodes: Int?
+    ): Boolean = progressMutex.withLock {
+        val current = checkNotNull(mediaEntryDao.getEntryById(id)) { "Linked entry $id no longer exists" }
+        check(current.type == MediaType.ANIME.value &&
+            (current.unitName.trim().equals("episode", true) ||
+                current.unitName.trim().equals("episodes", true))) {
+            "${current.title} can no longer sync from AniList"
+        }
+        val cover = coverUrl?.trim()?.takeIf { it.isNotBlank() && current.coverUrl.isNullOrBlank() }
+        val total = totalEpisodes?.takeIf { it > 0 } ?: current.totalEpisodes
+        val changed = cover != null || total != current.totalEpisodes
+        if (changed) {
+            database.withTransaction {
+                mediaEntryDao.insertAll(listOf(current.copy(
+                    coverUrl = cover ?: current.coverUrl,
+                    totalEpisodes = total
+                )))
+                if (cover != null) database.pendingMutationDao().upsert(PendingMutation(id, "anilist_cover"))
+            }
+        }
+        retryPendingMutations()
+        changed
+    }
+
     override suspend fun updateMangaBakaChapterIfHigher(
         id: String, newProgress: Double, completed: Boolean, seriesStatus: String?
     ): Boolean = recordProgressInternal(
@@ -452,7 +644,13 @@ class SeriesRepositoryImpl(
                 "${current.title} can no longer sync from MangaBaka"
             }
             if (newProgress > current.currentUnit) {
-                val shouldCompleteSeries = completed &&
+                val credentials = mangaBakaPreferences.read()
+                val links = if (credentials.userId.isNotBlank()) mangaBakaPreferences.links(credentials.userId) else emptyMap()
+                val statusPending = links.any { (seriesId, link) ->
+                    link.entryId == id && database.pendingMutationDao()
+                        .get(id, "mangabaka_status", "${credentials.userId}:$seriesId") != null
+                }
+                val shouldCompleteSeries = !statusPending && completed &&
                     seriesStatus?.trim()?.lowercase() in setOf("completed", "cancelled")
                 Pair(newProgress, if (shouldCompleteSeries) "completed" else current.userStatus)
             } else null
@@ -485,24 +683,27 @@ class SeriesRepositoryImpl(
         }
     }
 
-    override suspend fun deleteMediaEntry(id: String): Unit = MangaBakaProgressSync.withLinkLock {
-        progressMutex.withLock {
-            withContext(Dispatchers.IO) {
-                mangaBakaPreferences.unlinkEntry(id)
-                mangaBakaPreferences.unlinkMoonReader(id)
-            }
-            database.withTransaction {
-                mediaEntryDao.deleteEntryById(id)
-                progressHistoryDao.deleteHistoryForEntry(id)
-                database.pendingMutationDao().deleteForEntry(id)
-                database.pendingMutationDao().upsert(PendingMutation(id, "delete"))
-            }
-            try {
-                retryPendingMutations()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.e("SeriesRepository", "Failed to delete entry from Supabase", e)
+    override suspend fun deleteMediaEntry(id: String): Unit = AniListProgressSync.withLinkLock {
+        MangaBakaProgressSync.withLinkLock {
+            progressMutex.withLock {
+                withContext(Dispatchers.IO) {
+                    mangaBakaPreferences.unlinkEntry(id)
+                    mangaBakaPreferences.unlinkMoonReader(id)
+                    appPreferences.unlinkAniListEntry(id)
+                }
+                database.withTransaction {
+                    mediaEntryDao.deleteEntryById(id)
+                    progressHistoryDao.deleteHistoryForEntry(id)
+                    database.pendingMutationDao().deleteForEntry(id)
+                    database.pendingMutationDao().upsert(PendingMutation(id, "delete"))
+                }
+                try {
+                    retryPendingMutations()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e("SeriesRepository", "Failed to delete entry from Supabase", e)
+                }
             }
         }
     }

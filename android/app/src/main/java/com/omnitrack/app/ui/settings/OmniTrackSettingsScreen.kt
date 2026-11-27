@@ -30,6 +30,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import com.omnitrack.app.ui.LocalFeatureServices
 import com.omnitrack.app.ui.mangabaka.MangaBakaScreen
+import com.omnitrack.app.ui.anilist.AniListScreen
 import com.omnitrack.app.ui.moonreader.MoonReaderSettingsScreen
 import com.omnitrack.app.ui.moonreader.folderDisplayName
 import com.omnitrack.app.ui.scrapeissues.ScrapeIssueReportsScreen
@@ -42,7 +43,8 @@ enum class SettingsPage {
     SHARE_STYLE,
     SCRAPE_REPORTS,
     MOON_READER,
-    MANGABAKA
+    MANGABAKA,
+    ANILIST
 }
 
 enum class ShareFormatStyle(val label: String, val description: String) {
@@ -165,6 +167,7 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                 linkedCount = linkedCount,
                 currentShareStyle = currentShareStyle,
                 onOpenMangaBaka = { currentRoute = SettingsPage.MANGABAKA },
+                onOpenAniList = { currentRoute = SettingsPage.ANILIST },
                 onOpenMoonReader = { currentRoute = SettingsPage.MOON_READER },
                 onOpenScrapeReports = { currentRoute = SettingsPage.SCRAPE_REPORTS },
                 onOpenShareStyle = { currentRoute = SettingsPage.SHARE_STYLE }
@@ -177,6 +180,9 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                 currentRoute = SettingsPage.MAIN
             }
             SettingsPage.MANGABAKA -> MangaBakaScreen(viewModel) {
+                currentRoute = SettingsPage.MAIN
+            }
+            SettingsPage.ANILIST -> AniListScreen(viewModel) {
                 currentRoute = SettingsPage.MAIN
             }
             SettingsPage.SHARE_STYLE -> ShareFormatSettingsPage(

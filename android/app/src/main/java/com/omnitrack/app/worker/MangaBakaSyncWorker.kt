@@ -11,8 +11,10 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.omnitrack.app.data.MangaBakaPreferences
+import com.omnitrack.app.data.AniListPreferences
 import com.omnitrack.app.data.MangaBakaProgressSync
 import com.omnitrack.app.data.MangaBakaService
+import com.omnitrack.app.data.OmniTrackPreferences
 import com.omnitrack.app.data.local.AppDatabase
 import com.omnitrack.app.data.repository.SeriesRepositoryImpl
 import java.util.concurrent.TimeUnit
@@ -30,7 +32,8 @@ class MangaBakaSyncWorker(context: Context, params: WorkerParameters) : Coroutin
                 Result.failure(workDataOf("skipped" to 1, "details" to "MangaBaka account or links are missing"))
             } else {
                 val database = AppDatabase.getInstance(applicationContext)
-                val repository = SeriesRepositoryImpl(database, database.mediaEntryDao(), database.progressHistoryDao(), preferences)
+                val repository = SeriesRepositoryImpl(database, database.mediaEntryDao(), database.progressHistoryDao(),
+                    preferences, OmniTrackPreferences(applicationContext), AniListPreferences(applicationContext))
                 val outcome = MangaBakaProgressSync(preferences, service, repository).syncMangaBakaProgress()
                 val data = workDataOf(
                     "updated" to outcome.updated,

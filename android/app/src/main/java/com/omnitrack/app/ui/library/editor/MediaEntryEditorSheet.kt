@@ -21,8 +21,6 @@ import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.SheetValue
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
@@ -41,6 +39,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -76,7 +75,9 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.InputChip
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
+import androidx.compose.material3.rememberBottomSheetState
 import com.omnitrack.app.ui.scraping.RescrapeChange
 import com.omnitrack.app.ui.scraping.RescrapeField
 
@@ -139,6 +140,9 @@ fun MediaEntryEditorSheet(
     var error by remember(draftKey) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val mediaLookup = LocalFeatureServices.current.mediaLookup
+    val aniListState by LocalFeatureServices.current.aniList.state.collectAsState()
+    val aniListProgressLocked = existing?.type == MediaType.ANIME &&
+        aniListState.links.values.any { it.entryId == existing.id }
     var metadataLoaded by remember(draftKey) { mutableStateOf(false) }
 
     LaunchedEffect(viewModel, draftKey) {
@@ -175,6 +179,9 @@ fun MediaEntryEditorSheet(
     }
     var currentUnit by remember(draftKey) {
         mutableStateOf((existing?.currentUnit ?: prefill?.currentUnit)?.toString() ?: "0")
+    }
+    LaunchedEffect(aniListProgressLocked, existing?.currentUnit) {
+        if (aniListProgressLocked) currentUnit = existing.currentUnit.toString()
     }
     var unitName by remember(draftKey) {
         mutableStateOf(existing?.unitName ?: prefill?.unitName ?: "Chapter")
@@ -342,8 +349,13 @@ fun MediaEntryEditorSheet(
     val currentSaving by rememberUpdatedState(saving)
     ModalBottomSheet(
         onDismissRequest = { if (!saving) onDismiss() },
-        sheetState = rememberModalBottomSheetState(
-            skipPartiallyExpanded = false,
+        sheetState = rememberBottomSheetState(
+            initialValue = SheetValue.Hidden,
+            enabledValues = setOf(
+                SheetValue.Hidden,
+                SheetValue.PartiallyExpanded,
+                SheetValue.Expanded
+            ),
             confirmValueChange = { !currentSaving || it != SheetValue.Hidden }
         ),
         containerColor = MaterialTheme.colorScheme.surface,
@@ -435,17 +447,15 @@ fun MediaEntryEditorSheet(
                                 style = MaterialTheme.typography.titleSmall,
                                 color = MaterialTheme.colorScheme.onTertiaryContainer
                             )
-                            if (existing == null) {
-                                Text(
-                                    "Choose an entry or keep none selected. Merge preserves the existing entry's main title and saved fields.",
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                                FilterChip(
-                                    selected = mergeTargetEntry == null && groupWithEntry == null,
-                                    onClick = ::clearMatchSelection,
-                                    label = { Text("None") }
-                                )
-                            }
+                            Text(
+                                "Choose an entry or keep none selected. Merge preserves the existing entry's main title and saved fields.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            FilterChip(
+                                selected = mergeTargetEntry == null && groupWithEntry == null,
+                                onClick = ::clearMatchSelection,
+                                label = { Text("None") }
+                            )
                             mergeTargetEntry?.let {
                                 Text("Merging into \"${it.title}\".", style = MaterialTheme.typography.bodySmall)
                             }
@@ -458,39 +468,37 @@ fun MediaEntryEditorSheet(
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onTertiaryContainer
                                 )
-                                if (existing == null) {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        if (entryMatch) {
-                                            FilterChip(
-                                                selected = mergeTargetEntry?.id == match.id,
-                                                onClick = {
-                                                    clearMatchSelection()
-                                                    mergeTargetEntry = match
-                                                },
-                                                label = { Text("Merge") }
-                                            )
-                                        }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    if (entryMatch) {
                                         FilterChip(
-                                            selected = groupWithEntry?.id == match.id,
+                                            selected = mergeTargetEntry?.id == match.id,
                                             onClick = {
                                                 clearMatchSelection()
-                                                previousSeriesId = seriesId
-                                                previousCreateSeries = createSeries
-                                                previousNewSeriesTitle = newSeriesTitle
-                                                groupWithEntry = match
-                                                showSeriesDetails = true
-                                                if (match.seriesId != null) {
-                                                    seriesId = match.seriesId
-                                                    createSeries = false
-                                                } else {
-                                                    seriesId = null
-                                                    createSeries = true
-                                                    newSeriesTitle = match.title
-                                                }
+                                                mergeTargetEntry = match
                                             },
-                                            label = { Text("Same series") }
+                                            label = { Text("Merge") }
                                         )
                                     }
+                                    FilterChip(
+                                        selected = groupWithEntry?.id == match.id,
+                                        onClick = {
+                                            clearMatchSelection()
+                                            previousSeriesId = seriesId
+                                            previousCreateSeries = createSeries
+                                            previousNewSeriesTitle = newSeriesTitle
+                                            groupWithEntry = match
+                                            showSeriesDetails = true
+                                            if (match.seriesId != null) {
+                                                seriesId = match.seriesId
+                                                createSeries = false
+                                            } else {
+                                                seriesId = null
+                                                createSeries = true
+                                                newSeriesTitle = match.title
+                                            }
+                                        },
+                                        label = { Text("Same series") }
+                                    )
                                 }
                             }
                             groupWithEntry?.let {
@@ -700,6 +708,7 @@ fun MediaEntryEditorSheet(
                 publishingStatus = publishingStatus,
                 onPublishingStatusChange = { publishingStatus = it },
                 currentUnit = currentUnit,
+                progressLocked = aniListProgressLocked,
                 onCurrentUnitChange = { newValue ->
                     val sanitized = newValue.replace("-", "")
                     currentUnit = sanitized
@@ -714,7 +723,7 @@ fun MediaEntryEditorSheet(
                 onIsCanonChange = { isCanon = it }
             )
             prefill?.totalChapters?.let { total ->
-                val unit = prefill?.unitName?.trim().orEmpty().ifBlank { "chapter" }.lowercase()
+                val unit = prefill.unitName.trim().ifBlank { "chapter" }.lowercase()
                 val pluralUnit = if (unit.endsWith("s", ignoreCase = true)) unit else "${unit}s"
                 item {
                     Text(

@@ -13,6 +13,7 @@ import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.delete
 import io.ktor.client.request.setBody
+import io.ktor.client.request.url
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
@@ -126,14 +127,43 @@ object SupabaseService {
     }
 
     suspend fun updateMangaBakaUrl(entryId: String, sourceUrl: String) {
+        updateEntrySourceUrl(entryId, sourceUrl)
+    }
+
+    suspend fun updateEntrySourceUrl(entryId: String, sourceUrl: String) {
         val response = client.patch("$supabaseUrl/rest/v1/media_entries?id=eq.$entryId") {
             contentType(ContentType.Application.Json)
             header("Prefer", "return=representation")
             setBody(buildJsonObject { put("source_url", sourceUrl) })
         }
-        check(response.status.isSuccess()) { "Could not update MangaBaka URL (HTTP ${response.status.value})" }
+        check(response.status.isSuccess()) { "Could not update entry URL (HTTP ${response.status.value})" }
         val entries: List<MediaEntryDto> = response.body()
         check(entries.size == 1) { "Entry no longer exists or could not be updated" }
+    }
+
+    suspend fun backfillEntryCover(entryId: String, coverUrl: String): String? {
+        repeat(3) {
+            val entries: List<MediaEntryDto> = client.get("$supabaseUrl/rest/v1/media_entries") {
+                url {
+                    parameters.append("id", "eq.$entryId")
+                    parameters.append("select", "*")
+                }
+            }.body()
+            val current = entries.singleOrNull() ?: error("Entry no longer exists or could not be read")
+            if (!current.coverUrl.isNullOrBlank()) return current.coverUrl
+            val updated: List<MediaEntryDto> = client.patch("$supabaseUrl/rest/v1/media_entries") {
+                url {
+                    parameters.append("id", "eq.$entryId")
+                    parameters.append("cover_url", current.coverUrl?.let { "eq.$it" } ?: "is.null")
+                }
+                contentType(ContentType.Application.Json)
+                header("Prefer", "return=representation")
+                setBody(buildJsonObject { put("cover_url", coverUrl) })
+            }.body()
+            if (updated.size == 1) return updated.single().coverUrl
+            check(updated.isEmpty()) { "Could not update entry cover" }
+        }
+        error("Entry cover changed repeatedly; retry the sync")
     }
 
     suspend fun logProgress(

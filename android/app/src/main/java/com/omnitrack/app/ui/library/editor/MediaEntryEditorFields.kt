@@ -24,7 +24,8 @@ internal fun EntryField(
     value: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
-    keyboardType: KeyboardType = KeyboardType.Decimal
+    keyboardType: KeyboardType = KeyboardType.Decimal,
+    enabled: Boolean = true
 ) {
     OutlinedTextField(
         value,
@@ -32,6 +33,7 @@ internal fun EntryField(
         label = { Text(label) },
         modifier = modifier.fillMaxWidth(),
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+        enabled = enabled,
         singleLine = true
     )
 }

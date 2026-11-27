@@ -3,6 +3,8 @@ package com.omnitrack.app.ui.viewmodel
 import android.content.Context
 import android.util.Log
 import android.widget.Toast
+import com.omnitrack.app.data.TrackerStatusSync
+import com.omnitrack.app.worker.TrackerStatusSyncWorker
 import com.omnitrack.app.domain.model.CreateEntryCommand
 import com.omnitrack.app.domain.model.CreatePlatformCommand
 import com.omnitrack.app.domain.model.CreateSeriesCommand
@@ -52,6 +54,10 @@ class SeriesViewModel(
     private val _refreshError = MutableStateFlow<String?>(null)
     val refreshError: StateFlow<String?> = _refreshError.asStateFlow()
     private var activeRefreshes = 0
+
+    init {
+        TrackerStatusSyncWorker.schedule(appContext)
+    }
 
     val mediaEntries: StateFlow<List<MediaEntry>> = repository.getMediaEntriesStream()
         .stateIn(
@@ -236,8 +242,26 @@ class SeriesViewModel(
         request: UpdateEntryCommand,
         creators: List<Pair<String, String>>,
         alternativeTitles: List<String>
-    ) = repository.updateMediaEntry(id, request, creators, alternativeTitles)
-    suspend fun updateEntryStatus(id: String, status: String) = repository.updateEntryStatus(id, status)
+    ) {
+        if (repository.updateMediaEntry(id, request, creators, alternativeTitles)) scheduleStatusSync()
+    }
+    suspend fun updateEntryStatus(id: String, status: String) {
+        repository.updateEntryStatus(id, status)
+        scheduleStatusSync()
+    }
+
+    private fun scheduleStatusSync() {
+        TrackerStatusSyncWorker.schedule(appContext)
+        viewModelScope.launch {
+            val errors = TrackerStatusSync(appContext, repository).sync()
+            if (errors.isNotEmpty()) {
+                Toast.makeText(
+                    appContext, "Status saved locally; sync will retry: ${errors.joinToString("; ")}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
 
     private data class PeriodNavState(
         val tab: HistoryTimeframe,

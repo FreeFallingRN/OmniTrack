@@ -2,6 +2,7 @@ package com.omnitrack.app.data
 
 import android.util.Log
 import com.omnitrack.app.domain.model.MediaType
+import com.omnitrack.app.domain.model.UserStatus
 import com.omnitrack.app.domain.repository.SeriesRepository
 import java.math.BigDecimal
 import kotlinx.coroutines.CancellationException
@@ -31,6 +32,7 @@ class MangaBakaProgressSync(
             }
             val links = preferences.links(credentials.userId)
             check(links.isNotEmpty()) { "Link a MangaBaka title first" }
+            pushPendingLocked(credentials, links)
             val entries = repository.getMediaEntriesStream().first().associateBy { it.id }
             val titles = service.library(credentials)
             val titlesById = titles.groupBy { it.series.id }
@@ -96,6 +98,31 @@ class MangaBakaProgressSync(
                 }
             }
             MangaBakaSyncResult(titles, updated, skipped, errors)
+        }
+    }
+
+    suspend fun pushPendingStatuses() = withContext(Dispatchers.IO) {
+        withLinkLock {
+            val credentials = preferences.read()
+            if (credentials.userId.isNotBlank()) {
+                pushPendingLocked(credentials, preferences.links(credentials.userId))
+            }
+        }
+    }
+
+    private suspend fun pushPendingLocked(credentials: MangaBakaCredentials, links: Map<Long, MangaBakaLink>) {
+        repository.resolvePendingTrackerStatuses("mangabaka", links.entries.groupBy(
+            { it.value.entryId }, { "${credentials.userId}:${it.key}" }
+        ))
+        for ((seriesId, link) in links) {
+            val key = "${credentials.userId}:$seriesId"
+            while (true) {
+                val value = repository.pendingTrackerStatus(link.entryId, "mangabaka_status", key) ?: break
+                val status = UserStatus.entries.firstOrNull { it.value == value }
+                    ?: error("Invalid pending MangaBaka status: $value")
+                service.updateStatus(credentials, seriesId, status)
+                repository.clearPendingTrackerStatus(link.entryId, "mangabaka_status", key, value)
+            }
         }
     }
 

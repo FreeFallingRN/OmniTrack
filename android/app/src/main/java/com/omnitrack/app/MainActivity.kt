@@ -16,8 +16,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import com.omnitrack.app.data.MangaBakaPreferences
+import com.omnitrack.app.data.AniListPreferences
 import com.omnitrack.app.data.MangaBakaSearchProvider
 import com.omnitrack.app.data.AniListSearchProvider
+import com.omnitrack.app.data.OmniTrackPreferences
 import com.omnitrack.app.data.local.AppDatabase
 import com.omnitrack.app.data.repository.SeriesRepositoryImpl
 import com.omnitrack.app.domain.repository.SeriesRepository
@@ -36,6 +38,7 @@ import com.omnitrack.app.ui.LocalFeatureServices
 import com.omnitrack.app.ui.viewmodel.SeriesViewModel
 import com.omnitrack.app.ui.viewmodel.SettingsStateHolder
 import com.omnitrack.app.ui.viewmodel.MangaBakaOwner
+import com.omnitrack.app.ui.viewmodel.AniListOwner
 import com.omnitrack.app.ui.viewmodel.MoonReaderViewModel
 
 class MainActivity : ComponentActivity() {
@@ -45,6 +48,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var seriesViewModel: SeriesViewModel
     private lateinit var settings: SettingsStateHolder
     private lateinit var mangaBaka: MangaBakaOwner
+    private lateinit var aniList: AniListOwner
     private lateinit var moonReader: MoonReaderViewModel
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -61,7 +65,9 @@ class MainActivity : ComponentActivity() {
             database = database,
             mediaEntryDao = database.mediaEntryDao(),
             progressHistoryDao = database.progressHistoryDao(),
-            mangaBakaPreferences = MangaBakaPreferences(applicationContext)
+            mangaBakaPreferences = MangaBakaPreferences(applicationContext),
+            appPreferences = OmniTrackPreferences(applicationContext),
+            aniListPreferences = AniListPreferences(applicationContext)
         )
 
         // Custom ViewModel Factory for supplying the SeriesRepository
@@ -78,18 +84,21 @@ class MainActivity : ComponentActivity() {
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 return when (modelClass) {
                     MangaBakaOwner::class.java -> MangaBakaOwner(applicationContext, repository, seriesViewModel.isRefreshing, mediaLookup)
+                    AniListOwner::class.java -> AniListOwner(applicationContext, repository, seriesViewModel.isRefreshing)
                     MoonReaderViewModel::class.java -> MoonReaderViewModel(applicationContext, repository, seriesViewModel.isRefreshing)
                     else -> throw IllegalArgumentException("Unknown feature ViewModel: $modelClass")
                 } as T
             }
         }
         mangaBaka = ViewModelProvider(this, featureFactory)[MangaBakaOwner::class.java]
+        aniList = ViewModelProvider(this, featureFactory)[AniListOwner::class.java]
         moonReader = ViewModelProvider(this, featureFactory)[MoonReaderViewModel::class.java]
         val featureServices = FeatureServices(
-            scrapeIssues, mediaLookup, settings, mangaBaka, moonReader,
+            scrapeIssues, mediaLookup, settings, mangaBaka, moonReader, aniList,
             listOf(MangaBakaSearchProvider(), AniListSearchProvider())
         )
         handleMangaBakaIntent(intent)
+        handleAniListIntent(intent)
         seriesViewModel.refreshData()
         lifecycleScope.launch {
             moonReader.moonReaderMessages.collect { message ->
@@ -165,6 +174,7 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         pendingSharedUrl = extractSharedUrl(intent)
         handleMangaBakaIntent(intent)
+        handleAniListIntent(intent)
     }
 
     override fun onDestroy() {
@@ -177,6 +187,7 @@ class MainActivity : ComponentActivity() {
         if (::seriesViewModel.isInitialized) {
             moonReader.syncMoonReader()
             mangaBaka.syncMangaBakaProgress()
+            aniList.sync()
         }
     }
 
@@ -194,6 +205,15 @@ class MainActivity : ComponentActivity() {
         if (intent?.action == Intent.ACTION_VIEW && uri?.scheme == "com.omnitrack.app" &&
             uri.path == "/mangabaka/oauth") {
             mangaBaka.handleMangaBakaCallback(uri)
+            intent.data = null
+        }
+    }
+
+    private fun handleAniListIntent(intent: Intent?) {
+        val uri = intent?.data
+        if (intent?.action == Intent.ACTION_VIEW && uri?.scheme == "com.omnitrack.app" &&
+            uri.host == null && uri.path == "/anilist/oauth") {
+            aniList.handleCallback(uri)
             intent.data = null
         }
     }

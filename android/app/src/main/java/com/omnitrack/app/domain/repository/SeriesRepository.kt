@@ -24,6 +24,7 @@ class PartialMediaEntryCreateException(
 interface SeriesRepository {
     fun getMediaEntriesStream(): Flow<List<MediaEntry>>
     suspend fun fetchFromSupabase()
+    suspend fun retryPendingLibraryMutations()
     suspend fun getSeries(): List<Series>
     suspend fun getAuthors(): List<Author>
     suspend fun getPlatforms(): List<Platform>
@@ -46,8 +47,11 @@ interface SeriesRepository {
         request: UpdateEntryCommand,
         creators: List<Pair<String, String>>,
         alternativeTitles: List<String>
-    )
+    ): Boolean
     suspend fun updateEntryStatus(id: String, status: String)
+    suspend fun pendingTrackerStatus(id: String, service: String, linkKey: String): String?
+    suspend fun clearPendingTrackerStatus(id: String, service: String, linkKey: String, status: String)
+    suspend fun resolvePendingTrackerStatuses(service: String, links: Map<String, List<String>>)
     suspend fun updateProgress(
         id: String,
         newProgress: Double,
@@ -55,6 +59,14 @@ interface SeriesRepository {
     )
     suspend fun updateMoonReaderChapterIfHigher(id: String, newProgress: Double): Boolean
     suspend fun updateMoonReaderProgress(id: String, newProgress: Double, source: ProgressSource)
+    suspend fun updateAniListEpisodeIfHigher(
+        id: String,
+        newProgress: Double,
+        initial: Boolean,
+        status: String? = null
+    ): Boolean
+    suspend fun updateAniListMetadata(id: String, coverUrl: String?, totalEpisodes: Int?): Boolean
+    suspend fun updateAniListUrl(id: String, sourceUrl: String): Boolean
     suspend fun updateMangaBakaChapterIfHigher(
         id: String,
         newProgress: Double,

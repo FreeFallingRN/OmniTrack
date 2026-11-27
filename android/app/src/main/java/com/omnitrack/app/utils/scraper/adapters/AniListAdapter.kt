@@ -1,5 +1,6 @@
 package com.omnitrack.app.utils.scraper.adapters
 
+import com.omnitrack.app.data.AniListRequestGate
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.utils.ScrapedCreator
 import com.omnitrack.app.utils.ScrapedMediaDraft
@@ -72,22 +73,32 @@ object AniListAdapter : MediaSourceAdapter {
         val idField = if (id != null) "\"id\":$id" else "\"idMal\":$idMal"
         val payload = """{"query":${JSONObject.quote(query)},"variables":{$idField,"type":"$typeEnum"}}"""
 
-        val conn = (URL("https://graphql.anilist.co").openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 6_000
-            readTimeout = 6_000
-            doOutput = true
-            setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("Accept", "application/json")
+        suspend fun send(): Triple<Int, Long, String?> = AniListRequestGate.execute(
+            retryAfterMillis = { if (it.first == 429) it.second else 0L }
+        ) {
+            val conn = (URL("https://graphql.anilist.co").openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 6_000
+                readTimeout = 6_000
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("Accept", "application/json")
+            }
+            try {
+                conn.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+                val code = conn.responseCode
+                val retry = conn.getHeaderField("Retry-After")?.toLongOrNull()?.coerceAtLeast(0)
+                    ?.coerceAtMost(Long.MAX_VALUE / 1_000)?.times(1_000) ?: 60_000L
+                val body = if (code in 200..299) conn.inputStream.bufferedReader(Charsets.UTF_8).readText() else null
+                Triple(code, retry, body)
+            } finally {
+                conn.disconnect()
+            }
         }
-
-        val responseText = try {
-            conn.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
-            if (conn.responseCode !in 200..299) return@withContext null
-            conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
-        } finally {
-            conn.disconnect()
-        }
+        var response = send()
+        if (response.first == 429) response = send()
+        check(response.first != 429) { "AniList rate limit reached (HTTP 429); retry shortly" }
+        val responseText = response.third ?: return@withContext null
 
         val media = json.parseToJsonElement(responseText).jsonObject["data"]
             ?.jsonObject?.get("Media")?.jsonObject ?: return@withContext null

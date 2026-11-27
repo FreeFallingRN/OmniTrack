@@ -11,6 +11,8 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.omnitrack.app.data.MangaBakaPreferences
+import com.omnitrack.app.data.AniListPreferences
+import com.omnitrack.app.data.OmniTrackPreferences
 import com.omnitrack.app.data.local.AppDatabase
 import com.omnitrack.app.data.repository.SeriesRepositoryImpl
 import com.omnitrack.app.utils.MoonReaderFolderAccessException
@@ -24,7 +26,8 @@ class MoonReaderSyncWorker(context: Context, params: WorkerParameters) : Corouti
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val database = AppDatabase.getInstance(applicationContext)
         val repository = SeriesRepositoryImpl(
-            database, database.mediaEntryDao(), database.progressHistoryDao(), MangaBakaPreferences(applicationContext)
+            database, database.mediaEntryDao(), database.progressHistoryDao(), MangaBakaPreferences(applicationContext),
+            OmniTrackPreferences(applicationContext), AniListPreferences(applicationContext)
         )
         try {
             val outcome = MoonReaderSync(applicationContext, repository).sync(manual = false) {

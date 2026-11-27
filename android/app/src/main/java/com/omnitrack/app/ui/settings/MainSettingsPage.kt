@@ -27,7 +27,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
@@ -41,6 +44,7 @@ internal fun MainSettingsPage(
     linkedCount: Int,
     currentShareStyle: ShareFormatStyle,
     onOpenMangaBaka: () -> Unit,
+    onOpenAniList: () -> Unit,
     onOpenMoonReader: () -> Unit,
     onOpenScrapeReports: () -> Unit,
     onOpenShareStyle: () -> Unit
@@ -66,7 +70,7 @@ internal fun MainSettingsPage(
                     Text("Background sync", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(
                         if (isIgnoringBatteryOptimizations) "Background sync active — battery optimization disabled"
-                        else "Allow unrestricted background activity so Moon+ Reader and MangaBaka sync reliably",
+                        else "Allow unrestricted background activity so Moon+ Reader, MangaBaka and AniList sync reliably",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -86,6 +90,7 @@ internal fun MainSettingsPage(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 SettingsNavigationRow("MangaBaka", Icons.Default.AutoStories, "Open MangaBaka", onOpenMangaBaka)
+                SettingsNavigationRow("AniList", AniListIcon, "Open AniList", onOpenAniList)
                 SettingsNavigationRow("Moon+ Reader", Icons.Default.Nightlight, "Open Moon+ Reader settings", onOpenMoonReader)
             }
         }
@@ -93,6 +98,33 @@ internal fun MainSettingsPage(
         SettingsNavigationCard("Discord Share Style", currentShareStyle.label, "Open Discord Share Style", onOpenShareStyle)
     }
 }
+
+private val AniListIcon = ImageVector.Builder(
+    name = "AniList", defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f
+).apply {
+    path(fill = SolidColor(Color.Black)) {
+        moveTo(2f, 19f)
+        lineTo(8f, 5f)
+        lineTo(11f, 5f)
+        lineTo(17f, 19f)
+        lineTo(13.7f, 19f)
+        lineTo(12.5f, 16f)
+        lineTo(6.5f, 16f)
+        lineTo(5.3f, 19f)
+        close()
+        moveTo(7.5f, 13.5f)
+        lineTo(11.5f, 13.5f)
+        lineTo(9.5f, 8.5f)
+        close()
+        moveTo(17f, 5f)
+        lineTo(20f, 5f)
+        lineTo(20f, 16.5f)
+        lineTo(23f, 16.5f)
+        lineTo(23f, 19f)
+        lineTo(17f, 19f)
+        close()
+    }
+}.build()
 
 @Composable
 private fun SettingsNavigationRow(

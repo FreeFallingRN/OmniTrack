@@ -7,6 +7,7 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.AtomicFile
 import android.util.Base64
+import com.omnitrack.app.domain.model.UserStatus
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.android.Android
@@ -16,6 +17,7 @@ import io.ktor.client.request.forms.submitForm
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
+import io.ktor.client.request.patch
 import io.ktor.client.request.setBody
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.http.ContentType
@@ -228,6 +230,8 @@ private data class LibraryEntryResponse(val data: MangaBakaLibraryEntry)
 @Serializable
 private data class CreateLibraryEntry(val state: String)
 @Serializable
+private data class UpdateLibraryState(val state: String)
+@Serializable
 private data class CreateLibraryEntryResponse(val data: Boolean)
 
 internal fun HttpRequestBuilder.mangaBakaAuthorization(credentials: MangaBakaCredentials) {
@@ -348,6 +352,29 @@ class MangaBakaService(private val preferences: MangaBakaPreferences) {
             val result = client.get(url) { mangaBakaAuthorization(credentials) }
             check(result.status.isSuccess()) { "MangaBaka library lookup failed (HTTP ${result.status.value})" }
             result.body<LibraryEntryResponse>().data
+        }
+
+    suspend fun updateStatus(credentials: MangaBakaCredentials, seriesId: Long, status: UserStatus) =
+        withContext(Dispatchers.IO) {
+            check(credentials.accessToken.isNotBlank() && credentials.userId.isNotBlank()) {
+                "Connect your MangaBaka account first"
+            }
+            val state = when (status) {
+                UserStatus.IN_PROGRESS -> "reading"
+                UserStatus.PLANNING -> "plan_to_read"
+                UserStatus.PAUSED -> "paused"
+                UserStatus.COMPLETED -> "completed"
+                UserStatus.DROPPED -> "dropped"
+            }
+            val response = client.patch("https://api.mangabaka.org/v1/my/library/$seriesId") {
+                mangaBakaAuthorization(credentials)
+                contentType(ContentType.Application.Json)
+                setBody(UpdateLibraryState(state))
+            }
+            check(response.status.isSuccess()) {
+                "MangaBaka status update failed (HTTP ${response.status.value}); reconnect if write access is missing"
+            }
+            check(response.body<CreateLibraryEntryResponse>().data) { "MangaBaka did not update the status" }
         }
 
     suspend fun library(credentials: MangaBakaCredentials): List<MangaBakaTitle> = withContext(Dispatchers.IO) {

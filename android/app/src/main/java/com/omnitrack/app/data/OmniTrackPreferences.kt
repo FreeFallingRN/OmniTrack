@@ -2,6 +2,19 @@ package com.omnitrack.app.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+
+@Serializable
+data class AniListLink(
+    val entryId: String,
+    val initialSync: Boolean = true,
+    val mediaListId: Int? = null,
+    val lastProgress: Int? = null,
+    val lastUpdatedAt: Long? = null
+)
 
 sealed class PreferenceKey<T> protected constructor(internal val name: String) {
     @ConsistentCopyVisibility
@@ -26,6 +39,8 @@ object OmniTrackPreferenceKeys {
     val MoonReaderFolderName = PreferenceKey.StringKey("moon_reader_folder_name")
     val MoonReaderBooksFolder = PreferenceKey.StringKey("moon_reader_books_folder")
     val MoonReaderBooksFolderName = PreferenceKey.StringKey("moon_reader_books_folder_name")
+    val AniListAutoSync = PreferenceKey.IntKey("anilist_auto_sync")
+    fun aniListLinks(userId: Int) = PreferenceKey.StringKey("anilist_links_$userId")
 
     fun moonReaderFileUri(entryId: String) =
         PreferenceKey.StringKey("moon_reader_file_uri_$entryId")
@@ -84,6 +99,33 @@ class OmniTrackPreferences(context: Context) {
         preferences.getInt(key.name, defaultValue)
 
     fun contains(key: PreferenceKey<*>): Boolean = preferences.contains(key.name)
+
+    fun aniListLinks(userId: Int): Map<Int, AniListLink> {
+        val saved = getString(OmniTrackPreferenceKeys.aniListLinks(userId)) ?: return emptyMap()
+        return Json.decodeFromString(saved)
+    }
+
+    fun saveAniListLinks(userId: Int, links: Map<Int, AniListLink>) {
+        check(edit().putString(OmniTrackPreferenceKeys.aniListLinks(userId), Json.encodeToString(links)).commit()) {
+            "Could not save AniList links"
+        }
+    }
+
+    fun unlinkAniListEntry(entryId: String) {
+        val editor = preferences.edit()
+        var changed = false
+        preferences.all.forEach { (key, value) ->
+            if (key.startsWith("anilist_links_") && value is String) {
+                val links = Json.decodeFromString<Map<Int, AniListLink>>(value)
+                val retained = links.filterValues { it.entryId != entryId }
+                if (retained.size != links.size) {
+                    editor.putString(key, Json.encodeToString(retained))
+                    changed = true
+                }
+            }
+        }
+        check(!changed || editor.commit()) { "Could not remove AniList links" }
+    }
 
     fun moonReaderLinkedEntryIds(): Set<String> =
         preferences.all.keys.mapNotNull { name ->

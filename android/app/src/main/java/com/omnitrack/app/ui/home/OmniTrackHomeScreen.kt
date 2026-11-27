@@ -441,7 +441,6 @@ fun OmniTrackHomeScreen(
                         refreshScope.launch {
                             try {
                                 viewModel.updateEntryStatus(entry.id, status.value)
-                                viewModel.refreshData()
                             } catch (e: CancellationException) {
                                 throw e
                             } catch (e: Exception) {

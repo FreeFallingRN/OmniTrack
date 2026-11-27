@@ -29,6 +29,7 @@ data class MediaEntry(
     val updatedAt: String,
     val seriesAlternativeTitles: List<String> = emptyList(),
     val aliasScopeUnverified: Boolean = false,
+    val totalEpisodes: Int? = null,
 ) {
     val allAlternativeTitles: List<String>
         get() = (alternativeTitles + seriesAlternativeTitles).distinct()

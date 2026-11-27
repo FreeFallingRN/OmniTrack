@@ -49,6 +49,7 @@ fun MediaEntryEntity.toDomain(): MediaEntry {
             seriesAlternativeTitles ?: if (seriesId != null) alternativeTitles else ""
         ),
         aliasScopeUnverified = seriesId != null && seriesAlternativeTitles == null,
+        totalEpisodes = totalEpisodes,
     )
 }
 

@@ -7,6 +7,7 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.serialization.json.Json
@@ -101,10 +102,20 @@ class AniListSearchProvider : OnlineMediaSearchProvider {
             put("query", query)
             put("variables", buildJsonObject { put("search", title) })
         }
-        val response = MediaHttpClient.client.post("https://graphql.anilist.co") {
-            contentType(ContentType.Application.Json)
-            setBody(payload.toString())
+        val response = AniListRequestGate.execute(
+            retryAfterMillis = { response ->
+                if (response.status.value == 429) {
+                    response.headers[HttpHeaders.RetryAfter]?.toLongOrNull()?.coerceAtLeast(0)
+                        ?.coerceAtMost(Long.MAX_VALUE / 1_000)?.times(1_000) ?: 60_000L
+                } else 0L
+            }
+        ) {
+            MediaHttpClient.client.post("https://graphql.anilist.co") {
+                contentType(ContentType.Application.Json)
+                setBody(payload.toString())
+            }
         }
+        if (response.status.value == 429) error("AniList rate limit reached (HTTP 429); retry shortly")
         check(response.status.isSuccess()) { "AniList search failed (HTTP ${response.status.value})" }
         val root = searchJson.parseToJsonElement(response.bodyAsText()).jsonObject
         val errors = root["errors"] as? JsonArray

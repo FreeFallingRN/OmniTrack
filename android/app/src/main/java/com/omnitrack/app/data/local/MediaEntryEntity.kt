@@ -29,4 +29,5 @@ data class MediaEntryEntity(
     val createdAt: String = "",
     val updatedAt: String,
     val seriesAlternativeTitles: String? = null,
+    val totalEpisodes: Int? = null,
 )

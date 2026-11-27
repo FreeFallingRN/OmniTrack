@@ -287,6 +287,7 @@ internal fun LazyListScope.mediaSection(
     onPublishingStatusChange: (String) -> Unit,
     currentUnit: String,
     onCurrentUnitChange: (String) -> Unit,
+    progressLocked: Boolean,
     unitName: String,
     onUnitNameChange: (String) -> Unit,
     isCanon: Boolean,
@@ -308,9 +309,11 @@ internal fun LazyListScope.mediaSection(
                     )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    EntryField("Current ${unitName.trim().lowercase()}", currentUnit, onCurrentUnitChange, Modifier.weight(1f))
+                    EntryField("Current ${unitName.trim().lowercase()}", currentUnit, onCurrentUnitChange,
+                        Modifier.weight(1f), enabled = !progressLocked)
                     EntryField("Unit name", unitName, onUnitNameChange, Modifier.weight(1f), KeyboardType.Text)
                 }
+                if (progressLocked) Text("Synced via AniList", style = MaterialTheme.typography.labelMedium)
                 FilterChip(selected = isCanon, onClick = { onIsCanonChange(!isCanon) }, label = { Text("Canon") })
             }
         }

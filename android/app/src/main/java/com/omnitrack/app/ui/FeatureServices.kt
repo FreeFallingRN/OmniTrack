@@ -6,6 +6,7 @@ import com.omnitrack.app.data.OnlineMediaSearchProvider
 import com.omnitrack.app.feature.MediaLookupService
 import com.omnitrack.app.ui.viewmodel.SettingsStateHolder
 import com.omnitrack.app.ui.viewmodel.MangaBakaOwner
+import com.omnitrack.app.ui.viewmodel.AniListOwner
 import com.omnitrack.app.ui.viewmodel.MoonReaderViewModel
 
 data class FeatureServices(
@@ -14,6 +15,7 @@ data class FeatureServices(
     val settings: SettingsStateHolder,
     val mangaBaka: MangaBakaOwner,
     val moonReader: MoonReaderViewModel,
+    val aniList: AniListOwner,
     val onlineSearchProviders: List<OnlineMediaSearchProvider>
 )
 

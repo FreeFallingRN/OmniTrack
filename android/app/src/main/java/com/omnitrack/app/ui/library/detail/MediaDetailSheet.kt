@@ -83,6 +83,7 @@ import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.model.UserStatus
 import com.omnitrack.app.domain.model.toDisplayLabel
 import com.omnitrack.app.data.MangaBakaTitle
+import com.omnitrack.app.data.AniListLibraryEntry
 import com.omnitrack.app.feature.mangabaka.matching.mangaBakaMatchesType
 import com.omnitrack.app.ui.LocalFeatureServices
 import com.omnitrack.app.ui.components.formatUnit
@@ -128,11 +129,16 @@ fun MediaDetailSheet(
     val mangaBaka = LocalFeatureServices.current.mangaBaka.mangaBaka
     val mangaBakaState by mangaBaka.state.collectAsState()
     val mangaBakaLink = mangaBakaState.links.entries.firstOrNull { it.value.entryId == entry.id }
+    val aniList = LocalFeatureServices.current.aniList
+    val aniListState by aniList.state.collectAsState()
+    val aniListLink = aniListState.links.entries.firstOrNull { it.value.entryId == entry.id }
+    val aniListProgressLocked = aniListLink != null && entry.type == MediaType.ANIME
+    val trackerProgressLocked = mangaBakaProgressLocked || aniListProgressLocked
     val settingsState by settings.state.collectAsState()
     val moonReaderLinked = remember(entry.id, settingsState.revision) {
         settings.linkedFileUri(entry.id) != null
     }
-    val linked = mangaBakaLink != null || moonReaderLinked
+    val linked = mangaBakaLink != null || moonReaderLinked || aniListLink != null
     val moonReaderPackage = remember(context) { findMoonReaderPackage(context) }
     val moonReaderIcon = remember(context, moonReaderPackage) {
         moonReaderPackage?.let { packageName ->
@@ -290,12 +296,20 @@ fun MediaDetailSheet(
                                                 enabled = false
                                             )
                                         }
+                                        if (aniListLink != null) {
+                                            DropdownMenuItem(
+                                                text = { Text("Linked: AniList", color = Color.White) },
+                                                onClick = {},
+                                                enabled = false
+                                            )
+                                        }
                                         DropdownMenuItem(
                                             text = { Text("Unlink", color = Color.White) },
                                             leadingIcon = { Icon(Icons.Default.LinkOff, null, tint = Color.White) },
                                             onClick = { menuExpanded = false; unlinkError = null; showUnlink = true }
                                         )
-                                    } else {
+                                    }
+                                    if (!linked || (entry.type == MediaType.ANIME && aniListLink == null)) {
                                         DropdownMenuItem(
                                             text = { Text("Link", color = Color.White) },
                                             leadingIcon = { Icon(Icons.Default.Link, null, tint = Color.White) },
@@ -379,10 +393,11 @@ fun MediaDetailSheet(
                                 )
                             }
                         }
-                        if (mangaBakaLink != null || moonReaderLinked) {
+                        if (mangaBakaLink != null || moonReaderLinked || aniListLink != null) {
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 if (mangaBakaLink != null) DetailStatusPill("Linked: MangaBaka")
                                 if (moonReaderLinked) DetailStatusPill("Linked: Moon+")
+                                if (aniListLink != null) DetailStatusPill("Linked: AniList")
                             }
                         }
                     }
@@ -409,15 +424,18 @@ fun MediaDetailSheet(
                     if (mangaBakaProgressLocked) {
                         Text("Synced via MangaBaka", style = MaterialTheme.typography.labelMedium)
                     }
-                    key(entry.id, moonReaderLinked, mangaBakaProgressLocked) {
-                        Box(modifier = Modifier.alpha(if (moonReaderLinked || mangaBakaProgressLocked) 0.4f else 1f)) {
+                    if (aniListProgressLocked) {
+                        Text("Synced via AniList", style = MaterialTheme.typography.labelMedium)
+                    }
+                    key(entry.id, moonReaderLinked, trackerProgressLocked) {
+                        Box(modifier = Modifier.alpha(if (moonReaderLinked || trackerProgressLocked) 0.4f else 1f)) {
                             ProgressWheel(
                                 entryId = entry.id,
                                 currentUnit = entry.currentUnit,
                                 unitName = entry.unitName,
-                                enabled = controlsEnabled && !moonReaderLinked && !mangaBakaProgressLocked,
+                                enabled = controlsEnabled && !moonReaderLinked && !trackerProgressLocked,
                                 onUpdateProgress = { value ->
-                                    if (!mangaBakaProgressLocked && settings.linkedFileUri(entry.id) == null) onUpdateProgress(value)
+                                    if (!trackerProgressLocked && settings.linkedFileUri(entry.id) == null) onUpdateProgress(value)
                                 }
                             )
                         }
@@ -453,7 +471,9 @@ fun MediaDetailSheet(
             title = { Text("Link ${entry.title}") },
             text = {
                 Column {
-                    val sources = if (entry.type == MediaType.NOVEL) {
+                    val sources = if (entry.type == MediaType.ANIME) {
+                        listOf("AniList", "MangaBaka", "Moon+ Reader")
+                    } else if (entry.type == MediaType.NOVEL) {
                         listOf("Moon+ Reader", "MangaBaka")
                     } else listOf("MangaBaka", "Moon+ Reader")
                     sources.forEach { source ->
@@ -466,6 +486,9 @@ fun MediaDetailSheet(
     }
     if (linkSource == "MangaBaka") {
         DetailMangaBakaLinkDialog(entry, onDismiss = { linkSource = null })
+    }
+    if (linkSource == "AniList") {
+        DetailAniListLinkDialog(entry, onDismiss = { linkSource = null })
     }
     if (linkSource == "Moon+ Reader") {
         DetailMoonReaderLinkDialog(entry, onDismiss = { linkSource = null })
@@ -492,6 +515,21 @@ fun MediaDetailSheet(
                                 }
                             }
                         }) { Text("Unlink MangaBaka") }
+                    }
+                    if (aniListLink != null) {
+                        TextButton(enabled = !unlinkBusy && !aniListState.busy, onClick = {
+                            scope.launch {
+                                unlinkBusy = true
+                                try {
+                                    aniList.unlink(aniListLink.key, entry.id)
+                                    if (aniList.state.value.links[aniListLink.key]?.entryId != entry.id) {
+                                        showUnlink = false
+                                    } else unlinkError = aniList.state.value.message
+                                } finally {
+                                    unlinkBusy = false
+                                }
+                            }
+                        }) { Text("Unlink AniList") }
                     }
                     if (moonReaderLinked) {
                         TextButton(enabled = !unlinkBusy, onClick = {
@@ -542,6 +580,78 @@ fun MediaDetailSheet(
             }
         }
     }
+}
+
+@Composable
+private fun DetailAniListLinkDialog(entry: MediaEntry, onDismiss: () -> Unit) {
+    val owner = LocalFeatureServices.current.aniList
+    val state by owner.state.collectAsState()
+    val scope = rememberCoroutineScope()
+    var search by remember(entry.id) { mutableStateOf(entry.title) }
+    var selected by remember(entry.id) { mutableStateOf<AniListLibraryEntry?>(null) }
+    var submitting by remember(entry.id) { mutableStateOf(false) }
+    val linked = state.links.values.any { it.entryId == entry.id }
+    val supported = entry.type == MediaType.ANIME &&
+        (entry.unitName.trim().equals("episode", true) || entry.unitName.trim().equals("episodes", true))
+    val available = state.titles.filter {
+        !state.links.containsKey(it.mediaId) &&
+            (it.displayTitle.contains(search, true) ||
+                it.media.title.romaji.orEmpty().contains(search, true) ||
+                it.media.synonyms.any { name -> name.contains(search, true) })
+    }
+
+    LaunchedEffect(state.initialized, state.connected) {
+        if (state.initialized && state.connected) owner.fetch()
+    }
+    AlertDialog(
+        onDismissRequest = { if (!submitting) onDismiss() },
+        title = { Text("Link AniList") },
+        text = {
+            Column(
+                Modifier.fillMaxWidth().heightIn(min = 360.dp, max = 560.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (!state.connected) Text("Connect AniList in Settings first.")
+                if (linked) Text("This entry is already linked to AniList.")
+                if (!supported) Text("AniList links require anime entries that track episodes.")
+                if (state.busy) Text("Working…")
+                if (state.message.isNotBlank()) Text(state.message, style = MaterialTheme.typography.bodySmall)
+                Text("Linking does not change progress. Sync now to import episodes.", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(
+                    search, { search = it }, label = { Text("Search AniList library") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth()
+                )
+                LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+                    items(available, key = { it.id }) { title ->
+                        TextButton(enabled = !submitting, onClick = { selected = title }, modifier = Modifier.fillMaxWidth()) {
+                            Text(if (selected?.id == title.id) "[${title.displayTitle}]" else title.displayTitle)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = state.connected && !state.busy && !submitting && !linked && supported &&
+                    available.any { it.id == selected?.id },
+                onClick = {
+                    selected?.let { title ->
+                        scope.launch {
+                            submitting = true
+                            try {
+                                owner.link(title, entry.id)
+                                if (owner.state.value.links[title.mediaId]?.entryId == entry.id &&
+                                    !owner.state.value.hasError) onDismiss()
+                            } finally {
+                                submitting = false
+                            }
+                        }
+                    }
+                }
+            ) { Text("Link") }
+        },
+        dismissButton = { TextButton(enabled = !submitting, onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @Composable
