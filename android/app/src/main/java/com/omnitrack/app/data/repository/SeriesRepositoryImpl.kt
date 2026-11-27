@@ -309,11 +309,18 @@ class SeriesRepositoryImpl(
             val hasNetProgress = if (recordSyncHistory) nextUnit > prevUnitForHistory
                 else (nextUnit - prevUnitForHistory) > 0.0001
             val recordHistory = hasNetProgress && (source.isActiveConsumption || recordSyncHistory)
+            var historySource = source
 
             if (recordHistory) {
                 val existingTodayHistory = progressHistoryDao.getEntryHistoryForDate(id, today)
-                prevUnitForHistory = existingTodayHistory?.previousUnit
-                    ?: current.currentUnit
+                if (existingTodayHistory != null &&
+                    ProgressSource.fromValue(existingTodayHistory.source).isActiveConsumption) {
+                    prevUnitForHistory = existingTodayHistory.previousUnit +
+                        (current.currentUnit - existingTodayHistory.newUnit).coerceAtLeast(0.0)
+                    if (!source.isActiveConsumption) {
+                        historySource = ProgressSource.fromValue(existingTodayHistory.source)
+                    }
+                }
             }
 
             suspend fun uploadHistory() {
@@ -324,7 +331,7 @@ class SeriesRepositoryImpl(
                             activityDate = today,
                             prevUnit = prevUnitForHistory,
                             newUnit = nextUnit,
-                            source = source.value
+                            source = historySource.value
                         )
                     ) { "Supabase rejected progress history for $id on $today" }
                 }
@@ -364,7 +371,7 @@ class SeriesRepositoryImpl(
                     progressHistoryDao.upsert(
                         ProgressHistoryEntity(
                             entryId = id, activityDate = today, previousUnit = prevUnitForHistory,
-                            newUnit = nextUnit, source = source.value
+                            newUnit = nextUnit, source = historySource.value
                         )
                     )
                     if (!uploadFirst) {
@@ -413,7 +420,7 @@ class SeriesRepositoryImpl(
                 }
                 if (newProgress > current.currentUnit) Pair(newProgress, current.userStatus) else null
             },
-            source = ProgressSource.IMPORT,
+            source = ProgressSource.TRACKING_SYNC,
             recordSyncHistory = true
         )
 
@@ -450,7 +457,7 @@ class SeriesRepositoryImpl(
                 Pair(newProgress, if (shouldCompleteSeries) "completed" else current.userStatus)
             } else null
         },
-        source = ProgressSource.IMPORT,
+        source = ProgressSource.TRACKING_SYNC,
         uploadFirst = true,
         recordSyncHistory = true
     )

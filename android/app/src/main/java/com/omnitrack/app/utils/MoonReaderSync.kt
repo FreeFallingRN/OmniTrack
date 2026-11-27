@@ -94,12 +94,7 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
             }
             check(!duplicate) { "${progress.fileName} is already linked to another entry" }
         }
-        repository.updateMoonReaderProgress(
-            current.id, value,
-            if (isChapter && folder != null && progress.fileUri != null && progress.fileName != null) {
-                ProgressSource.DETAIL_SHEET
-            } else ProgressSource.IMPORT
-        )
+        repository.updateMoonReaderProgress(current.id, value, ProgressSource.IMPORT)
         if (isChapter) {
             val editor = prefs.edit()
                 .putLong(

@@ -6,12 +6,13 @@ import java.time.format.DateTimeParseException
 enum class ProgressSource(val value: String) {
     DETAIL_SHEET("detail_sheet"),
     INCREMENT("increment"),
+    TRACKING_SYNC("tracking_sync"),
     EDITOR("editor"),
     IMPORT("import"),
     UNKNOWN("unknown");
 
     val isActiveConsumption: Boolean
-        get() = this == DETAIL_SHEET || this == INCREMENT
+        get() = this == DETAIL_SHEET || this == INCREMENT || this == TRACKING_SYNC
 
     companion object {
         fun fromValue(value: String): ProgressSource =
