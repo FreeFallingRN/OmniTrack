@@ -625,6 +625,8 @@ fun MediaEntryEditorSheet(
                 onEditCreator = { index ->
                     if (creatorDraft.createNew && creatorDraft.newAuthorName.isBlank()) {
                         error = "Please enter a creator name or choose an existing creator."
+                    } else if (isDuplicateCreatorRole(creatorRows, creatorDraft, editingCreator)) {
+                        error = "This creator already has that role."
                     } else {
                         val editedIndex = editingCreator
                         if (creatorDraft.authorId != null || creatorDraft.createNew) {
@@ -636,6 +638,10 @@ fun MediaEntryEditorSheet(
                     }
                 },
                 onAddCreator = {
+                    if (isDuplicateCreatorRole(creatorRows, creatorDraft, editingCreator)) {
+                        error = "This creator already has that role."
+                        return@creatorSection
+                    }
                     val index = editingCreator
                     creatorRows = if (index == null) creatorRows + creatorDraft
                         else creatorRows.mapIndexed { i, row -> if (i == index) creatorDraft else row }
@@ -645,7 +651,11 @@ fun MediaEntryEditorSheet(
                 platforms = platforms,
                 platformId = platformId,
                 onSelectPlatform = { platformId = it.id; createPlatform = false },
-                onAddPlatform = { createPlatform = true; platformId = null },
+                onAddPlatform = { name ->
+                    createPlatform = true
+                    platformId = null
+                    if (name != null) newPlatformName = name
+                },
                 createPlatform = createPlatform,
                 newPlatformName = newPlatformName,
                 onNewPlatformNameChange = { newPlatformName = it },
@@ -671,11 +681,12 @@ fun MediaEntryEditorSheet(
                     newSeriesTitle = ""
                     sequence = ""
                 },
-                onAddSeries = {
+                onAddSeries = { name ->
                     if (groupWithEntry != null) clearMatchSelection()
                     createSeries = true
                     seriesId = null
-                    if (newSeriesTitle.isBlank()) newSeriesTitle = title
+                    if (name != null) newSeriesTitle = name
+                    else if (newSeriesTitle.isBlank()) newSeriesTitle = title
                 },
                 newSeriesTitle = newSeriesTitle,
                 onNewSeriesTitleChange = { newSeriesTitle = it },

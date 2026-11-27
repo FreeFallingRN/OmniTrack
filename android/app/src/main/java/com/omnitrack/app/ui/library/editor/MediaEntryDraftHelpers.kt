@@ -76,22 +76,37 @@ internal fun mergeEntryCreators(
         (authorNames[id] ?: id) to role.trim().lowercase().ifBlank { "author" }
     }
 
+private fun CreatorFormRow.pairKey(): Pair<String, String> =
+    (authorId ?: "new:${newAuthorName.trim().lowercase()}") to role.trim().lowercase().ifBlank { "author" }
+
+internal fun List<CreatorFormRow>.distinctCreatorRoles(): List<CreatorFormRow> = distinctBy { it.pairKey() }
+
+internal fun isDuplicateCreatorRole(
+    rows: List<CreatorFormRow>,
+    draft: CreatorFormRow,
+    editingIndex: Int?
+): Boolean {
+    if (draft.authorId == null && !(draft.createNew && draft.newAuthorName.isNotBlank())) return false
+    val key = draft.pairKey()
+    return rows.withIndex().any { (index, row) -> index != editingIndex && row.pairKey() == key }
+}
+
 internal fun mergeCreatorDraft(
     rows: List<CreatorFormRow>,
     draft: CreatorFormRow,
     editingIndex: Int?
 ): List<CreatorFormRow> =
-    if (draft.authorId != null || (draft.createNew && draft.newAuthorName.isNotBlank())) {
+    (if (draft.authorId != null || (draft.createNew && draft.newAuthorName.isNotBlank())) {
         if (editingIndex == null) rows + draft
         else rows.mapIndexed { index, row -> if (index == editingIndex) draft else row }
-    } else rows
+    } else rows).distinctCreatorRoles()
 
 internal fun creatorRowsForNames(creators: List<Pair<String, String>>, authors: List<Author>): List<CreatorFormRow> =
     creators.map { (rawName, role) ->
         val matched = authors.firstOrNull { it.name.trim().equals(rawName.trim(), ignoreCase = true) }
         if (matched != null) CreatorFormRow(authorId = matched.id, role = role)
         else CreatorFormRow(createNew = true, newAuthorName = rawName.trim(), role = role)
-    }
+    }.distinctCreatorRoles()
 
 internal fun validateEntryDraft(
     creatorDraft: CreatorFormRow,

@@ -50,6 +50,7 @@ import com.omnitrack.app.domain.model.CreatorRole
 import com.omnitrack.app.domain.model.PublishingStatus
 import com.omnitrack.app.domain.model.UserStatus
 import com.omnitrack.app.domain.model.toDisplayLabel
+import com.omnitrack.app.ui.components.SearchablePicker
 
 @OptIn(ExperimentalLayoutApi::class)
 internal fun LazyListScope.creatorSection(
@@ -64,7 +65,7 @@ internal fun LazyListScope.creatorSection(
     platforms: List<Platform>,
     platformId: String?,
     onSelectPlatform: (Platform) -> Unit,
-    onAddPlatform: () -> Unit,
+    onAddPlatform: (String?) -> Unit,
     createPlatform: Boolean,
     newPlatformName: String,
     onNewPlatformNameChange: (String) -> Unit,
@@ -117,13 +118,21 @@ internal fun LazyListScope.creatorSection(
                                 }
                             )
                         } else {
-                            Selector(
+                            SearchablePicker(
                                 label = "Creator",
                                 selected = authors.firstOrNull { it.id == creatorDraft.authorId }?.name ?: "Choose",
+                                title = "Choose creator",
+                                searchLabel = "Search creators",
+                                createLabel = "Create new creator",
                                 options = authors,
-                                text = { it.name },
-                                onAdd = { onCreatorDraftChange(creatorDraft.copy(createNew = true, authorId = null)) }
-                            ) { onCreatorDraftChange(creatorDraft.copy(authorId = it.id, createNew = false)) }
+                                itemKey = { it.id },
+                                itemText = { it.name },
+                                selectedIds = (creatorRows.mapNotNull { it.authorId } + listOfNotNull(creatorDraft.authorId)).toSet(),
+                                onCreate = { name ->
+                                    onCreatorDraftChange(creatorDraft.copy(createNew = true, authorId = null, newAuthorName = name.orEmpty()))
+                                },
+                                onSelected = { onCreatorDraftChange(creatorDraft.copy(authorId = it.id, createNew = false)) }
+                            )
                         }
                     }
                     Box {
@@ -139,6 +148,7 @@ internal fun LazyListScope.creatorSection(
                         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                             CreatorRole.values.forEach { role ->
                                 DropdownMenuItem(
+                                    enabled = !isDuplicateCreatorRole(creatorRows, creatorDraft.copy(role = role), editingCreator),
                                     text = { Text(role.toDisplayLabel()) },
                                     onClick = { onCreatorDraftChange(creatorDraft.copy(role = role)); expanded = false }
                                 )
@@ -147,19 +157,30 @@ internal fun LazyListScope.creatorSection(
                     }
                     IconButton(
                         onClick = onAddCreator,
-                        enabled = creatorDraft.authorId != null || (creatorDraft.createNew && creatorDraft.newAuthorName.isNotBlank())
+                        enabled = (creatorDraft.authorId != null || (creatorDraft.createNew && creatorDraft.newAuthorName.isNotBlank())) &&
+                            !isDuplicateCreatorRole(creatorRows, creatorDraft, editingCreator)
                     ) {
                         Icon(Icons.Default.Add, contentDescription = if (editingCreator == null) "Add creator" else "Update creator")
                     }
                 }
-                Selector(
-                    "Platform",
-                    if (createPlatform) "New: ${newPlatformName.ifBlank { "Enter name below" }}"
-                    else platforms.firstOrNull { it.id == platformId }?.name ?: "Choose platform",
-                    platforms,
-                    { it.name },
-                    onAdd = onAddPlatform
-                ) { onSelectPlatform(it) }
+                val selectedPlatform = if (createPlatform) "New: ${newPlatformName.ifBlank { "Enter name below" }}"
+                    else platforms.firstOrNull { it.id == platformId }?.name ?: "Choose platform"
+                SearchablePicker(
+                    label = "Platform",
+                    selected = selectedPlatform,
+                    title = "Choose platform",
+                    searchLabel = "Search platforms",
+                    createLabel = "Create new platform",
+                    options = platforms,
+                    itemKey = { it.id },
+                    itemText = { it.name },
+                    selectedIds = setOfNotNull(platformId),
+                    selectedFallback = selectedPlatform.takeIf {
+                        createPlatform || (platformId != null && platforms.none { it.id == platformId })
+                    },
+                    onCreate = onAddPlatform,
+                    onSelected = onSelectPlatform
+                )
                 if (createPlatform) {
                     OutlinedTextField(
                         newPlatformName, onNewPlatformNameChange,
@@ -186,7 +207,7 @@ internal fun LazyListScope.seriesSection(
     createSeries: Boolean,
     onSelectSeries: (Series) -> Unit,
     onClearSeries: () -> Unit,
-    onAddSeries: () -> Unit,
+    onAddSeries: (String?) -> Unit,
     newSeriesTitle: String,
     onNewSeriesTitleChange: (String) -> Unit,
     sequence: String,
@@ -219,14 +240,26 @@ internal fun LazyListScope.seriesSection(
                 if (showSeriesDetails) {
                     Column(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Selector(
+                        val selectedSeries = if (createSeries) "New: $selectedTitle" else selectedTitle
+                        SearchablePicker(
                             label = "Series (optional)",
-                            selected = if (createSeries) "New: $selectedTitle" else selectedTitle,
+                            selected = selectedSeries,
+                            title = "Choose series",
+                            searchLabel = "Search series",
+                            createLabel = "Create new series",
                             options = series,
-                            text = { it.title },
-                            onClear = if (seriesId != null || createSeries) onClearSeries else null,
-                            onAdd = onAddSeries
-                        ) { onSelectSeries(it) }
+                            itemKey = { it.id },
+                            itemText = { it.title },
+                            selectedIds = setOfNotNull(seriesId),
+                            selectedFallback = selectedSeries.takeIf {
+                                createSeries || (seriesId != null && series.none { it.id == seriesId })
+                            },
+                            noneLabel = "Standalone",
+                            noneSelected = seriesId == null && !createSeries,
+                            onClear = onClearSeries,
+                            onCreate = onAddSeries,
+                            onSelected = onSelectSeries
+                        )
                         if (createSeries) {
                             OutlinedTextField(newSeriesTitle, onNewSeriesTitleChange,
                                 label = { Text("New series name") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
