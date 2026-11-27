@@ -37,6 +37,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -328,7 +329,97 @@ fun MoonReaderSettingsScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
         ) {
-            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Sync & Linked Books", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    "${linkedEntries.size} linked ${if (linkedEntries.size == 1) "book" else "books"}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (needsProgressReauth) {
+                    Text("Re-select the progress folder to sync or link books.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                } else if (folder == null) {
+                    Text("Select a progress folder to sync or link books.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Button(
+                        onClick = { moonReader.syncMoonReader(manual = true) },
+                        enabled = folder != null && !needsProgressReauth && !busy && !syncing
+                    ) {
+                        Text("Sync now")
+                    }
+                    OutlinedButton(
+                        onClick = { folder?.let { scan(Uri.parse(it)) } },
+                        enabled = folder != null && !busy && !syncing && !needsProgressReauth
+                    ) {
+                        Text("Sync & match")
+                    }
+                }
+                Text(
+                    "Sync & match scans for matches. Link selected books to sync their progress; use Sync now for already linked books.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (linkedEntries.isNotEmpty()) {
+                    Column(
+                        Modifier.heightIn(max = 240.dp).verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        linkedEntries.forEach { entry ->
+                            val offset = settings.chapterOffset(entry.id)?.takeIf { it.isFinite() }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(entry.title, style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        when {
+                                            !moonReader.isChapterUnit(entry.unitName) -> "No longer uses chapters"
+                                            offset == null -> "Chapter offset unavailable"
+                                            else -> "Chapter offset: ${formatUnit(offset)}"
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                TextButton(
+                                    enabled = !busy && !syncing,
+                                    colors = actionColors,
+                                    contentPadding = actionPadding,
+                                    onClick = {
+                                        scope.launch {
+                                            busy = true
+                                            try {
+                                                moonReader.unlinkMoonReaderBook(entry.id)
+                                            } catch (e: CancellationException) {
+                                                throw e
+                                            } catch (e: Exception) {
+                                                message = "Could not unlink ${entry.title}: ${e.message ?: "Unknown error"}"
+                                            } finally {
+                                                busy = false
+                                            }
+                                        }
+                                    }
+                                ) { Text("Unlink") }
+                            }
+                        }
+                    }
+                }
+                if (busy || syncing) Text("Working…", style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        ) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Progress Backup / Sync Folder (.po files)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(
                     folder?.let { folderLocation(context, it, folderName) } ?: "No progress folder selected",
@@ -343,11 +434,9 @@ fun MoonReaderSettingsScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
                         contentPadding = actionPadding
                     ) { Text("Access expired — re-select folder") }
                 }
-                TextButton(
+                OutlinedButton(
                     onClick = { folderPicker.launch(initialFolderDocumentUri(folder)) },
-                    enabled = !busy && (!syncing || needsProgressReauth),
-                    colors = actionColors,
-                    contentPadding = actionPadding
+                    enabled = !busy && (!syncing || needsProgressReauth)
                 ) { Text("Change progress folder") }
             }
         }
@@ -358,7 +447,7 @@ fun MoonReaderSettingsScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
         ) {
-            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("EPUB Storage Folder (.epub files)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(
                     booksFolder?.let { folderLocation(context, it, booksFolderName) } ?: "No EPUB folder selected",
@@ -373,92 +462,10 @@ fun MoonReaderSettingsScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
                         contentPadding = actionPadding
                     ) { Text("Access expired — re-select folder") }
                 }
-                TextButton(
+                OutlinedButton(
                     onClick = { booksFolderPicker.launch(initialFolderDocumentUri(booksFolder)) },
-                    enabled = !busy && !syncing,
-                    colors = actionColors,
-                    contentPadding = actionPadding
+                    enabled = !busy && !syncing
                 ) { Text("Change EPUB folder") }
-            }
-        }
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-        ) {
-            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Sync & Linked Books", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                if (needsProgressReauth) {
-                    Text("Re-select the progress folder to sync or link books.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
-                } else if (folder == null) {
-                    Text("Select a progress folder to sync or link books.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(
-                        onClick = { moonReader.syncMoonReader(manual = true) },
-                        enabled = folder != null && !needsProgressReauth && !busy && !syncing,
-                        colors = actionColors,
-                        contentPadding = actionPadding
-                    ) {
-                        Text("Sync now")
-                    }
-                    TextButton(
-                        onClick = { folder?.let { scan(Uri.parse(it)) } },
-                        enabled = folder != null && !busy && !syncing && !needsProgressReauth,
-                        colors = actionColors,
-                        contentPadding = actionPadding
-                    ) {
-                        Text("Sync & match")
-                    }
-                }
-                Text(
-                    "Sync & match scans for matches. Link selected books to sync their progress; use Sync now for already linked books.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text("${linkedEntries.size} linked ${if (linkedEntries.size == 1) "book" else "books"}", style = MaterialTheme.typography.bodyMedium)
-                linkedEntries.forEach { entry ->
-                    val offset = settings.chapterOffset(entry.id)?.takeIf { it.isFinite() }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Linked: ${entry.title}", style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                when {
-                                    !moonReader.isChapterUnit(entry.unitName) -> "No longer uses chapters"
-                                    offset == null -> "Chapter offset unavailable"
-                                    else -> "Chapter offset: ${formatUnit(offset)}"
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        TextButton(
-                            enabled = !busy && !syncing,
-                            colors = actionColors,
-                            contentPadding = actionPadding,
-                            onClick = {
-                                scope.launch {
-                                    busy = true
-                                    try {
-                                        moonReader.unlinkMoonReaderBook(entry.id)
-                                    } catch (e: CancellationException) {
-                                        throw e
-                                    } catch (e: Exception) {
-                                        message = "Could not unlink ${entry.title}: ${e.message ?: "Unknown error"}"
-                                    } finally {
-                                        busy = false
-                                    }
-                                }
-                            }
-                        ) { Text("Unlink") }
-                    }
-                }
-                if (busy || syncing) Text("Working…")
             }
         }
     }
@@ -665,7 +672,11 @@ fun MoonReaderSettingsScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
         AlertDialog(
             onDismissRequest = { message = null },
             title = { Text("Moon+ Reader") },
-            text = { Text(text) },
+            text = {
+                Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+                    Text(text, style = MaterialTheme.typography.bodyMedium)
+                }
+            },
             confirmButton = { TextButton(onClick = { message = null }) { Text("OK") } }
         )
     }

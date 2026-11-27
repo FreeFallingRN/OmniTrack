@@ -4,9 +4,11 @@ import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,15 +20,19 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -44,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -64,6 +71,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MangaBakaScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
     val context = LocalContext.current
@@ -126,36 +134,109 @@ fun MangaBakaScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         item {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             IconButton(onClick = onBack) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
             }
-            Text("MangaBaka", style = MaterialTheme.typography.titleLarge)
+            Text("MangaBaka", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         }
-        Text(if (state.connected) "Connected ${state.username}".trim() else "Connect your MangaBaka account")
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(enabled = !state.busy, onClick = {
-                scope.launch {
-                    try {
-                        localError = ""
-                        val url = owner.mangaBaka.authorizationUrl()
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        Log.e("MangaBaka", "Could not start sign-in", e)
-                        localError = "Could not open MangaBaka sign-in: ${e.message ?: "unknown error"}"
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        ) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Sync & Linked Titles", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    "${state.titles.count { state.links.containsKey(it.series.id) }}/${state.titles.size} linked",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Button(enabled = state.connected && state.links.isNotEmpty() && !state.busy, onClick = {
+                        owner.syncMangaBakaProgress(manual = true)
+                    }) { Text("Sync now") }
+                    OutlinedButton(enabled = state.connected && !state.busy, onClick = {
+                        owner.syncAndMatchMangaBakaLibrary()
+                    }) { Text("Sync & match") }
+                    OutlinedButton(enabled = state.connected && !state.busy, onClick = {
+                        owner.fetchMangaBakaLibrary()
+                    }) { Text("Fetch library") }
+                }
+                Text(
+                    "Sync & match fetches the library and links matching entries. Sync now updates linked progress.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    OutlinedButton(enabled = state.connected && matches.isNotEmpty() && !state.busy, onClick = {
+                        owner.linkAllMatchedMangaBakaEntries(
+                            state.titles.mapNotNull { title -> matches[title.series.id]?.let { title to it.id } }
+                        )
+                    }) { Text("Link all matched (${matches.size})") }
+                    OutlinedButton(enabled = state.connected && unlinkedTitles.isNotEmpty() && !state.busy, onClick = {
+                        batchTitles = unlinkedTitles
+                    }) { Text("Batch import all (${unlinkedTitles.size})") }
+                    if (state.batchImporting) {
+                        TextButton(enabled = !state.batchCancelRequested, onClick = {
+                            owner.mangaBaka.cancelBatchImport()
+                        }) { Text(if (state.batchCancelRequested) "Stopping..." else "Cancel import") }
                     }
                 }
-            }) { Text(if (state.connected) "Reconnect" else "Connect") }
-            Button(enabled = state.connected && !state.busy, onClick = {
-                owner.fetchMangaBakaLibrary()
-            }) { Text("Fetch library") }
-            if (state.busy) CircularProgressIndicator(modifier = Modifier.size(32.dp))
+                if (state.titles.isNotEmpty()) {
+                    Text(
+                        "Link all uses matches across the entire library; duplicate targets are skipped.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (state.busy) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Text("Working…", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
         }
-        TextButton(enabled = !state.busy, onClick = { showTokenDialog = true }) {
-            Text("Connect with personal access token")
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        ) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Account", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    if (state.connected) "Connected ${state.username}".trim() else "Connect your MangaBaka account",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedButton(enabled = !state.busy, onClick = {
+                    scope.launch {
+                        try {
+                            localError = ""
+                            val url = owner.mangaBaka.authorizationUrl()
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            Log.e("MangaBaka", "Could not start sign-in", e)
+                            localError = "Could not open MangaBaka sign-in: ${e.message ?: "unknown error"}"
+                        }
+                    }
+                }) { Text(if (state.connected) "Reconnect" else "Connect") }
+                TextButton(enabled = !state.busy, onClick = { showTokenDialog = true }) {
+                    Text("Connect with personal access token")
+                }
+            }
         }
         if (showTokenDialog) {
             AlertDialog(
@@ -189,52 +270,44 @@ fun MangaBakaScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
                 }
             )
         }
-        Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Button(enabled = state.connected && !state.busy, onClick = {
-                owner.syncAndMatchMangaBakaLibrary()
-            }) { Text("Sync & match") }
-            Button(enabled = state.connected && state.links.isNotEmpty() && !state.busy, onClick = {
-                owner.syncMangaBakaProgress(manual = true)
-            }) { Text("Sync now") }
-            Button(enabled = state.connected && matches.isNotEmpty() && !state.busy, onClick = {
-                owner.linkAllMatchedMangaBakaEntries(
-                    state.titles.mapNotNull { title -> matches[title.series.id]?.let { title to it.id } }
-                )
-            }) { Text("Link all matched (${matches.size})") }
-            Button(enabled = state.connected && unlinkedTitles.isNotEmpty() && !state.busy, onClick = {
-                batchTitles = unlinkedTitles
-            }) { Text("Batch import all (${unlinkedTitles.size})") }
-            if (state.batchImporting) {
-                TextButton(enabled = !state.batchCancelRequested, onClick = {
-                    owner.mangaBaka.cancelBatchImport()
-                }) { Text(if (state.batchCancelRequested) "Stopping..." else "Cancel import") }
+        if (state.message.isNotBlank() || state.batchMessage.isNotBlank() || localError.isNotBlank()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            ) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Status", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Column(
+                        Modifier.heightIn(max = 200.dp).verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (state.message.isNotBlank()) Text(state.message, style = MaterialTheme.typography.bodyMedium)
+                        if (state.batchMessage.isNotBlank()) Text(state.batchMessage, style = MaterialTheme.typography.bodyMedium)
+                        if (localError.isNotBlank()) Text(localError, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                    }
+                }
             }
         }
-        Text(
-            "Sync & match fetches the library and links matching entries. Use Sync now to update linked progress.",
-            style = MaterialTheme.typography.bodySmall
-        )
-        if (state.titles.isNotEmpty()) {
-            Text(
-                "${state.titles.count { state.links.containsKey(it.series.id) }}/${state.titles.size} linked. " +
-                    "Link all uses matches across the entire library; duplicate targets are skipped.",
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-        if (state.message.isNotBlank()) Text(state.message, style = MaterialTheme.typography.bodyMedium)
-        if (state.batchMessage.isNotBlank()) Text(state.batchMessage, style = MaterialTheme.typography.bodyMedium)
-        if (localError.isNotBlank()) Text(localError, color = MaterialTheme.colorScheme.error)
-        OutlinedTextField(
-            value = search, onValueChange = { search = it },
-            label = { Text("Search titles") }, singleLine = true, modifier = Modifier.fillMaxWidth()
-        )
-        Row(Modifier.horizontalScroll(rememberScrollState())) {
-            listOf("All", "Linked", "Unlinked").forEach { option ->
-                TextButton(onClick = { filter = option }) {
-                    Text(if (filter == option) "[$option]" else option)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        ) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Library", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                OutlinedTextField(
+                    value = search, onValueChange = { search = it },
+                    label = { Text("Search titles") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                )
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("All", "Linked", "Unlinked").forEach { option ->
+                        TextButton(onClick = { filter = option }) {
+                            Text(if (filter == option) "[$option]" else option)
+                        }
+                    }
                 }
             }
         }
@@ -276,9 +349,9 @@ fun MangaBakaScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
                                 }
                             }
                         }
-                        Row(
-                            modifier = Modifier.horizontalScroll(rememberScrollState()),
-                            verticalAlignment = Alignment.CenterVertically
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             if (link == null) {
                                 if (match != null) {

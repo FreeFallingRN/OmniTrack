@@ -9,12 +9,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Nightlight
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -24,6 +27,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
@@ -73,17 +77,39 @@ internal fun MainSettingsPage(
             }
         }
 
-        SettingsNavigationCard("MangaBaka", "Open MangaBaka", onOpenMangaBaka)
-        SettingsNavigationCard(
-            title = "Moon+ Reader",
-            subtitle = if (needsProgressReauth) "Folder access needed"
-            else "${if (progressFolder == null) "No progress folder" else progressFolderName ?: "Selected folder"} • " +
-                "$linkedCount linked ${if (linkedCount == 1) "book" else "books"}",
-            contentDescription = "Open Moon+ Reader settings",
-            onClick = onOpenMoonReader
-        )
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Tracking", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                SettingsNavigationRow("MangaBaka", Icons.Default.AutoStories, "Open MangaBaka", onOpenMangaBaka)
+                SettingsNavigationRow("Moon+ Reader", Icons.Default.Nightlight, "Open Moon+ Reader settings", onOpenMoonReader)
+            }
+        }
         SettingsNavigationCard("Scrape reports", "Open scrape reports", onOpenScrapeReports)
         SettingsNavigationCard("Discord Share Style", currentShareStyle.label, "Open Discord Share Style", onOpenShareStyle)
+    }
+}
+
+@Composable
+private fun SettingsNavigationRow(
+    title: String,
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 56.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Icon(Icons.Default.ChevronRight, contentDescription = contentDescription, tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
