@@ -37,7 +37,8 @@ class MoonReaderSyncWorker(context: Context, params: WorkerParameters) : Corouti
                 "updated" to outcome.updated, "skipped" to outcome.skipped, "errors" to outcome.errors,
                 "details" to outcome.details.joinToString("; ").take(2000)
             )
-            if (outcome.skipped > 0 || outcome.errors > 0) Result.failure(data) else Result.success(data)
+            if (outcome.errors > 0) Result.retry()
+            else if (outcome.skipped > 0) Result.failure(data) else Result.success(data)
         } catch (e: CancellationException) {
             throw e
         } catch (e: MoonReaderFolderAccessException) {

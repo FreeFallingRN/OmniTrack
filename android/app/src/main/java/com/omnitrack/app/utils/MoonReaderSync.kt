@@ -8,6 +8,7 @@ import com.omnitrack.app.data.MangaBakaPreferences
 import com.omnitrack.app.data.MangaBakaProgressSync
 import com.omnitrack.app.data.OmniTrackPreferences
 import com.omnitrack.app.data.OmniTrackPreferenceKeys
+import com.omnitrack.app.data.SyncSingleFlight
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.model.ProgressSource
 import com.omnitrack.app.domain.repository.SeriesRepository
@@ -112,20 +113,30 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
                     .putString(OmniTrackPreferenceKeys.moonReaderFileName(current.id), progress.fileName)
                     .putLong(OmniTrackPreferenceKeys.moonReaderTimestamp(current.id), progress.timestamp)
                     .putInt(OmniTrackPreferenceKeys.moonReaderSpine(current.id), progress.spineChapterIndex)
-                if (progress.lastModified != null && progress.lastModified > 0) {
-                    editor.putLong(OmniTrackPreferenceKeys.moonReaderLastModified(current.id), progress.lastModified)
-                } else {
-                    editor.remove(OmniTrackPreferenceKeys.moonReaderLastModified(current.id))
-                }
+                editor.remove(OmniTrackPreferenceKeys.moonReaderLastModified(current.id))
+                    .remove(OmniTrackPreferenceKeys.moonReaderFileSize(current.id))
             }
             check(editor.commit()) { "Could not save Moon+ Reader state for ${current.title}" }
         }
     }
 
-    suspend fun sync(manual: Boolean, notify: suspend (String) -> Unit) = MangaBakaProgressSync.withLinkLock {
+    suspend fun sync(manual: Boolean, notify: suspend (String) -> Unit): MoonReaderSyncResult {
+        val result = syncFlight.run { syncLocked(notify) }
+        if (manual) {
+            val message = if (result.updated == 0 && result.skipped == 0 && result.errors == 0) {
+                "Moon+ Reader: already up to date"
+            } else {
+                "Moon+ Reader: ${result.updated} updated, ${result.skipped} skipped, ${result.errors} errors." +
+                    if (result.details.isEmpty()) "" else " ${result.details.joinToString("; ")}"
+            }
+            notify(message)
+        }
+        return result
+    }
+
+    private suspend fun syncLocked(notify: suspend (String) -> Unit) = MangaBakaProgressSync.withLinkLock {
         val folder = prefs.getString(OmniTrackPreferenceKeys.MoonReaderFolder)
         if (folder == null) {
-            if (manual) notify("Moon+ Reader: choose a folder first")
             return@withLinkLock MoonReaderSyncResult(0, 1, 0, listOf("Choose a folder first"))
         }
         val uri = Uri.parse(folder)
@@ -159,7 +170,8 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
                 entry.id to MoonReaderFile(
                     fileUri, name,
                     prefs.getLong(OmniTrackPreferenceKeys.moonReaderLastModified(entry.id), -1L),
-                    prefs.getLong(OmniTrackPreferenceKeys.moonReaderTimestamp(entry.id), -1L)
+                    prefs.getLong(OmniTrackPreferenceKeys.moonReaderTimestamp(entry.id), -1L),
+                    prefs.getLong(OmniTrackPreferenceKeys.moonReaderFileSize(entry.id), -1L)
                 )
             } else {
                 if (fileUri != null || name != null) skippedDetails.add("${entry.title}: incomplete book link")
@@ -168,7 +180,6 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
         }.toMap()
         if (links.isEmpty()) {
             if (skippedDetails.isEmpty()) skippedDetails.add("No linked chapter entries")
-            if (manual) notify("Moon+ Reader: ${skippedDetails.joinToString("; ")}")
             return@withLinkLock MoonReaderSyncResult(0, skippedDetails.size, 0, skippedDetails)
         }
         if (!hasFolderAccess(uri)) throw MoonReaderFolderAccessException(folder)
@@ -207,6 +218,9 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
                 if (progress.lastModified != null && progress.lastModified > 0) {
                     editor.putLong(OmniTrackPreferenceKeys.moonReaderLastModified(entry.id), progress.lastModified)
                 } else editor.remove(OmniTrackPreferenceKeys.moonReaderLastModified(entry.id))
+                if (progress.fileSize != null && progress.fileSize >= 0) {
+                    editor.putLong(OmniTrackPreferenceKeys.moonReaderFileSize(entry.id), progress.fileSize)
+                } else editor.remove(OmniTrackPreferenceKeys.moonReaderFileSize(entry.id))
                 check(editor.commit()) { "Could not save Moon+ Reader file reference for ${entry.title}" }
                 continue
             }
@@ -237,6 +251,9 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
             if (progress.lastModified != null && progress.lastModified > 0) {
                 editor.putLong(OmniTrackPreferenceKeys.moonReaderLastModified(entry.id), progress.lastModified)
             } else editor.remove(OmniTrackPreferenceKeys.moonReaderLastModified(entry.id))
+            if (progress.fileSize != null && progress.fileSize >= 0) {
+                editor.putLong(OmniTrackPreferenceKeys.moonReaderFileSize(entry.id), progress.fileSize)
+            } else editor.remove(OmniTrackPreferenceKeys.moonReaderFileSize(entry.id))
             check(editor.commit()) { "Could not save Moon+ Reader sync state for ${entry.title}" }
             if (updated) {
                 val formatted = if (chapter % 1.0 == 0.0) chapter.toLong().toString() else chapter.toString()
@@ -257,13 +274,14 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
         val details = skippedDetails + errors
         if (skipped > 0 || errorCount > 0) {
             val message = "Moon+ Reader: $updates updated, $skipped skipped, $errorCount errors. ${details.joinToString("; ")}"
-            if (manual) notify(message) else Log.w("MoonReaderSync", message)
+            Log.w("MoonReaderSync", message)
         }
-        if (manual && updates == 0 && skipped == 0 && errorCount == 0) notify("Moon+ Reader: already up to date")
         MoonReaderSyncResult(updates, skipped, errorCount, details)
     }
 
     companion object {
+        private val syncFlight = SyncSingleFlight<MoonReaderSyncResult>()
+
         fun isChapterUnit(unit: String): Boolean =
             unit.trim().equals("chapter", ignoreCase = true) ||
                 unit.trim().equals("chapters", ignoreCase = true)

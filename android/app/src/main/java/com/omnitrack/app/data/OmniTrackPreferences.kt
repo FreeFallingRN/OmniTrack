@@ -63,6 +63,9 @@ object OmniTrackPreferenceKeys {
     fun moonReaderLastModified(entryId: String) =
         PreferenceKey.LongKey("moon_reader_last_modified_$entryId")
 
+    fun moonReaderFileSize(entryId: String) =
+        PreferenceKey.LongKey("moon_reader_file_size_$entryId")
+
     internal fun fromName(name: String): PreferenceChange = when {
         name == MoonReaderFolder.name -> PreferenceChange.MOON_READER_FOLDER
         name == MoonReaderFolderName.name -> PreferenceChange.MOON_READER_FOLDER_NAME
@@ -145,6 +148,7 @@ class OmniTrackPreferences(context: Context) {
             .remove(OmniTrackPreferenceKeys.moonReaderTimestamp(entryId))
             .remove(OmniTrackPreferenceKeys.moonReaderSpine(entryId))
             .remove(OmniTrackPreferenceKeys.moonReaderLastModified(entryId))
+            .remove(OmniTrackPreferenceKeys.moonReaderFileSize(entryId))
             .commit()) { "Could not unlink Moon+ Reader book" }
     }
 

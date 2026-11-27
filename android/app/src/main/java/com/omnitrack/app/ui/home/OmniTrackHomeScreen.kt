@@ -370,7 +370,7 @@ fun OmniTrackHomeScreen(
                             sortOption = settingsState.sortOption,
                             sortDescending = settingsState.sortDescending,
                             onSortChanged = settings::setLibrarySort,
-                            onRefresh = { viewModel.refreshData() },
+                            onRefresh = { viewModel.refreshData(syncTrackers = true) },
                             onSelectEntry = { selectedEntryForDetail = it }
                         )
                     }

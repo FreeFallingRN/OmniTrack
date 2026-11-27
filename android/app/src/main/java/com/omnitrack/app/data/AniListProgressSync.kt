@@ -25,6 +25,10 @@ class AniListProgressSync(
     private val repository: SeriesRepository
 ) {
     suspend fun sync(): AniListSyncResult = withContext(Dispatchers.IO) {
+        syncFlight.run { syncLocked() }
+    }
+
+    private suspend fun syncLocked(): AniListSyncResult =
         withLinkLock {
             val credentials = credentialsStore.read()
             check(credentials.accessToken.isNotBlank() && credentials.userId > 0) { "Connect AniList first" }
@@ -105,7 +109,6 @@ class AniListProgressSync(
             }
             AniListSyncResult(titles, updated, skipped, errors)
         }
-    }
 
     suspend fun pushPendingStatuses() = withContext(Dispatchers.IO) {
         withLinkLock {
@@ -134,6 +137,7 @@ class AniListProgressSync(
 
     companion object {
         private val mutex = Mutex()
+        private val syncFlight = SyncSingleFlight<AniListSyncResult>()
         suspend fun <T> withLinkLock(block: suspend () -> T): T = mutex.withLock { block() }
     }
 }

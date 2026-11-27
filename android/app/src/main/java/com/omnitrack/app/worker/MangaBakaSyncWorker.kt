@@ -43,7 +43,7 @@ class MangaBakaSyncWorker(context: Context, params: WorkerParameters) : Coroutin
                 )
                 if (outcome.skipped.isNotEmpty() || outcome.errors.isNotEmpty()) {
                     Log.w("MangaBakaSync", "Partial sync: ${data.getString("details")}")
-                    Result.failure(data)
+                    if (outcome.errors.isNotEmpty()) Result.retry() else Result.failure(data)
                 } else Result.success(data)
             }
         } catch (e: CancellationException) {

@@ -25,6 +25,10 @@ class MangaBakaProgressSync(
     private val repository: SeriesRepository
 ) {
     suspend fun syncMangaBakaProgress(): MangaBakaSyncResult = withContext(Dispatchers.IO) {
+        syncFlight.run { syncMangaBakaProgressLocked() }
+    }
+
+    private suspend fun syncMangaBakaProgressLocked(): MangaBakaSyncResult =
         withLinkLock {
             val credentials = preferences.read()
             check(credentials.accessToken.isNotBlank() && credentials.userId.isNotBlank()) {
@@ -99,7 +103,6 @@ class MangaBakaProgressSync(
             }
             MangaBakaSyncResult(titles, updated, skipped, errors)
         }
-    }
 
     suspend fun pushPendingStatuses() = withContext(Dispatchers.IO) {
         withLinkLock {
@@ -128,6 +131,7 @@ class MangaBakaProgressSync(
 
     companion object {
         private val mutex = Mutex()
+        private val syncFlight = SyncSingleFlight<MangaBakaSyncResult>()
 
         suspend fun <T> withLinkLock(block: suspend () -> T): T = mutex.withLock { block() }
     }

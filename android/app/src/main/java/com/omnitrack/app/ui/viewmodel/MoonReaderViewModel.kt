@@ -79,8 +79,9 @@ class MoonReaderViewModel(
             val linked = entries.any {
                 prefs.getString(OmniTrackPreferenceKeys.moonReaderFileUri(it.id)) != null
             }
-            if (linked && folder != null && checkMoonReaderFolder(folder, books = false)) {
+            if (linked && folder != null) {
                 MoonReaderSyncWorker.schedule(appContext)
+                checkMoonReaderFolder(folder, books = false)
             } else {
                 MoonReaderSyncWorker.cancel(appContext)
             }

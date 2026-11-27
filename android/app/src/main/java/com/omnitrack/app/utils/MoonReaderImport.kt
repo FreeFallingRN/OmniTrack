@@ -28,7 +28,8 @@ data class MoonReaderProgress(
     val timestamp: Long,
     val fileUri: Uri? = null,
     val fileName: String? = null,
-    val lastModified: Long? = null
+    val lastModified: Long? = null,
+    val fileSize: Long? = null
 )
 data class MoonReaderMatch(val entry: MediaEntry, val progress: MoonReaderProgress)
 data class MoonReaderAmbiguous(val progress: MoonReaderProgress, val candidates: List<MediaEntry>)
@@ -42,7 +43,9 @@ data class MoonReaderScan(
 ) {
     val hasProblems: Boolean get() = skipped > 0 || errors > 0
 }
-data class MoonReaderFile(val uri: String, val name: String, val lastModified: Long, val timestamp: Long)
+data class MoonReaderFile(
+    val uri: String, val name: String, val lastModified: Long, val timestamp: Long, val fileSize: Long
+)
 
 object MoonReaderImport {
     private const val MAX_FILES = 4000
@@ -50,7 +53,7 @@ object MoonReaderImport {
     private const val MAX_ITEM_BYTES = 64 * 1024
     private val position = Regex("""^(\d+)\*(\d+)@\d+#\d+:([0-9]+(?:\.[0-9]+)?)%""")
     private val bookExtension = Regex("""\.(epub|pdf|mobi|azw3?|fb2|txt|cbz|cbr)$""", RegexOption.IGNORE_CASE)
-    private data class FileInfo(val uri: Uri, val name: String, val lastModified: Long?)
+    private data class FileInfo(val uri: Uri, val name: String, val lastModified: Long?, val fileSize: Long?)
 
     suspend fun scan(
         context: Context,
@@ -66,14 +69,14 @@ object MoonReaderImport {
             val linkedNames = linkedFiles?.values?.map { it.name }?.toSet()
             val linkedUris = linkedFiles?.values?.map { it.uri }?.toSet()
 
-            fun addFile(file: Uri, name: String, lastModified: Long?) {
+            fun addFile(file: Uri, name: String, lastModified: Long?, fileSize: Long?) {
                 if (linkedFiles != null) {
                     if (!name.endsWith(".po", true) ||
                         (name !in linkedNames.orEmpty() && file.toString() !in linkedUris.orEmpty())) return
                 } else if (!name.endsWith(".po", true) &&
                     !name.endsWith(".mrpro", true) && !name.endsWith(".mrstd", true) &&
                     !name.endsWith(".zip", true)) return
-                files.add(FileInfo(file, name, lastModified))
+                files.add(FileInfo(file, name, lastModified, fileSize))
             }
 
             if (tree) {
@@ -93,7 +96,8 @@ object MoonReaderImport {
                             DocumentsContract.Document.COLUMN_DOCUMENT_ID,
                             DocumentsContract.Document.COLUMN_DISPLAY_NAME,
                             DocumentsContract.Document.COLUMN_MIME_TYPE,
-                            DocumentsContract.Document.COLUMN_LAST_MODIFIED
+                            DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+                            DocumentsContract.Document.COLUMN_SIZE
                         ),
                         null, null, null
                     ) ?: error("Unable to list the selected folder")
@@ -109,7 +113,8 @@ object MoonReaderImport {
                             } else {
                                 addFile(
                                     DocumentsContract.buildDocumentUriUsingTree(uri, childId), name,
-                                    if (it.isNull(3)) null else it.getLong(3)
+                                    if (it.isNull(3)) null else it.getLong(3),
+                                    if (it.isNull(4)) null else it.getLong(4)
                                 )
                             }
                         }
@@ -119,7 +124,7 @@ object MoonReaderImport {
                 val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
                     ?.use { if (it.moveToFirst()) it.getString(0) else null }
                     ?: uri.lastPathSegment.orEmpty()
-                addFile(uri, name, null)
+                addFile(uri, name, null, null)
             }
 
             var ambiguous = 0
@@ -157,7 +162,8 @@ object MoonReaderImport {
                 linkedCandidates.filter { (id, file) ->
                     val link = linkedFiles.getValue(id)
                     file.uri.toString() != link.uri || file.name != link.name || file.lastModified == null ||
-                        file.lastModified <= 0 || file.lastModified != link.lastModified || link.timestamp < 0
+                        file.lastModified <= 0 || file.lastModified != link.lastModified ||
+                        (file.fileSize ?: -1L) != link.fileSize || link.timestamp < 0
                 }.values.distinctBy { it.uri }
             } else files
             val semaphore = Semaphore(16)
@@ -171,7 +177,8 @@ object MoonReaderImport {
                                 stream.use {
                                     if (file.name.endsWith(".po", true)) {
                                         listOfNotNull(parsePosition(file.name, readLimited(it, MAX_ITEM_BYTES))?.copy(
-                                            fileUri = file.uri, fileName = file.name, lastModified = file.lastModified
+                                            fileUri = file.uri, fileName = file.name, lastModified = file.lastModified,
+                                            fileSize = file.fileSize
                                         ))
                                     } else readArchive(it)
                                 }

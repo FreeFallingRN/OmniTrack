@@ -3,6 +3,14 @@ package com.omnitrack.app.ui.viewmodel
 import android.content.Context
 import android.util.Log
 import android.widget.Toast
+import com.omnitrack.app.data.AniListPreferences
+import com.omnitrack.app.data.AniListProgressSync
+import com.omnitrack.app.data.AniListService
+import com.omnitrack.app.data.MangaBakaPreferences
+import com.omnitrack.app.data.MangaBakaProgressSync
+import com.omnitrack.app.data.MangaBakaService
+import com.omnitrack.app.data.OmniTrackPreferenceKeys
+import com.omnitrack.app.data.OmniTrackPreferences
 import com.omnitrack.app.data.TrackerStatusSync
 import com.omnitrack.app.worker.TrackerStatusSyncWorker
 import com.omnitrack.app.domain.model.CreateEntryCommand
@@ -19,10 +27,12 @@ import com.omnitrack.app.domain.model.ProgressHistoryItem
 import com.omnitrack.app.domain.model.ProgressSource
 import com.omnitrack.app.domain.repository.SeriesRepository
 import com.omnitrack.app.utils.get7DDates
+import com.omnitrack.app.utils.MoonReaderSync
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.temporal.ChronoUnit
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -30,6 +40,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class SeriesViewModelState(
     val mediaEntries: List<MediaEntry>,
@@ -53,7 +64,8 @@ class SeriesViewModel(
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
     private val _refreshError = MutableStateFlow<String?>(null)
     val refreshError: StateFlow<String?> = _refreshError.asStateFlow()
-    private var activeRefreshes = 0
+    private var trackerRefreshRequested = false
+    private var trackerRefreshRunning = false
 
     init {
         TrackerStatusSyncWorker.schedule(appContext)
@@ -270,13 +282,36 @@ class SeriesViewModel(
         val canGoNext: Boolean
     )
 
-    fun refreshData() {
-        activeRefreshes++
+    fun refreshData(syncTrackers: Boolean = false) {
+        if (syncTrackers && !trackerRefreshRunning) trackerRefreshRequested = true
+        if (_isRefreshing.value) return
         _isRefreshing.value = true
         viewModelScope.launch {
+            val errors = mutableListOf<String>()
             try {
-                repository.fetchFromSupabase()
-                _refreshError.value = null
+                suspend fun refreshTrackersIfRequested() {
+                    if (!trackerRefreshRequested) return
+                    trackerRefreshRequested = false
+                    trackerRefreshRunning = true
+                    try {
+                        errors.addAll(syncConnectedTrackers())
+                    } finally {
+                        trackerRefreshRunning = false
+                    }
+                }
+                refreshTrackersIfRequested()
+                try {
+                    repository.fetchFromSupabase()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e("SeriesViewModel", "Library refresh failed", e)
+                    errors.add("Library: ${e.message ?: "refresh failed"}")
+                }
+                refreshTrackersIfRequested()
+                val message = errors.takeIf { it.isNotEmpty() }?.joinToString("; ")
+                _refreshError.value = message
+                if (message != null) Toast.makeText(appContext, message, Toast.LENGTH_LONG).show()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -285,9 +320,70 @@ class SeriesViewModel(
                 _refreshError.value = message
                 Toast.makeText(appContext, message, Toast.LENGTH_LONG).show()
             } finally {
-                activeRefreshes--
-                _isRefreshing.value = activeRefreshes > 0
+                trackerRefreshRequested = false
+                _isRefreshing.value = false
             }
         }
+    }
+
+    private suspend fun syncConnectedTrackers(): List<String> = withContext(Dispatchers.IO) {
+        val errors = mutableListOf<String>()
+        suspend fun attempt(name: String, action: suspend () -> Unit) {
+            try {
+                action()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("SeriesViewModel", "$name refresh failed", e)
+                errors.add("$name: ${e.message ?: "sync failed"}")
+            }
+        }
+
+        val preferences = OmniTrackPreferences(appContext)
+        attempt("Moon+ Reader") {
+            if (preferences.getString(OmniTrackPreferenceKeys.MoonReaderFolder) != null &&
+                preferences.moonReaderLinkedEntryIds().isNotEmpty()) {
+                val result = MoonReaderSync(appContext, repository).sync(manual = false) {
+                    Log.i("MoonReaderSync", it)
+                }
+                if (result.skipped > 0 || result.errors > 0) {
+                    errors.add("Moon+ Reader: ${result.details.joinToString("; ")}")
+                }
+            }
+        }
+        attempt("MangaBaka") {
+            val credentials = MangaBakaPreferences(appContext)
+            val saved = credentials.read()
+            if (saved.accessToken.isNotBlank() && saved.userId.isNotBlank() &&
+                credentials.links(saved.userId).isNotEmpty()) {
+                val service = MangaBakaService(credentials)
+                try {
+                    val result = MangaBakaProgressSync(credentials, service, repository).syncMangaBakaProgress()
+                    if (result.skipped.isNotEmpty() || result.errors.isNotEmpty()) {
+                        errors.add("MangaBaka: ${(result.skipped + result.errors).joinToString("; ")}")
+                    }
+                } finally {
+                    service.close()
+                }
+            }
+        }
+        attempt("AniList") {
+            val credentials = AniListPreferences(appContext)
+            val saved = credentials.read()
+            if (preferences.getInt(OmniTrackPreferenceKeys.AniListAutoSync, 1) != 0 &&
+                saved.accessToken.isNotBlank() && saved.userId > 0 &&
+                preferences.aniListLinks(saved.userId).isNotEmpty()) {
+                val service = AniListService(credentials)
+                try {
+                    val result = AniListProgressSync(credentials, preferences, service, repository).sync()
+                    if (result.skipped.isNotEmpty() || result.errors.isNotEmpty()) {
+                        errors.add("AniList: ${(result.skipped + result.errors).joinToString("; ")}")
+                    }
+                } finally {
+                    service.close()
+                }
+            }
+        }
+        errors
     }
 }
