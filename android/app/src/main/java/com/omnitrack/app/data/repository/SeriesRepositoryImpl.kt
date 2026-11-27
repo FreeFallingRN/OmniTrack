@@ -295,7 +295,8 @@ class SeriesRepositoryImpl(
         computeTarget: (current: MediaEntryEntity?) -> Pair<Double, String?>?,
         source: ProgressSource,
         uploadFirst: Boolean = false,
-        blockReset: Boolean = false
+        blockReset: Boolean = false,
+        recordSyncHistory: Boolean = false
     ): Boolean {
         return progressMutex.withLock {
             val today = LocalDate.now().toString()
@@ -305,16 +306,18 @@ class SeriesRepositoryImpl(
             if (blockReset && nextUnit < current.currentUnit) checkResetAllowed(current)
 
             var prevUnitForHistory = current.currentUnit
-            val hasNetProgress = (nextUnit - prevUnitForHistory) > 0.0001
+            val hasNetProgress = if (recordSyncHistory) nextUnit > prevUnitForHistory
+                else (nextUnit - prevUnitForHistory) > 0.0001
+            val recordHistory = hasNetProgress && (source.isActiveConsumption || recordSyncHistory)
 
-            if (source.isActiveConsumption && hasNetProgress) {
+            if (recordHistory) {
                 val existingTodayHistory = progressHistoryDao.getEntryHistoryForDate(id, today)
                 prevUnitForHistory = existingTodayHistory?.previousUnit
                     ?: current.currentUnit
             }
 
             suspend fun uploadHistory() {
-                if (source.isActiveConsumption && hasNetProgress) {
+                if (recordHistory) {
                     check(
                         supabaseService.logProgress(
                             entryId = id,
@@ -357,7 +360,7 @@ class SeriesRepositoryImpl(
                         )
                     )
                 }
-                if (source.isActiveConsumption && hasNetProgress) {
+                if (recordHistory) {
                     progressHistoryDao.upsert(
                         ProgressHistoryEntity(
                             entryId = id, activityDate = today, previousUnit = prevUnitForHistory,
@@ -410,7 +413,8 @@ class SeriesRepositoryImpl(
                 }
                 if (newProgress > current.currentUnit) Pair(newProgress, current.userStatus) else null
             },
-            source = ProgressSource.IMPORT
+            source = ProgressSource.IMPORT,
+            recordSyncHistory = true
         )
 
     override suspend fun updateMoonReaderProgress(id: String, newProgress: Double, source: ProgressSource) {
@@ -447,7 +451,8 @@ class SeriesRepositoryImpl(
             } else null
         },
         source = ProgressSource.IMPORT,
-        uploadFirst = true
+        uploadFirst = true,
+        recordSyncHistory = true
     )
 
     override suspend fun incrementProgress(
@@ -499,7 +504,7 @@ class SeriesRepositoryImpl(
         return progressHistoryDao.getRecentActivityFeed().map { rows ->
             rows.mapNotNull { row ->
                 val delta = (row.newUnit - row.previousUnit).coerceAtLeast(0.0)
-                if (delta <= 0.0001) return@mapNotNull null
+                if (delta <= 0.0) return@mapNotNull null
                 ProgressHistoryItem(
                     entryId = row.entryId,
                     activityDate = row.activityDate,

@@ -21,7 +21,6 @@ Other top-level areas: `database/` holds the TypeScript/Drizzle schema and SQL m
 - A series position belongs to `(seriesId, mediaType, sequenceNumber)`. Sequence numbers are nullable and user-supplied; never infer or auto-renumber existing entries when an out-of-order entry is added.
 - Prefer English metadata. Import only English alternative titles from upstream sources; do not add untranslated upstream titles as alternatives.
 - MangaBaka progress sync is for comics, not novels. A MangaBaka link must not lock novel progress: Moon+ Reader remains authoritative for linked novels.
-- Background/imported progress must use a non-active-consumption history source so syncs do not inflate reading/watching stats. Keep user-initiated progress sources distinct.
 - Do not silently drop local mutations when a remote write fails or the device is offline: preserve them locally and retain/retry pending sync work. Moon+ Reader provider timeouts must be surfaced or retried without abandoning pending local changes or stopping periodic sync.
 - Preserve `CancellationException`; report other failures explicitly. Avoid success-shaped fallbacks and broad silent catches.
 
