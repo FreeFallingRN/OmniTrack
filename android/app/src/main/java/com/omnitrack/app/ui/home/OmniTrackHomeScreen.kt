@@ -1,6 +1,5 @@
 package com.omnitrack.app.ui.home
 
-import android.content.Context
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
@@ -21,8 +20,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.width
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -30,6 +27,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountTree
@@ -41,14 +39,14 @@ import androidx.compose.material.icons.filled.LocalLibrary
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.TabRow
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -73,8 +71,10 @@ import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.model.ProgressSource
 import com.omnitrack.app.domain.model.UserStatus
 import com.omnitrack.app.domain.repository.PartialMediaEntryCreateException
+import com.omnitrack.app.ui.LocalFeatureServices
 import com.omnitrack.app.ui.components.DeleteCountdownButton
 import com.omnitrack.app.ui.library.HomeLibraryContent
+import com.omnitrack.app.ui.library.HomeLibraryStatusFilter
 import com.omnitrack.app.ui.library.LibraryManagementScreen
 import com.omnitrack.app.ui.library.detail.MediaDetailSheet
 import com.omnitrack.app.ui.library.detail.RelatedEntityDetail
@@ -86,12 +86,10 @@ import com.omnitrack.app.ui.scraping.OnlineSearchDialog
 import com.omnitrack.app.ui.settings.OmniTrackSettingsScreen
 import com.omnitrack.app.ui.stats.HistoryStatsScreen
 import com.omnitrack.app.ui.viewmodel.SeriesViewModel
-import com.omnitrack.app.ui.LocalFeatureServices
-import com.omnitrack.app.ui.library.HomeLibraryStatusFilter
 import com.omnitrack.app.ui.viewmodel.mangaBakaSeriesId
 import com.omnitrack.app.utils.ImportedMediaDraft
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -287,22 +285,23 @@ fun OmniTrackHomeScreen(
                 }
 
                 // Main bottom navigation bar row
-                TabRow(
+                PrimaryTabRow(
                     selectedTabIndex = bottomNavIndex,
                     modifier = Modifier.height(56.dp),
                     containerColor = Color.Transparent,
-                    indicator = { tabPositions ->
-                        if (bottomNavIndex < tabPositions.size) {
-                            Box(
-                                modifier = Modifier
-                                    .tabIndicatorOffset(tabPositions[bottomNavIndex])
-                                    .padding(horizontal = 24.dp, vertical = 12.dp)
-                                    .fillMaxHeight()
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primaryContainer)
-                                    .zIndex(-1f)
-                            )
-                        }
+                    indicator = {
+                        Box(
+                            modifier = Modifier
+                                .tabIndicatorOffset(
+                                    selectedTabIndex = bottomNavIndex,
+                                    matchContentSize = false
+                                )
+                                .padding(horizontal = 24.dp, vertical = 12.dp)
+                                .fillMaxHeight()
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primaryContainer)
+                                .zIndex(-1f)
+                        )
                     },
                     divider = {}
                 ) {

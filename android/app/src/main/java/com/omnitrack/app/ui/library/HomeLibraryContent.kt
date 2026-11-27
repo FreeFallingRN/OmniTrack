@@ -22,7 +22,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -314,14 +313,16 @@ fun HomeLibraryContent(
                 modifier = Modifier.padding(vertical = 12.dp)
             )
         } else {
-            ScrollableTabRow(
+            SecondaryScrollableTabRow(
                 selectedTabIndex = selectedTabMediaType.ordinal,
                 edgePadding = 0.dp,
                 containerColor = Color.Transparent,
-                indicator = { tabPositions ->
-                    if (selectedTabMediaType.ordinal < tabPositions.size) {
+                indicator = {
+                    if (selectedTabMediaType.ordinal < MediaType.entries.size) {
                         TabRowDefaults.SecondaryIndicator(
-                            modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTabMediaType.ordinal]),
+                            modifier = Modifier.tabIndicatorOffset(
+                                selectedTabIndex = selectedTabMediaType.ordinal
+                            ),
                             color = MaterialTheme.colorScheme.primary
                         )
                     }
@@ -491,15 +492,15 @@ fun HomeLibraryStatusFilter(
     selectedUserStatus: UserStatus,
     onStatusSelected: (UserStatus) -> Unit
 ) {
-    ScrollableTabRow(
+    SecondaryScrollableTabRow(
         selectedTabIndex = selectedUserStatus.ordinal,
         edgePadding = 0.dp,
         containerColor = Color.Transparent,
-        indicator = { tabPositions ->
-            if (selectedUserStatus.ordinal < tabPositions.size) {
+        indicator = {
+            if (selectedUserStatus.ordinal < UserStatus.entries.size) {
                 Box(
                     modifier = Modifier
-                        .tabIndicatorOffset(tabPositions[selectedUserStatus.ordinal])
+                        .tabIndicatorOffset(selectedTabIndex = selectedUserStatus.ordinal)
                         .padding(horizontal = 4.dp, vertical = 4.dp)
                         .fillMaxHeight()
                         .clip(CircleShape)

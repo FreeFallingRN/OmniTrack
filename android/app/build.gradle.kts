@@ -59,7 +59,7 @@ extensions.configure<ApplicationExtension> {
         minSdk = 26
         targetSdk = 37
         versionCode = 3
-        versionName = "2.0.8"
+        versionName = "2.0.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -115,6 +115,7 @@ dependencies {
     implementation(libs.androidx.compose.material3)
 
     implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.androidx.material3)
 
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)

@@ -7,7 +7,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -171,14 +170,14 @@ fun HistoryStatsScreen(
                     fontWeight = FontWeight.Bold
                 )
 
-                ScrollableTabRow(
+                SecondaryScrollableTabRow(
                     selectedTabIndex = selectedTimeframe.ordinal,
                     edgePadding = 0.dp,
                     containerColor = Color.Transparent,
-                    indicator = { tabPositions ->
+                    indicator = {
                         Box(
                             modifier = Modifier
-                                .tabIndicatorOffset(tabPositions[selectedTimeframe.ordinal])
+                                .tabIndicatorOffset(selectedTabIndex = selectedTimeframe.ordinal)
                                 .padding(horizontal = 4.dp, vertical = 4.dp)
                                 .fillMaxHeight()
                                 .clip(CircleShape)

@@ -37,6 +37,7 @@ import com.omnitrack.app.ui.scrapeissues.ScrapeIssueReportsScreen
 import com.omnitrack.app.ui.viewmodel.SeriesViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import androidx.core.net.toUri
 
 enum class SettingsPage {
     MAIN,
@@ -87,8 +88,8 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
         val savedFolder = progressFolder
         if (savedFolder != null && progressFolderName == null) {
             try {
-                val name = folderDisplayName(context, Uri.parse(savedFolder))
-                if (progressFolder == savedFolder && progressFolderName == null) resolvedFolderName = name
+                val name = folderDisplayName(context, savedFolder.toUri())
+                resolvedFolderName = name
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

@@ -32,8 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.TabRow
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
+import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.animation.AnimatedContent
@@ -174,14 +173,14 @@ fun LibraryManagementScreen(
                 "Manage series, authors, and platforms.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            TabRow(
+            SecondaryTabRow(
                 selectedTabIndex = selectedSection,
                 containerColor = Color.Transparent,
-                indicator = { tabPositions ->
-                    if (selectedSection < tabPositions.size) {
+                indicator = {
+                    if (selectedSection in 0..2) {
                         Box(
                             modifier = Modifier
-                                .tabIndicatorOffset(tabPositions[selectedSection])
+                                .tabIndicatorOffset(selectedTabIndex = selectedSection)
                                 .padding(horizontal = 4.dp, vertical = 4.dp)
                                 .fillMaxHeight()
                                 .clip(CircleShape)
