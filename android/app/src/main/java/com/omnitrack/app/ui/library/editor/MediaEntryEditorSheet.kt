@@ -253,7 +253,11 @@ fun MediaEntryEditorSheet(
     }
 
     val similarMatches = remember(title, altTitles, newAltTitle, sourceUrl, type, entries, existing?.id) {
-        findSimilarEntries(title, altTitles, newAltTitle, sourceUrl, type, entries, existing?.id)
+        if (existing == null) {
+            findSimilarEntries(title, altTitles, newAltTitle, sourceUrl, type, entries, null)
+        } else {
+            emptyList()
+        }
     }
     var mergeTargetEntry by remember(draftKey) { mutableStateOf<MediaEntry?>(null) }
     var groupWithEntry by remember(draftKey) { mutableStateOf<MediaEntry?>(null) }
@@ -415,7 +419,7 @@ fun MediaEntryEditorSheet(
                     }
                 }
             }
-            if (similarMatches.isNotEmpty() || mergeTargetEntry != null || groupWithEntry != null) {
+            if (existing == null && (similarMatches.isNotEmpty() || mergeTargetEntry != null || groupWithEntry != null)) {
                 item {
                     Surface(
                         color = MaterialTheme.colorScheme.tertiaryContainer,
@@ -443,14 +447,13 @@ fun MediaEntryEditorSheet(
                                 )
                             }
                             mergeTargetEntry?.let {
-                                Text("Merging into \"${it.title}\" (${it.id}).", style = MaterialTheme.typography.bodySmall)
+                                Text("Merging into \"${it.title}\".", style = MaterialTheme.typography.bodySmall)
                             }
                             similarMatches.forEach { (match, entryMatch) ->
                                 Text(
                                     text = "\"${match.title}\" (${match.type.singularLabel} • ${match.userStatus.label} • ${match.currentUnit} ${match.unitName})" +
                                         (match.seriesTitle?.let { " • Series: $it" } ?: "") +
                                         (match.platform?.let { " • Platform: $it" } ?: "") +
-                                        " • ID: ${match.id}" +
                                         if (entryMatch) "" else " • Series title match only",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onTertiaryContainer
