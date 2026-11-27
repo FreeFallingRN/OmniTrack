@@ -80,6 +80,10 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
         val progress = match.progress
         val isChapter = isChapterUnit(current.unitName)
         if (folder != null && isChapter && progress.fileUri != null && progress.fileName != null) {
+            val existingFile = prefs.getString(OmniTrackPreferenceKeys.moonReaderFileUri(current.id))
+            check(existingFile == null || existingFile == progress.fileUri.toString()) {
+                "${current.title} is already linked to another Moon+ Reader file"
+            }
             check(prefs.getString(OmniTrackPreferenceKeys.MoonReaderFolder) == folder &&
                 hasFolderAccess(Uri.parse(folder))) {
                 "Folder access changed; scan again"

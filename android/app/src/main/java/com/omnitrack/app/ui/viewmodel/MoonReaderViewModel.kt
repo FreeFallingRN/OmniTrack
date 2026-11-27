@@ -11,9 +11,12 @@ import com.omnitrack.app.data.OmniTrackPreferences
 import com.omnitrack.app.data.PreferenceChange
 import com.omnitrack.app.domain.repository.SeriesRepository
 import com.omnitrack.app.domain.model.MediaEntry
+import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.utils.MOON_READER_FOLDER_EXPIRED
 import com.omnitrack.app.utils.MoonReaderFolderAccessException
 import com.omnitrack.app.utils.MoonReaderMatch
+import com.omnitrack.app.utils.MoonReaderAmbiguous
+import com.omnitrack.app.utils.MoonReaderProgress
 import com.omnitrack.app.utils.MoonReaderImport
 import com.omnitrack.app.utils.MoonReaderScan
 import com.omnitrack.app.utils.MoonReaderSync
@@ -101,7 +104,19 @@ class MoonReaderViewModel(
     }
 
     suspend fun importMoonReaderProgress(match: MoonReaderMatch, newProgress: Double, folder: String?) {
+        check(prefs.getString(OmniTrackPreferenceKeys.moonReaderFileUri(match.entry.id)) == null) {
+            "${match.entry.title} is already linked to a Moon+ Reader file"
+        }
         sync.apply(match, newProgress, folder)
+    }
+
+    suspend fun importNewMoonReaderProgress(entryId: String, progress: MoonReaderProgress, value: Double, folder: String?) {
+        val entry = repository.getMediaEntriesStream().first().firstOrNull { it.id == entryId }
+        checkNotNull(entry) { "Saved entry is not available; refresh the library and link it manually" }
+        check(entry.type == MediaType.NOVEL && isChapterUnit(entry.unitName)) {
+            "Saved entry no longer uses novel chapters; check it before linking"
+        }
+        importMoonReaderProgress(MoonReaderMatch(entry, progress), value, folder)
     }
 
     suspend fun unlinkMoonReaderBook(entryId: String) {
@@ -140,7 +155,9 @@ class MoonReaderViewModel(
             }
             match.entry.id to calibrated
         }
-        return result.copy(matches = matches) to values
+        val deferred = result.matches.filterNot { it in matches }
+            .map { MoonReaderAmbiguous(it.progress, listOf(it.entry)) }
+        return result.copy(matches = matches, ambiguous = result.ambiguous + deferred) to values
     }
 
     fun syncMoonReader(manual: Boolean = false) {

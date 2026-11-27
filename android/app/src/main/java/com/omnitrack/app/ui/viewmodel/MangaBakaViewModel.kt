@@ -278,7 +278,13 @@ class MangaBakaViewModel(
         if (!manual && lastSyncAttempt?.let { now - it < 60_000L } == true) return@operation
         lastSyncAttempt = now
         val result = progressSync.syncMangaBakaProgress()
-        val details = (result.skipped + result.errors).joinToString("; ")
+        val issues = result.errors + result.skipped.filterNot {
+            it.endsWith(": MangaBaka progress is unavailable") ||
+                it.endsWith(": novel progress is not synced from MangaBaka")
+        }
+        val details = issues.take(3).joinToString("; ") {
+            if (it.length > 160) "${it.take(157)}..." else it
+        } + if (issues.size > 3) "; ${issues.size - 3} more issues" else ""
         _state.value = _state.value.copy(
             titles = result.titles,
             message = if (result.updated == 0 && result.skipped.isEmpty() && result.errors.isEmpty())
@@ -614,6 +620,17 @@ class MangaBakaViewModel(
             links = _state.value.links - title.series.id,
             message = "Unlinked ${title.title}."
         )
+    }
+
+    suspend fun unlinkEntry(seriesId: Long, entryId: String) = operation {
+        MangaBakaProgressSync.withLinkLock {
+            check(preferences.read() == credentials) { "MangaBaka account changed; try again" }
+            check(preferences.links(credentials.userId)[seriesId]?.entryId == entryId) {
+                "MangaBaka link changed; try again"
+            }
+            withContext(Dispatchers.IO) { preferences.unlink(credentials.userId, seriesId) }
+        }
+        _state.update { it.copy(links = it.links - seriesId, message = "MangaBaka link removed.") }
     }
 
     private suspend fun saveLink(seriesId: Long, entryId: String, offset: Double) {

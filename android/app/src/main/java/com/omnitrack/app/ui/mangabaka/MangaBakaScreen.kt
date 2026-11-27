@@ -195,7 +195,7 @@ fun MangaBakaScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
         ) {
             Button(enabled = state.connected && !state.busy, onClick = {
                 owner.syncAndMatchMangaBakaLibrary()
-            }) { Text("Sync & match library") }
+            }) { Text("Sync & match") }
             Button(enabled = state.connected && state.links.isNotEmpty() && !state.busy, onClick = {
                 owner.syncMangaBakaProgress(manual = true)
             }) { Text("Sync now") }
@@ -213,6 +213,10 @@ fun MangaBakaScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
                 }) { Text(if (state.batchCancelRequested) "Stopping..." else "Cancel import") }
             }
         }
+        Text(
+            "Sync & match fetches the library and links matching entries. Use Sync now to update linked progress.",
+            style = MaterialTheme.typography.bodySmall
+        )
         if (state.titles.isNotEmpty()) {
             Text(
                 "${state.titles.count { state.links.containsKey(it.series.id) }}/${state.titles.size} linked. " +
@@ -399,7 +403,7 @@ private fun LinkMangaBakaDialog(
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Link ${title.title}") },
+        title = { Text("Link existing: ${title.title}") },
         text = {
             Column(Modifier.fillMaxWidth().heightIn(min = 360.dp, max = 560.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
