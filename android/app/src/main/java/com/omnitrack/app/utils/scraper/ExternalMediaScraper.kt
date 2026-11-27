@@ -159,8 +159,7 @@ object ExternalMediaScraper {
                 throw e
             } catch (e: Exception) {
                 trace.log("getHtml: error=${e.message}")
-                Log.w(TAG, "HTML fetch failed for $url", e)
-                ""
+                throw e
             }
             trace.log("html: finalLen=${html.length} blank=${html.isBlank()}")
             check(html.isNotBlank()) { "Could not fetch metadata from this source" }
@@ -170,6 +169,7 @@ object ExternalMediaScraper {
                 val rawDraft = runCatching {
                     matchedAdapter.scrapeFromHtml(url, html)
                 }.onFailure { e ->
+                    if (e is CancellationException) throw e
                     trace.log("adapterParse: error=${e.message}")
                     Log.w(TAG, "${matchedAdapter.name} HTML parse failed: ${e.message}")
                 }.getOrNull()
@@ -230,6 +230,7 @@ object ExternalMediaScraper {
                 runCatching {
                     adapter.scrapeWithoutHtml(url, fetcher)
                 }.onFailure { e ->
+                    if (e is CancellationException) throw e
                     trace.log("coverFastPath: error=${e.message}")
                 }.getOrNull()?.let(adapter::normalizeDraft)
             }
@@ -243,7 +244,10 @@ object ExternalMediaScraper {
             if (matchedAdapter === MangaBakaAdapter) return@withContext null
 
             val html = runCatching { fetcher.getHtml(url) }
-                .onFailure { e -> trace.log("coverHtml: error=${e.message}") }
+                .onFailure { e ->
+                    if (e is CancellationException) throw e
+                    trace.log("coverHtml: error=${e.message}")
+                }
                 .getOrDefault("")
             trace.log("coverHtml: len=${html.length}")
 
@@ -251,6 +255,7 @@ object ExternalMediaScraper {
                 runCatching {
                     matchedAdapter.scrapeFromHtml(url, html)?.let(matchedAdapter::normalizeDraft)?.coverUrl
                 }.onFailure { e ->
+                    if (e is CancellationException) throw e
                     trace.log("coverAdapter: error=${e.message}")
                 }.getOrNull()
             } else null
@@ -308,8 +313,11 @@ object ExternalMediaScraper {
             alternativeTitles = primary.alternativeTitles.ifEmpty { fallback.alternativeTitles },
             creators = primary.creators.ifEmpty { fallback.creators },
             platformHint = resolvedPlatform,
+            publishingStatus = primary.publishingStatus.ifBlank { fallback.publishingStatus },
             coverUrl = CoverNormalizer.normalize(primary.coverUrl ?: fallback.coverUrl, baseUrl = url),
-            sourceUrl = url
+            sourceUrl = url,
+            description = primary.description?.takeIf { it.isNotBlank() } ?: fallback.description,
+            totalChapters = primary.totalChapters ?: fallback.totalChapters
         )
     }
 
@@ -331,6 +339,8 @@ object ExternalMediaScraper {
                 uri.rawQuery == null && uri.rawFragment == null) { "Invalid MangaBaka API URL" }
             val credentials = try {
                 MangaBakaPreferences(context.applicationContext).read()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.w(TAG, "Could not read MangaBaka credentials", e)
                 null

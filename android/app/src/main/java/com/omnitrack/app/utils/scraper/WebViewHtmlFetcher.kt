@@ -16,6 +16,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.json.JSONTokener
 import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import kotlin.time.Duration.Companion.milliseconds
 
 internal class WebViewHtmlFetcher {
@@ -38,11 +39,14 @@ internal class WebViewHtmlFetcher {
                 suspendCancellableCoroutine { cont ->
                     var finished = false
 
-                    fun failFetch(message: String) {
+                    fun failFetch(message: String, blocked: Boolean = false) {
                         if (!cont.isActive || finished) return
                         finished = true
                         trace?.log("webView: $message")
-                        cont.resume("")
+                        cont.resumeWithException(
+                            if (blocked) SiteBlockedException(message)
+                            else IllegalStateException("Could not fetch metadata from this source ($message)")
+                        )
                     }
 
                     fun pollDom(attempt: Int) {
@@ -61,19 +65,18 @@ internal class WebViewHtmlFetcher {
                                 json.parseToJsonElement(unescaped).jsonObject["html"]?.jsonPrimitive?.content.orEmpty()
                             }.getOrDefault("")
 
-                            val challenged = html.isBlank() ||
-                                isBotChallenge(html) ||
-                                title.contains("Just a moment", ignoreCase = true)
-                            if (!challenged) {
+                            if (isBotChallenge(html) || title.contains("Just a moment", ignoreCase = true)) {
+                                failFetch("challenge page", blocked = true)
+                            } else if (html.isNotBlank() &&
+                                !Regex("""<body\b[^>]*>\s*</body>""", RegexOption.IGNORE_CASE).containsMatchIn(html)
+                            ) {
                                 finished = true
                                 trace?.log("webView: hit attempt=$attempt len=${html.length} title=\"${title.take(60)}\"")
                                 cont.resume(html)
                             } else if (attempt < 20) {
                                 webView.postDelayed({ pollDom(attempt + 1) }, 600L)
                             } else {
-                                finished = true
-                                trace?.log("webView: exhausted attempts=20 len=${html.length} title=\"${title.take(60)}\"")
-                                cont.resume("")
+                                failFetch("empty response")
                             }
                         }
                     }
@@ -87,7 +90,8 @@ internal class WebViewHtmlFetcher {
 
                         override fun onReceivedHttpError(view: WebView?, request: WebResourceRequest?, errorResponse: WebResourceResponse?) {
                             if (request?.isForMainFrame == true) {
-                                failFetch("HTTP ${errorResponse?.statusCode}")
+                                val status = errorResponse?.statusCode
+                                failFetch("HTTP $status", blocked = status == 403 || status == 429)
                             }
                         }
 
@@ -99,7 +103,7 @@ internal class WebViewHtmlFetcher {
                     cont.invokeOnCancellation { finished = true }
                     webView.loadUrl(url)
                 }
-            }.orEmpty()
+            } ?: throw IllegalStateException("Could not fetch metadata from this source (page timed out)")
         } finally {
             webView.destroy()
         }

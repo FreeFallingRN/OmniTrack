@@ -85,9 +85,16 @@ object MangaBakaAdapter : MediaSourceAdapter {
             ?: error("Missing MangaBaka series title")
         val (title, alternativeTitles) = mangaBakaImportTitles(titles, defaultTitle)
         val creators = buildList {
-            for ((field, role) in listOf("authors" to "author", "artists" to "illustrator")) {
+            for ((field, role) in listOf(
+                "authors" to "author", "artists" to "illustrator",
+                "translators" to "translator", "creators" to "author"
+            )) {
                 (data[field] as? JsonArray).orEmpty().forEach { value ->
-                    val creator = (value as? JsonPrimitive)?.contentOrNull?.trim()
+                    val creator = when (value) {
+                        is JsonPrimitive -> value.contentOrNull?.trim()
+                        is JsonObject -> text(value, "name")
+                        else -> null
+                    }
                     if (!creator.isNullOrEmpty()) add(ScrapedCreator(creator, role))
                 }
             }

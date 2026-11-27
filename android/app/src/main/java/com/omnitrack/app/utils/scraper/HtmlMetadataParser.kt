@@ -52,8 +52,33 @@ object HtmlMetadataParser {
             type = jsonLd?.type ?: MediaType.NOVEL,
             creators = creators,
             coverUrl = coverUrl,
-            sourceUrl = url
+            sourceUrl = url,
+            description = (meta(html, "og:description") ?: meta(html, "description"))
+                ?.takeIf { it.isNotBlank() }
         )
+    }
+
+    fun publishingStatus(value: String?): String = when (value?.trim()?.lowercase()) {
+        "ongoing", "releasing", "ongoing translation", "in progress" -> "releasing"
+        "completed", "complete", "completely translated", "fully translated" -> "completed"
+        "hiatus", "on hiatus", "inactive" -> "hiatus"
+        "dropped", "cancelled", "canceled", "discontinued" -> "discontinued"
+        "upcoming", "announced" -> "announced"
+        else -> ""
+    }
+
+    fun labeledStatus(html: String): String {
+        val patterns = listOf(
+            """<(?:td|th|dt)[^>]*>\s*(?:<[^>]+>\s*)*status\s*:?\s*(?:</[^>]+>\s*)*</(?:td|th|dt)>\s*<(?:td|dd)[^>]*>([\s\S]*?)</(?:td|dd)>""",
+            """<(?:span|div|p)[^>]*>\s*(?:<[^>]+>\s*)*status\s*:?\s*(?:</[^>]+>\s*)*</(?:span|div|p)>\s*<(?:span|div|p)[^>]*>([\s\S]*?)</(?:span|div|p)>""",
+            """\bstatus\s*:\s*(?:<[^>]+>\s*)*([^<\r\n]+)"""
+        )
+        return patterns.firstNotNullOfOrNull { pattern ->
+            Regex(pattern, RegexOption.IGNORE_CASE).findAll(html).firstNotNullOfOrNull { match ->
+                val value = decodeHtmlEntities(match.groupValues[1].replace(Regex("<[^>]+>"), " ")).trim()
+                publishingStatus(value).takeIf { it.isNotBlank() }
+            }
+        }.orEmpty()
     }
 
     fun meta(html: String, property: String): String? {

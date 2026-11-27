@@ -28,12 +28,11 @@ object RoyalRoadAdapter : MediaSourceAdapter {
             ?: Regex(""""author"\s*:\s*\{[^}]*"name"\s*:\s*"([^"]+)"""", RegexOption.IGNORE_CASE)
                 .find(html)?.groupValues?.getOrNull(1)?.trim()
 
-        val pubStatus = when {
-            html.contains(">COMPLETED<", ignoreCase = true) -> "completed"
-            html.contains(">HIATUS<", ignoreCase = true) -> "hiatus"
-            html.contains(">STUB<", ignoreCase = true) || html.contains(">DROPPED<", ignoreCase = true) -> "discontinued"
-            html.contains(">ONGOING<", ignoreCase = true) -> "releasing"
-            else -> ""
+        val pubStatus = HtmlMetadataParser.labeledStatus(html).ifBlank {
+            Regex(
+                """<(?:a|span|div)[^>]*>\s*(ongoing|completed|hiatus|inactive|stub|dropped)\s*</(?:a|span|div)>""",
+                RegexOption.IGNORE_CASE
+            ).find(html)?.groupValues?.get(1)?.let(HtmlMetadataParser::publishingStatus).orEmpty()
         }
 
         val creators = author
