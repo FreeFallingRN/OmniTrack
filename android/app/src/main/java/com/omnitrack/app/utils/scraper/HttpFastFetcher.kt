@@ -7,7 +7,7 @@ import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
 
-internal class SiteBlockedException(detail: String) :
+internal class SiteBlockedException(detail: String, val statusCode: Int? = null) :
     IllegalStateException("Site blocked automated requests / anti-bot protection ($detail)")
 
 internal class HttpFastFetcher(private val client: HttpClient) {
@@ -41,7 +41,7 @@ internal class HttpFastFetcher(private val client: HttpClient) {
         }
         if (response.status.value == 403 || response.status.value == 429) {
             trace?.log("httpFast: blocked HTTP ${response.status.value}")
-            throw SiteBlockedException("HTTP ${response.status.value}")
+            throw SiteBlockedException("HTTP ${response.status.value}", response.status.value)
         }
         check(response.status.isSuccess()) { "Could not fetch metadata (HTTP ${response.status.value})" }
         val body = response.bodyAsText()

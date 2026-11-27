@@ -364,7 +364,13 @@ object ExternalMediaScraper {
         }
 
         override suspend fun getHtml(url: String): String {
-            val fastHtml = httpFastFetcher.getHtml(url, trace)
+            val fastHtml = try {
+                httpFastFetcher.getHtml(url, trace)
+            } catch (e: SiteBlockedException) {
+                if (e.statusCode != 403) throw e
+                trace.log("httpFast: HTTP 403 -> starting WebView fallback")
+                return webViewHtmlFetcher.getHtml(context, url, trace)
+            }
             if (fastHtml.isNotBlank()) return fastHtml
             trace.log("httpFast: empty -> starting WebView fallback")
             return webViewHtmlFetcher.getHtml(context, url, trace)

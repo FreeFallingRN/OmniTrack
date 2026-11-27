@@ -30,9 +30,13 @@ object RoyalRoadAdapter : MediaSourceAdapter {
 
         val pubStatus = HtmlMetadataParser.labeledStatus(html).ifBlank {
             Regex(
-                """<(?:a|span|div)[^>]*>\s*(ongoing|completed|hiatus|inactive|stub|dropped)\s*</(?:a|span|div)>""",
+                """>\s*(ongoing|completed|hiatus|inactive|stub|dropped)\s*<""",
                 RegexOption.IGNORE_CASE
-            ).find(html)?.groupValues?.get(1)?.let(HtmlMetadataParser::publishingStatus).orEmpty()
+            ).findAll(html).firstNotNullOfOrNull { match ->
+                val status = match.groupValues[1]
+                if (status.equals("stub", ignoreCase = true)) null
+                else HtmlMetadataParser.publishingStatus(status).takeIf { it.isNotBlank() }
+            }.orEmpty()
         }
 
         val creators = author
