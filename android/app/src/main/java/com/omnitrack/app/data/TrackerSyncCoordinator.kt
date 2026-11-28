@@ -2,7 +2,6 @@ package com.omnitrack.app.data
 
 import android.content.Context
 import android.os.SystemClock
-import android.util.Log
 import com.omnitrack.app.domain.repository.SeriesRepository
 import com.omnitrack.app.utils.MoonReaderSync
 import kotlinx.coroutines.CancellationException
@@ -63,15 +62,14 @@ class TrackerSyncCoordinator(
 
     suspend fun sync(trigger: TrackerSyncTrigger): TrackerSyncSummary = syncFlight.run {
         val startedAt = SystemClock.elapsedRealtime()
-        val secrets = diagnosticSecrets()
         try {
             val summary = withContext(Dispatchers.IO) { syncSources() }
-            logDiagnostics(trigger, startedAt, summary, secrets = secrets)
+            logDiagnostics(trigger, startedAt, summary)
             summary
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            logDiagnostics(trigger, startedAt, null, e.message, secrets)
+            logDiagnostics(trigger, startedAt, null, e.message)
             throw e
         }
     }
@@ -80,8 +78,7 @@ class TrackerSyncCoordinator(
         trigger: TrackerSyncTrigger,
         startedAt: Long,
         summary: TrackerSyncSummary?,
-        error: String? = null,
-        secrets: List<String>
+        error: String? = null
     ) {
         val sources = summary?.sources.orEmpty()
         fun source(name: String): TrackerSyncDiagnosticSource {
@@ -112,28 +109,8 @@ class TrackerSyncCoordinator(
                 unmatchedItems = moon?.unmatchedItems.orEmpty(),
                 reviewItems = moon?.reviewItems.orEmpty(),
                 errors = listOfNotNull(error)
-            ),
-            secrets
+            )
         )
-    }
-
-    private fun diagnosticSecrets(): List<String> {
-        val secrets = mutableListOf<String>()
-        try {
-            MangaBakaPreferences(context).read().let {
-                secrets.addAll(listOf(it.accessToken, it.state, it.verifier))
-            }
-        } catch (e: Exception) {
-            Log.w("TrackerSyncDiagnostics", "Could not read MangaBaka credentials for redaction (${e.javaClass.simpleName})")
-        }
-        try {
-            AniListPreferences(context).read().let {
-                secrets.add(it.accessToken)
-            }
-        } catch (e: Exception) {
-            Log.w("TrackerSyncDiagnostics", "Could not read AniList credentials for redaction (${e.javaClass.simpleName})")
-        }
-        return secrets
     }
 
     private suspend fun syncSources(): TrackerSyncSummary {
@@ -143,7 +120,7 @@ class TrackerSyncCoordinator(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("TrackerSync", "$name sync failed", e)
+                AppLogger.error("$name sync failed", e)
                 return TrackerSyncSourceResult(
                     name, 0, 0, 1, listOf(e.message ?: "sync failed")
                 )
@@ -161,7 +138,7 @@ class TrackerSyncCoordinator(
                                 preferences.moonReaderLinkedEntryIds().isEmpty()
                             ) return@attempt null
                             val result = MoonReaderSync(context, repository).sync(manual = false) {
-                                Log.i("MoonReaderSync", it)
+                                AppLogger.info("Moon+ Reader sync progress")
                             }
                             TrackerSyncSourceResult(
                                 "Moon+ Reader", result.updated, result.skipped, result.errors, result.details,

@@ -1,7 +1,6 @@
 package com.omnitrack.app.data
 
 import android.content.Context
-import android.util.Log
 import com.omnitrack.app.domain.repository.SeriesRepository
 import kotlinx.coroutines.CancellationException
 
@@ -20,7 +19,7 @@ class TrackerStatusSync(context: Context, private val repository: SeriesReposito
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("TrackerStatusSync", "$name status sync failed", e)
+                AppLogger.error("$name status sync failed", e)
                 errors.add("$name: ${e.message ?: "sync failed"}")
             }
         }

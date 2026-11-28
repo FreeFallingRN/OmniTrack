@@ -10,6 +10,8 @@ import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -22,9 +24,13 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.TextObfuscationMode
+import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedSecureTextField
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -39,13 +45,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import com.omnitrack.app.BuildConfig
+import com.omnitrack.app.domain.model.ReleaseChannel
 import com.omnitrack.app.ui.LocalFeatureServices
 import com.omnitrack.app.ui.mangabaka.MangaBakaScreen
 import com.omnitrack.app.ui.anilist.AniListScreen
@@ -54,7 +60,9 @@ import com.omnitrack.app.ui.moonreader.folderDisplayName
 import com.omnitrack.app.ui.scrapeissues.ScrapeIssueReportsScreen
 import com.omnitrack.app.ui.viewmodel.SeriesViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.core.net.toUri
 
 enum class SettingsPage {
@@ -85,23 +93,42 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
     val lokiActive by settings.lokiActive.collectAsState()
     val lokiStatus by settings.lokiStatus.collectAsState()
     val lokiTokenStatus by settings.lokiTokenStatus.collectAsState(initial = null)
-    val entries by viewModel.mediaEntries.collectAsState()
-    val needsProgressReauth by moonReader.needsProgressFolderReauth.collectAsState()
     val scope = rememberCoroutineScope()
 
     var currentRoute by remember { mutableStateOf(SettingsPage.MAIN) }
     var showSyncDiagnostics by remember { mutableStateOf(false) }
     var showLokiConfig by remember { mutableStateOf(false) }
     var syncDiagnostics by remember { mutableStateOf("[]") }
+    var lokiTestStatus by remember { mutableStateOf<String?>(null) }
+    var lokiTestRunning by remember { mutableStateOf(false) }
+    var appLogText by remember { mutableStateOf<String?>(null) }
+    var appLogFatal by remember { mutableStateOf(false) }
+    val logExport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+        val text = appLogText
+        if (uri != null && text != null && settingsState.releaseChannel == ReleaseChannel.BETA) {
+            scope.launch {
+                try {
+                    withContext(Dispatchers.IO) {
+                        val output = context.contentResolver.openOutputStream(uri)
+                            ?: throw java.io.IOException("Could not open the selected file")
+                        output.bufferedWriter(Charsets.UTF_8).use { it.write(text) }
+                    }
+                    Toast.makeText(context, "Logs exported", Toast.LENGTH_SHORT).show()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e("OmniTrack", "Could not export app logs", e)
+                    Toast.makeText(context, "Could not export logs", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
     BackHandler(enabled = currentRoute != SettingsPage.MAIN) {
         currentRoute = SettingsPage.MAIN
     }
     val progressFolder = settingsState.progressFolder
     var resolvedFolderName by remember(progressFolder) { mutableStateOf<String?>(null) }
     val progressFolderName = settingsState.progressFolderName ?: resolvedFolderName
-    val linkedCount = remember(entries, settingsState.revision) {
-        entries.count { settings.linkedFileUri(it.id) != null }
-    }
 
     LaunchedEffect(progressFolder, currentRoute) {
         if (currentRoute == SettingsPage.MAIN) {
@@ -180,21 +207,19 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                             context.startActivity(
                                 Intent(
                                     Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                                    Uri.parse("package:${context.packageName}")
+                                    "package:${context.packageName}".toUri()
                                 )
                             )
                         }.onFailure { runCatching { context.startActivity(settingsIntent) } }
                     }
                 },
-                needsProgressReauth = needsProgressReauth,
-                progressFolder = progressFolder,
-                progressFolderName = progressFolderName,
-                linkedCount = linkedCount,
                 currentShareStyle = currentShareStyle,
                 releaseChannel = settingsState.releaseChannel,
                 liveLoggingActive = settingsState.liveLoggingActive,
                 lokiActive = lokiActive,
                 lokiStatus = lokiStatus,
+                lokiTestStatus = lokiTestStatus,
+                lokiTestRunning = lokiTestRunning,
                 lokiTokenStatus = lokiTokenStatus?.let {
                     it.error ?: if (it.configured) "Token configured" else "Token not configured"
                 } ?: "Checking token...",
@@ -217,11 +242,34 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                 },
                 onLokiConfigure = { showLokiConfig = true },
                 onLokiTest = {
-                    try {
-                        settings.sendLokiTestLog()
-                        Toast.makeText(context, "Test log queued", Toast.LENGTH_SHORT).show()
-                    } catch (e: IllegalStateException) {
-                        Toast.makeText(context, e.message ?: "Could not send test log", Toast.LENGTH_LONG).show()
+                    lokiTestRunning = true
+                    lokiTestStatus = "Sending test log..."
+                    scope.launch {
+                        try {
+                            lokiTestStatus = settings.sendLokiTestLog()
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: IllegalStateException) {
+                            lokiTestStatus = e.message ?: "Could not send test log"
+                        } finally {
+                            lokiTestRunning = false
+                        }
+                    }
+                },
+                onOpenAppLogs = { fatal ->
+                    scope.launch {
+                        try {
+                            val text = settings.appLogs(fatal)
+                            if (settings.state.value.releaseChannel == ReleaseChannel.BETA) {
+                                appLogFatal = fatal
+                                appLogText = text
+                            }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            Log.e("OmniTrack", "Could not read app logs", e)
+                            Toast.makeText(context, "Could not read app logs", Toast.LENGTH_LONG).show()
+                        }
                     }
                 },
                 onOpenMangaBaka = { currentRoute = SettingsPage.MANGABAKA },
@@ -256,10 +304,29 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
             )
         }
     }
+    if (appLogText != null && settingsState.releaseChannel == ReleaseChannel.BETA) {
+        val text = appLogText.orEmpty()
+        AlertDialog(
+            onDismissRequest = { appLogText = null },
+            title = { Text(if (appLogFatal) "Saved fatal log" else "Recent app logs") },
+            text = {
+                Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()).padding(end = 8.dp)) {
+                    Text("Logs may contain sensitive information. The preview shows the last 30,000 characters; export includes the full log.")
+                    Text(text.takeLast(30_000), style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { logExport.launch(if (appLogFatal) "app-fatal.log" else "app-logs.txt") }) {
+                    Text("Export")
+                }
+            },
+            dismissButton = { TextButton(onClick = { appLogText = null }) { Text("Close") } }
+        )
+    }
     if (showLokiConfig) {
         var url by remember { mutableStateOf(BuildConfig.GRAFANA_LOKI_URL) }
         var user by remember { mutableStateOf(BuildConfig.GRAFANA_LOKI_USER) }
-        var token by remember { mutableStateOf("") }
+        val token = remember { TextFieldState() }
         var error by remember { mutableStateOf<String?>(null) }
         AlertDialog(
             onDismissRequest = { showLokiConfig = false },
@@ -269,14 +336,14 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                     Text("Logs may contain sensitive information. Leave the token blank to keep the current token.")
                     OutlinedTextField(value = url, onValueChange = { url = it }, label = { Text("HTTPS push URL") }, singleLine = true)
                     OutlinedTextField(value = user, onValueChange = { user = it }, label = { Text("User") }, singleLine = true)
-                    OutlinedTextField(value = token, onValueChange = { token = it }, label = { Text("Token override") },
-                        singleLine = true, visualTransformation = PasswordVisualTransformation(),
+                    OutlinedSecureTextField(state = token, label = { Text("Token override") },
+                        textObfuscationMode = TextObfuscationMode.Hidden,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
                     TextButton(onClick = {
                         scope.launch {
                             try {
-                                settings.setLokiTokenOverride(token.trim())
-                                token = ""
+                                settings.setLokiTokenOverride(token.text.toString().trim())
+                                token.clearText()
                                 error = null
                                 Toast.makeText(context, "Token override saved", Toast.LENGTH_SHORT).show()
                             } catch (e: CancellationException) {
@@ -285,13 +352,13 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                                 error = e.message ?: "Could not save the token override"
                             }
                         }
-                    }, enabled = token.isNotBlank()) { Text("Save token override") }
+                    }, enabled = token.text.isNotBlank()) { Text("Save token override") }
                     if (lokiTokenStatus?.hasOverride == true) {
                         TextButton(onClick = {
                             scope.launch {
                                 try {
                                     settings.setLokiTokenOverride(null)
-                                    token = ""
+                                    token.clearText()
                                 } catch (e: CancellationException) {
                                     throw e
                                 } catch (e: Exception) {
@@ -307,9 +374,9 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                 TextButton(onClick = {
                     scope.launch {
                         try {
-                            if (token.isNotBlank()) settings.setLokiTokenOverride(token.trim())
+                            if (token.text.isNotBlank()) settings.setLokiTokenOverride(token.text.toString().trim())
                             settings.startLokiLogging(url, user)
-                            token = ""
+                            token.clearText()
                             showLokiConfig = false
                         } catch (e: CancellationException) {
                             throw e

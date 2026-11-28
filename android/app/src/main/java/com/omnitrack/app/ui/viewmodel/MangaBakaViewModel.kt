@@ -5,8 +5,8 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
 import android.os.SystemClock
-import android.util.Log
 import com.omnitrack.app.data.MangaBakaCredentials
+import com.omnitrack.app.data.AppLogger
 import com.omnitrack.app.data.MangaBakaLink
 import com.omnitrack.app.data.MangaBakaPreferences
 import com.omnitrack.app.data.MangaBakaProgressSync
@@ -155,7 +155,7 @@ class MangaBakaViewModel(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.e("MangaBaka", "Could not load library entry for import", e)
+            AppLogger.error("Could not load library entry for import", e, secrets = listOf(imported.draft.title))
             imported.copy(warning = "MangaBaka library: ${e.message ?: "Could not load progress"}")
         }
     }
@@ -260,7 +260,7 @@ class MangaBakaViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("MangaBaka", "Could not link ${title.title}", e)
+                AppLogger.error("Could not link MangaBaka entry", e, secrets = listOf(title.title))
                 failures.add("${title.title}: ${e.message ?: "Unknown error"}")
             }
             _state.update {
@@ -331,7 +331,7 @@ class MangaBakaViewModel(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.w("MangaBaka", "Could not load full series metadata", e)
+            AppLogger.warn("Could not load full MangaBaka metadata", e, secrets = listOf(title.title))
             val type = when (title.series.type) {
                 "novel" -> MediaType.NOVEL
                 "manga", "manhwa", "manhua", "oel" -> MediaType.COMIC
@@ -409,7 +409,7 @@ class MangaBakaViewModel(
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
-                            Log.e("MangaBaka", "Could not import ${title.title}", e)
+                            AppLogger.error("Could not import MangaBaka title", e, secrets = listOf(title.title))
                             failures.add("${title.title}: ${e.message ?: "Unknown error"}")
                         }
                     }
@@ -572,7 +572,7 @@ class MangaBakaViewModel(
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
-                        Log.e("MangaBaka", "Could not link ${title.title}", e)
+                        AppLogger.error("Could not link MangaBaka entry", e, secrets = listOf(title.title))
                         failures.add("${title.title}: ${e.message ?: "Unknown error"}")
                     }
                 }
@@ -663,7 +663,7 @@ class MangaBakaViewModel(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.e("MangaBaka", "MangaBaka operation failed: ${e.javaClass.simpleName}")
+            AppLogger.error("MangaBaka operation failed (${e.javaClass.simpleName})")
             _state.update { it.copy(message = e.message ?: "MangaBaka request failed") }
         } finally {
             _state.update { it.copy(busy = false) }

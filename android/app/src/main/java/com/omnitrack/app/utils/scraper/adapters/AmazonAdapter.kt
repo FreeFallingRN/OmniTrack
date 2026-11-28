@@ -1,6 +1,6 @@
 package com.omnitrack.app.utils.scraper.adapters
 
-import android.util.Log
+import com.omnitrack.app.data.AppLogger
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.utils.ScrapedCreator
 import com.omnitrack.app.utils.ScrapedMediaDraft
@@ -288,7 +288,7 @@ object AmazonAdapter : MediaSourceAdapter {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.w("AmazonAdapter", "Book metadata lookup failed: $url", e)
+            AppLogger.warn("Book metadata lookup failed", e, secrets = listOf(url))
             null
         }
     }
@@ -568,7 +568,7 @@ object AmazonAdapter : MediaSourceAdapter {
             coverUrl = normalized ?: asinCoverUrl(normalizedUrl),
             sourceUrl = normalizedUrl
         )
-        Log.d(TAG, "normalizeDraft returned publishingStatus=${result.publishingStatus}")
+        AppLogger.debug("Amazon metadata normalized")
         return result
     }
 

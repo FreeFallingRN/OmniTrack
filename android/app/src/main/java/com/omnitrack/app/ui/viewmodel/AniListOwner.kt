@@ -3,7 +3,6 @@ package com.omnitrack.app.ui.viewmodel
 import android.content.Context
 import android.net.Uri
 import android.os.SystemClock
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.omnitrack.app.data.AniListCredentials
@@ -12,6 +11,7 @@ import com.omnitrack.app.data.AniListLink
 import com.omnitrack.app.data.AniListPreferences
 import com.omnitrack.app.data.AniListProgressSync
 import com.omnitrack.app.data.AniListService
+import com.omnitrack.app.data.AppLogger
 import com.omnitrack.app.data.OmniTrackPreferences
 import com.omnitrack.app.data.OmniTrackPreferenceKeys
 import com.omnitrack.app.domain.model.MediaType
@@ -177,7 +177,7 @@ class AniListOwner(
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
-                            Log.e("AniList", "Could not sync AniList URL", e)
+                            AppLogger.error("Could not sync AniList URL", e, secrets = listOf(title.displayTitle))
                             failures.add("${title.displayTitle}: ${e.message ?: "URL sync failed"}")
                         }
                     }
@@ -291,7 +291,7 @@ class AniListOwner(
                                         } catch (e: CancellationException) {
                                             throw e
                                         } catch (e: Exception) {
-                                            Log.e("AniList", "Could not import metadata for ${title.displayTitle}", e)
+                                            AppLogger.error("Could not import metadata", e, secrets = listOf(title.displayTitle))
                                             issues.add("${title.displayTitle}: linked, but metadata sync failed: ${e.message ?: "unknown error"}")
                                         }
                                     }
@@ -301,7 +301,7 @@ class AniListOwner(
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
-                            Log.e("AniList", "Could not import ${title.displayTitle}", e)
+                            AppLogger.error("Could not import AniList title", e, secrets = listOf(title.displayTitle))
                             issues.add("${title.displayTitle}: ${e.message ?: "Import failed"}")
                         }
                         processed++
@@ -348,7 +348,7 @@ class AniListOwner(
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
-                            Log.e("AniList", "Could not sync AniList URL", e)
+                            AppLogger.error("Could not sync AniList URL", e, secrets = listOf(title.displayTitle))
                             failures.add("${title.displayTitle}: ${e.message ?: "URL sync failed"}")
                         }
                         try {
@@ -358,7 +358,7 @@ class AniListOwner(
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
-                            Log.e("AniList", "Could not import metadata", e)
+                            AppLogger.error("Could not import AniList metadata", e, secrets = listOf(title.displayTitle))
                             failures.add("${title.displayTitle}: ${e.message ?: "metadata import failed"}")
                         }
                         try {
@@ -372,7 +372,7 @@ class AniListOwner(
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
-                            Log.e("AniList", "Could not import initial progress", e)
+                            AppLogger.error("Could not import AniList progress", e, secrets = listOf(title.displayTitle))
                             failures.add("${title.displayTitle}: ${e.message ?: "import failed"}")
                         }
                     }
@@ -445,7 +445,7 @@ class AniListOwner(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.e("AniList", "AniList operation failed: ${e.javaClass.simpleName}")
+            AppLogger.error("AniList operation failed (${e.javaClass.simpleName})")
             _state.update { it.copy(message = e.message ?: "AniList request failed", hasError = true) }
         } finally {
             _state.update { it.copy(busy = false) }

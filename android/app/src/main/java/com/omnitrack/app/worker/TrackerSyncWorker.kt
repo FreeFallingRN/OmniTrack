@@ -1,7 +1,6 @@
 package com.omnitrack.app.worker
 
 import android.content.Context
-import android.util.Log
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -10,6 +9,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import com.omnitrack.app.data.AppLogger
 import com.omnitrack.app.data.AniListPreferences
 import com.omnitrack.app.data.MangaBakaPreferences
 import com.omnitrack.app.data.OmniTrackPreferences
@@ -56,12 +56,14 @@ class TrackerSyncWorker(context: Context, params: WorkerParameters) : CoroutineW
                     "errors" to summary.errors,
                     "details" to summary.toToastMessage().take(2000)
                 )
-                if (summary.hasIssues) Log.w("TrackerSync", summary.toToastMessage())
+                if (summary.hasIssues) {
+                    AppLogger.warn("Periodic tracker sync completed with ${summary.skipped} skipped and ${summary.errors} errors")
+                }
                 if (summary.hasErrors) Result.retry() else Result.success(data)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("TrackerSync", "Periodic sync failed", e)
+                AppLogger.error("Periodic sync failed", e)
                 Result.retry()
             }
         }

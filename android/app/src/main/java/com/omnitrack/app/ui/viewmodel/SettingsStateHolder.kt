@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 data class LokiTokenStatus(val configured: Boolean, val hasOverride: Boolean, val error: String? = null)
 
@@ -102,9 +104,11 @@ class SettingsStateHolder(context: Context) {
 
     suspend fun setLokiTokenOverride(token: String?) = preferences.setLokiTokenOverride(token)
 
-    fun sendLokiTestLog() {
-        check(LokiLogPush.active.value) { "Start Loki upload first" }
-        AppLogger.info("Loki test log")
+    suspend fun sendLokiTestLog(): String = LokiLogPush.sendTest()
+
+    suspend fun appLogs(fatal: Boolean): String = withContext(Dispatchers.IO) {
+        check(preferences.releaseChannel() == ReleaseChannel.BETA) { "App logs require the beta channel" }
+        if (fatal) AppLogger.fatalSnapshot() ?: "No saved fatal log." else AppLogger.snapshot().ifEmpty { "No recent app logs." }
     }
 
     fun stopLokiLogging() = LokiLogPush.stop()

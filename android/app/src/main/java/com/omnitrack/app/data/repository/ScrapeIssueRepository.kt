@@ -1,7 +1,7 @@
 package com.omnitrack.app.data.repository
 
 import android.content.Context
-import android.util.Log
+import com.omnitrack.app.data.AppLogger
 import com.omnitrack.app.data.local.ScrapeIssueReport
 import com.omnitrack.app.data.local.ScrapeIssueReportDao
 import com.omnitrack.app.utils.ImportedMediaDraft
@@ -32,7 +32,7 @@ class ScrapeIssueRepository(context: Context, private val dao: ScrapeIssueReport
             ScrapeIssueSyncWorker.enqueue(appContext, report.id)
             true
         } catch (e: Exception) {
-            Log.e("ScrapeIssueReport", "Failed to schedule report sync", e)
+            AppLogger.error("Failed to schedule report sync", e, secrets = listOf(report.id))
             false
         }
     }
@@ -43,7 +43,7 @@ class ScrapeIssueRepository(context: Context, private val dao: ScrapeIssueReport
             ScrapeIssueSyncWorker.enqueue(appContext, id)
             true
         } catch (e: Exception) {
-            Log.e("ScrapeIssueReport", "Failed to schedule report deletion", e)
+            AppLogger.error("Failed to schedule report deletion", e, secrets = listOf(id))
             false
         }
     }

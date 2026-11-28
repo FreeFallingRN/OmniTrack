@@ -128,7 +128,7 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
             }
             check(editor.commit()) { "Could not save Moon+ Reader state for ${current.title}" }
         }
-        AppLogger.info("[MoonReaderSync] Imported progress for entry ${current.id}")
+        AppLogger.info("[MoonReaderSync] Imported progress for linked entry")
     }
 
     suspend fun sync(manual: Boolean, notify: suspend (String) -> Unit): MoonReaderSyncResult {
@@ -137,12 +137,16 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            AppLogger.error("[MoonReaderSync] Sync failed", e)
+            AppLogger.error(
+                "[MoonReaderSync] Sync failed",
+                e,
+                secrets = listOfNotNull(prefs.getString(OmniTrackPreferenceKeys.MoonReaderFolder))
+            )
             throw e
         }
         AppLogger.info("[MoonReaderSync] Sync completed: ${result.updated} updated, ${result.skipped} skipped, ${result.errors} errors")
-        if (result.skipped > 0) AppLogger.warn("[MoonReaderSync] Skipped ${result.skipped} items: ${result.details.joinToString("; ")}")
-        if (result.errors > 0) AppLogger.error("[MoonReaderSync] Sync reported ${result.errors} errors: ${result.details.joinToString("; ")}")
+        if (result.skipped > 0) AppLogger.warn("[MoonReaderSync] Skipped ${result.skipped} items")
+        if (result.errors > 0) AppLogger.error("[MoonReaderSync] Sync reported ${result.errors} errors")
         if (manual) {
             val message = if (result.updated == 0 && result.skipped == 0 && result.errors == 0) {
                 "Moon+ Reader: already up to date"
@@ -231,7 +235,7 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
             val progress = match.progress
             val lastTime = prefs.getLong(OmniTrackPreferenceKeys.moonReaderTimestamp(entry.id), -1L)
             val lastSpine = prefs.getInt(OmniTrackPreferenceKeys.moonReaderSpine(entry.id), -1)
-            AppLogger.debug("[MoonReaderSync] Entry ${entry.id} watermark timestamp=$lastTime spine=$lastSpine; incoming timestamp=${progress.timestamp} spine=${progress.spineChapterIndex}")
+            AppLogger.debug("[MoonReaderSync] Checking linked entry progress watermark")
             if (progress.timestamp < lastTime ||
                 (progress.timestamp == lastTime && progress.spineChapterIndex <= lastSpine)) {
                 successfulMatches[entry.id] = match
@@ -261,7 +265,7 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
           } catch (e: MoonReaderFolderAccessException) {
               throw e
           } catch (e: Exception) {
-              AppLogger.error("[MoonReaderSync] Could not sync ${match.entry.title}", e)
+              AppLogger.error("[MoonReaderSync] Could not sync linked entry", e, secrets = listOf(match.entry.title))
               errors.add("${match.entry.title}: ${e.message ?: "sync failed"}")
           }
         }
@@ -284,7 +288,7 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
                 } catch (itemError: Exception) {
                     val title = scan.matches.first { it.entry.id == entryId }.entry.title
                     successfulMatches.remove(entryId)
-                    AppLogger.error("[MoonReaderSync] Could not sync $title", itemError)
+                    AppLogger.error("[MoonReaderSync] Could not sync linked entry", itemError, secrets = listOf(title))
                     errors.add("$title: ${itemError.message ?: "sync failed"}")
                 }
             }

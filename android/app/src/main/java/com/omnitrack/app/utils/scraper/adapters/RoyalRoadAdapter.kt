@@ -1,6 +1,6 @@
 package com.omnitrack.app.utils.scraper.adapters
 
-import android.util.Log
+import com.omnitrack.app.data.AppLogger
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.utils.ScrapedCreator
 import com.omnitrack.app.utils.ScrapedMediaDraft
@@ -94,7 +94,7 @@ object RoyalRoadAdapter : MediaSourceAdapter {
             val root = try {
                 json.parseToJsonElement(match.groupValues[1].trim())
             } catch (e: SerializationException) {
-                Log.w("RoyalRoadAdapter", "Could not parse JSON-LD", e)
+                AppLogger.warn("Could not parse Royal Road JSON-LD", e)
                 return@firstNotNullOfOrNull null
             }
             findJsonLdCreators(root).takeIf { it.isNotEmpty() }

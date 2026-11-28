@@ -1,7 +1,7 @@
 package com.omnitrack.app.data.repository
 
-import android.util.Log
 import androidx.room.withTransaction
+import com.omnitrack.app.data.AppLogger
 import com.omnitrack.app.data.MangaBakaPreferences
 import com.omnitrack.app.data.MangaBakaProgressSync
 import com.omnitrack.app.data.AniListProgressSync
@@ -104,7 +104,7 @@ class SeriesRepositoryImpl(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.e("SeriesRepository", "Failed to mutate library in Supabase", e)
+            AppLogger.error("Failed to mutate library in Supabase", e)
             throw e
         }
     }
@@ -178,7 +178,7 @@ class SeriesRepositoryImpl(
             } catch (refreshError: CancellationException) {
                 throw refreshError
             } catch (refreshError: Exception) {
-                Log.e("SeriesRepository", "Failed to reconcile partial entry creation", refreshError)
+                AppLogger.error("Failed to reconcile partial entry creation", refreshError)
                 e.addSuppressed(refreshError)
                 false
             }
@@ -253,7 +253,7 @@ class SeriesRepositoryImpl(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.e("SeriesRepository", "Could not identify AniList links; status sync pending", e)
+            AppLogger.error("Could not identify AniList links; status sync pending", e)
             null
         }
         val mangaLinks = try {
@@ -264,7 +264,7 @@ class SeriesRepositoryImpl(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.e("SeriesRepository", "Could not identify MangaBaka links; status sync pending", e)
+            AppLogger.error("Could not identify MangaBaka links; status sync pending", e)
             null
         }
         database.withTransaction {
@@ -397,7 +397,7 @@ class SeriesRepositoryImpl(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.e("SeriesRepository", "Failed to sync from Supabase", e)
+            AppLogger.error("Failed to sync from Supabase", e)
             throw e
         }
     }
@@ -511,7 +511,7 @@ class SeriesRepositoryImpl(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("SeriesRepository", "Failed to sync pending progress to Supabase", e)
+                AppLogger.error("Failed to sync pending progress to Supabase", e)
             }
             true
         }
@@ -605,7 +605,7 @@ class SeriesRepositoryImpl(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("SeriesRepository", "Failed to sync pending progress to Supabase", e)
+                AppLogger.error("Failed to sync pending progress to Supabase", e)
             }
             changes.mapTo(mutableSetOf()) { it.first }
         }
@@ -763,7 +763,7 @@ class SeriesRepositoryImpl(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    Log.e("SeriesRepository", "Failed to delete entry from Supabase", e)
+                    AppLogger.error("Failed to delete entry from Supabase", e)
                 }
             }
         }

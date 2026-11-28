@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
+import com.omnitrack.app.data.AppLogger
 import com.omnitrack.app.domain.model.MediaEntry
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
@@ -196,7 +197,11 @@ object MoonReaderImport {
                             } catch (e: CancellationException) {
                                 throw e
                             } catch (e: Exception) {
-                                android.util.Log.w("MoonReaderImport", "Unable to read ${file.name}", e)
+                                AppLogger.warn(
+                                    "[MoonReaderImport] Unable to read progress file",
+                                    e,
+                                    secrets = listOf(file.name)
+                                )
                                 emptyList()
                             }
                         }

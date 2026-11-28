@@ -46,22 +46,18 @@ object ExternalMediaScraper {
         NovelpiaAdapter
     )
 
-    internal class ScrapeTrace(
-        val url: String,
-        val adapterName: String
-    ) {
+    internal class ScrapeTrace(val adapterName: String) {
         private val events = mutableListOf<String>()
 
         fun log(message: String) {
             events += message
         }
 
-        fun flush(finalTitle: String?, finalCover: String?) {
-            val summary = "title=\"${finalTitle.orEmpty()}\" cover=${if (!finalCover.isNullOrBlank()) "yes" else "no"}"
+        fun flush() {
             AppLogger.debug(
                 "[$TAG] " +
                 buildString {
-                    appendLine("[$adapterName] $url -> $summary")
+                    appendLine("[$adapterName]")
                     events.forEach { appendLine("  - $it") }
                 }.trimEnd()
             )
@@ -91,7 +87,7 @@ object ExternalMediaScraper {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            AppLogger.error("[$TAG] Metadata scrape failed", e)
+            AppLogger.error("[$TAG] Metadata scrape failed", e, secrets = listOf(rawUrl.trim(), url))
             throw e
         }
         AppLogger.info("[$TAG] Metadata scrape completed using ${adapter?.name ?: GenericFallbackAdapter.name}")
@@ -114,21 +110,16 @@ object ExternalMediaScraper {
         val originalUrl = rawUrl.trim().let {
             if (it.startsWith("http://", true) || it.startsWith("https://", true)) it else "https://$it"
         }
-        val trace = ScrapeTrace(url = url, adapterName = matchedAdapter?.name ?: "None")
+        val trace = ScrapeTrace(adapterName = matchedAdapter?.name ?: "None")
         val fetcher = createFetchClient(context, trace)
 
-        var resultTitle: String? = null
-        var resultCover: String? = null
-
         try {
-            trace.log("host=$host matchedAdapter=${matchedAdapter?.name ?: "none"}")
+            trace.log("matchedAdapter=${matchedAdapter?.name ?: "none"}")
 
             if (matchedAdapter === MangaBakaAdapter) {
                 val draft = requireNotNull(MangaBakaAdapter.scrapeSeries(url, fetcher, mangaBakaOtherType)) {
                     "Could not load MangaBaka series"
                 }
-                resultTitle = draft.title
-                resultCover = draft.coverUrl
                 return draft.copy(coverUrl = CoverNormalizer.normalize(draft.coverUrl, baseUrl = draft.sourceUrl))
             }
 
@@ -139,7 +130,7 @@ object ExternalMediaScraper {
                     matchedAdapter.scrapeWithoutHtml(url, fetcher)
                 }.onFailure { e ->
                     if (e is CancellationException) throw e
-                    trace.log("fastPath: error=${e.message}")
+                    trace.log("fastPath: error=${e.javaClass.simpleName}")
                     AppLogger.warn("[$TAG] ${matchedAdapter.name} fast-path failed; trying HTML", e)
                 }.getOrNull()
 
@@ -150,10 +141,8 @@ object ExternalMediaScraper {
                         sourceUrl = url
                     )
                     trace.log(
-                        "fastPath: hit title=\"${finalDraft.title}\" creators=${finalDraft.creators.size} cover=${finalDraft.coverUrl != null} publishingStatus=${finalDraft.publishingStatus}"
+                        "fastPath: hit creators=${finalDraft.creators.size} cover=${finalDraft.coverUrl != null} publishingStatus=${finalDraft.publishingStatus}"
                     )
-                    resultTitle = finalDraft.title
-                    resultCover = finalDraft.coverUrl
                     return finalDraft
                 } else {
                     trace.log("fastPath: miss (null=${fastDraft == null}, blankTitle=${fastDraft?.title.isNullOrBlank()})")
@@ -166,7 +155,7 @@ object ExternalMediaScraper {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                trace.log("getHtml: error=${e.message}")
+                trace.log("getHtml: error=${e.javaClass.simpleName}")
                 throw e
             }
             trace.log("html: finalLen=${html.length} blank=${html.isBlank()}")
@@ -178,13 +167,13 @@ object ExternalMediaScraper {
                     matchedAdapter.scrapeFromHtml(url, html)
                 }.onFailure { e ->
                     if (e is CancellationException) throw e
-                    trace.log("adapterParse: error=${e.message}")
+                    trace.log("adapterParse: error=${e.javaClass.simpleName}")
                     AppLogger.warn("[$TAG] ${matchedAdapter.name} HTML parse failed; using fallback", e)
                 }.getOrNull()
 
                 if (rawDraft != null) {
                     trace.log(
-                        "adapterParse: raw title=\"${rawDraft.title}\" creators=${rawDraft.creators.map { "${it.name}(${it.role})" }} cover=${rawDraft.coverUrl != null} publishingStatus=${rawDraft.publishingStatus}"
+                        "adapterParse: raw creators=${rawDraft.creators.size} cover=${rawDraft.coverUrl != null} publishingStatus=${rawDraft.publishingStatus}"
                     )
                     matchedAdapter.normalizeDraft(rawDraft)
                 } else {
@@ -200,15 +189,11 @@ object ExternalMediaScraper {
                 val finalDraft = AmazonAdapter.completeMetadata(
                     url, HtmlMetadataParser.extractAmazonTitleSlug(originalUrl), adapterDraft, fetcher
                 )
-                resultTitle = finalDraft.title
-                resultCover = finalDraft.coverUrl
                 return finalDraft
             }
 
             val fallbackDraft = GenericFallbackAdapter.scrapeFromHtml(url, html)
-            trace.log(
-                "fallbackParse: title=\"${fallbackDraft.title}\" creators=${fallbackDraft.creators.map { "${it.name}(${it.role})" }} cover=${fallbackDraft.coverUrl != null}"
-            )
+            trace.log("fallbackParse: creators=${fallbackDraft.creators.size} cover=${fallbackDraft.coverUrl != null}")
 
             val merged = mergeDrafts(
                 primary = adapterDraft,
@@ -217,11 +202,9 @@ object ExternalMediaScraper {
                 url = url,
                 trace = trace
             )
-            resultTitle = merged.title
-            resultCover = merged.coverUrl
             return merged
         } finally {
-            trace.flush(finalTitle = resultTitle, finalCover = resultCover)
+            trace.flush()
         }
     }
 
@@ -229,24 +212,22 @@ object ExternalMediaScraper {
         val url = normalizeInputUrl(rawUrl)
         val host = runCatching { URI(url).host.orEmpty().lowercase() }.getOrDefault("")
         val matchedAdapter = adapters.firstOrNull { it.canHandle(host, url) }
-        val trace = ScrapeTrace(url = url, adapterName = "${matchedAdapter?.name ?: "None"}:CoverOnly")
+        val trace = ScrapeTrace(adapterName = "${matchedAdapter?.name ?: "None"}:CoverOnly")
         val fetcher = if (context != null) createFetchClient(context, trace) else createFastFetchClient(trace)
 
-        var resolvedCover: String? = null
         try {
             val fastDraft = matchedAdapter?.let { adapter ->
                 runCatching {
                     adapter.scrapeWithoutHtml(url, fetcher)
                 }.onFailure { e ->
                     if (e is CancellationException) throw e
-                    trace.log("coverFastPath: error=${e.message}")
+                    trace.log("coverFastPath: error=${e.javaClass.simpleName}")
                     AppLogger.warn("[$TAG] Cover fast-path failed; trying HTML", e)
                 }.getOrNull()?.let(adapter::normalizeDraft)
             }
             fastDraft?.coverUrl?.let { rawCover ->
                 val normalized = CoverNormalizer.normalize(rawCover, baseUrl = url)
-                trace.log("coverFastPath: hit -> $normalized")
-                resolvedCover = normalized
+                trace.log("coverFastPath: hit")
                 return@withContext normalized
             }
 
@@ -255,7 +236,7 @@ object ExternalMediaScraper {
             val html = runCatching { fetcher.getHtml(url) }
                 .onFailure { e ->
                     if (e is CancellationException) throw e
-                    trace.log("coverHtml: error=${e.message}")
+                    trace.log("coverHtml: error=${e.javaClass.simpleName}")
                     AppLogger.error("[$TAG] Cover HTML fetch failed", e)
                 }
                 .getOrDefault("")
@@ -266,7 +247,7 @@ object ExternalMediaScraper {
                     matchedAdapter.scrapeFromHtml(url, html)?.let(matchedAdapter::normalizeDraft)?.coverUrl
                 }.onFailure { e ->
                     if (e is CancellationException) throw e
-                    trace.log("coverAdapter: error=${e.message}")
+                    trace.log("coverAdapter: error=${e.javaClass.simpleName}")
                     AppLogger.warn("[$TAG] Cover adapter failed; trying generic metadata", e)
                 }.getOrNull()
             } else null
@@ -276,13 +257,10 @@ object ExternalMediaScraper {
             } else null
 
             val finalCover = CoverNormalizer.normalize(adapterCover ?: genericCover, baseUrl = url)
-            trace.log(
-                "coverResolved: adapterCover=${adapterCover != null} genericCover=${genericCover != null} final=$finalCover"
-            )
-            resolvedCover = finalCover
+            trace.log("coverResolved: adapterCover=${adapterCover != null} genericCover=${genericCover != null}")
             finalCover
         } finally {
-            trace.flush(finalTitle = null, finalCover = resolvedCover)
+            trace.flush()
         }
     }
 
@@ -363,7 +341,7 @@ object ExternalMediaScraper {
                 header("User-Agent", "OmniTrack-Android/1.0")
                 if (credentials != null && credentials.accessToken.isNotBlank()) mangaBakaAuthorization(credentials)
             }
-            trace.log("json: status=${response.status.value} url=$url")
+            trace.log("json: status=${response.status.value}")
             if (response.status.value in listOf(401, 403) && credentials?.accessToken?.isNotBlank() == true) {
                 AppLogger.warn("[$TAG] MangaBaka metadata returned HTTP ${response.status.value}; trying public metadata")
                 val publicResponse = mangaBakaClient.get(url) {

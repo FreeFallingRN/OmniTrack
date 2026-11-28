@@ -1,7 +1,6 @@
 package com.omnitrack.app.data
 
 import android.content.Context
-import android.util.Log
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -40,26 +39,26 @@ object TrackerSyncDiagnosticLog {
     private const val MAX_ENTRIES = 30
     private val json = Json { prettyPrint = true }
 
-    fun append(context: Context, entry: TrackerSyncDiagnosticEntry, secrets: Collection<String>) {
+    fun append(context: Context, entry: TrackerSyncDiagnosticEntry) {
         try {
             val preferences = context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
             val entries = preferences.getString(KEY_ENTRIES, null)
                 ?.let { json.decodeFromString<List<TrackerSyncDiagnosticEntry>>(it) }
                 .orEmpty()
             val sanitized = entry.copy(
-                moonReader = entry.moonReader.sanitized(secrets),
-                mangaBaka = entry.mangaBaka.sanitized(secrets),
-                aniList = entry.aniList.sanitized(secrets),
-                unmatchedItems = entry.unmatchedItems.take(20).map { redact(it, secrets) },
-                reviewItems = entry.reviewItems.take(20).map { redact(it, secrets) },
-                errors = entry.errors.take(10).map { redact(it, secrets) }
+                moonReader = entry.moonReader.sanitized(),
+                mangaBaka = entry.mangaBaka.sanitized(),
+                aniList = entry.aniList.sanitized(),
+                unmatchedItems = entry.unmatchedItems.take(20).map { "[REDACTED]" },
+                reviewItems = entry.reviewItems.take(20).map { "[REDACTED]" },
+                errors = entry.errors.take(10).map { "[REDACTED]" }
             )
             check(preferences.edit().putString(
                 KEY_ENTRIES,
                 json.encodeToString((entries + sanitized).takeLast(MAX_ENTRIES))
             ).commit()) { "Could not persist sync diagnostics" }
         } catch (e: Exception) {
-            Log.e("TrackerSyncDiagnostics", "Could not persist sync diagnostics (${e.javaClass.simpleName})")
+            AppLogger.error("Could not persist sync diagnostics (${e.javaClass.simpleName})")
         }
     }
 
@@ -69,9 +68,6 @@ object TrackerSyncDiagnosticLog {
         return json.encodeToString(json.decodeFromString<List<TrackerSyncDiagnosticEntry>>(saved))
     }
 
-    private fun TrackerSyncDiagnosticSource.sanitized(secrets: Collection<String>) =
-        copy(details = details.take(12).map { redact(it, secrets) })
-
-    private fun redact(value: String, secrets: Collection<String>): String =
-        LogRedaction.redact(value, secrets).take(200)
+    private fun TrackerSyncDiagnosticSource.sanitized() =
+        copy(details = details.take(12).map { "[REDACTED]" })
 }

@@ -1,7 +1,6 @@
 package com.omnitrack.app.worker
 
 import android.content.Context
-import android.util.Log
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
@@ -10,6 +9,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import com.omnitrack.app.data.AppLogger
 import com.omnitrack.app.data.SupabaseService
 import com.omnitrack.app.data.local.AppDatabase
 import kotlinx.coroutines.CancellationException
@@ -31,7 +31,7 @@ class ScrapeIssueSyncWorker(context: Context, params: WorkerParameters) : Corout
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.e("ScrapeIssueSync", "Failed to sync scrape issue report $id", e)
+            AppLogger.error("Failed to sync scrape issue report", e, secrets = listOf(id))
             Result.retry()
         }
     }

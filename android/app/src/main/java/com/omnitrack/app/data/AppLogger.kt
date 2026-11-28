@@ -6,6 +6,7 @@ import android.util.AtomicFile
 import android.util.Log
 import com.omnitrack.app.BuildConfig
 import java.io.File
+import java.io.FileNotFoundException
 import java.io.IOException
 import java.io.PrintWriter
 import java.io.StringWriter
@@ -83,6 +84,17 @@ object AppLogger {
         entries.joinToString(separator = "") { it.toString(Charsets.UTF_8) }
     }
 
+    @Throws(IOException::class)
+    fun fatalSnapshot(): String? = synchronized(lock) {
+        check(initialized) { "AppLogger has not been initialized" }
+        try {
+            fatalFile.openRead().bufferedReader(Charsets.UTF_8).use { it.readText() }
+        } catch (e: FileNotFoundException) {
+            if (fatalFile.baseFile.exists() || File("${fatalFile.baseFile.path}.bak").exists()) throw e
+            null
+        }
+    }
+
     private fun crashTrace(throwable: Throwable): String {
         val seen = java.util.Collections.newSetFromMap(
             java.util.IdentityHashMap<Throwable, Boolean>()
@@ -91,6 +103,7 @@ object AppLogger {
         var current: Throwable? = throwable
         while (current != null && seen.size < 16 && seen.add(current)) {
             result.append("\n").append(current.javaClass.name)
+            current.message?.let { result.append(": ").append(it) }
             current.stackTrace.take(256).forEach { result.append("\n  at ").append(it) }
             current = current.cause
         }

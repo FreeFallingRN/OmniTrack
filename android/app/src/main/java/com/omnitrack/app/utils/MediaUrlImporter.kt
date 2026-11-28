@@ -1,6 +1,7 @@
 package com.omnitrack.app.utils
 
 import android.content.Context
+import com.omnitrack.app.data.AppLogger
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.utils.scraper.ExternalMediaScraper
 import kotlinx.serialization.Serializable
@@ -44,9 +45,12 @@ object MediaUrlImporter {
         rawUrl: String,
         fallbackTotalChapters: Double? = null
     ): ImportedMediaDraft {
+        AppLogger.debug("[MediaUrlImporter] Import started")
         val imported = ExternalMediaScraper.scrape(context, rawUrl)
         val fallbackTotal = fallbackTotalChapters?.takeIf { it.isFinite() && it >= 0 }
-        if (imported.draft.totalChapters != null || fallbackTotal == null) return imported
-        return imported.copy(draft = imported.draft.copy(totalChapters = fallbackTotal))
+        val result = if (imported.draft.totalChapters != null || fallbackTotal == null) imported
+        else imported.copy(draft = imported.draft.copy(totalChapters = fallbackTotal))
+        AppLogger.info("[MediaUrlImporter] Import completed using ${result.adapterName}")
+        return result
     }
 }

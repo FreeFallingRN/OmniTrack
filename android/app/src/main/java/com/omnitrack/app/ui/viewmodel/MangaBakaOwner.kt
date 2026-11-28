@@ -2,10 +2,10 @@ package com.omnitrack.app.ui.viewmodel
 
 import android.content.Context
 import android.net.Uri
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.omnitrack.app.data.MangaBakaTitle
+import com.omnitrack.app.data.AppLogger
 import com.omnitrack.app.domain.repository.SeriesRepository
 import com.omnitrack.app.feature.MediaLookupService
 import kotlinx.coroutines.CancellationException
@@ -88,7 +88,7 @@ class MangaBakaOwner(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("MangaBaka", "Could not link imported entry", e)
+                AppLogger.error("Could not link imported entry", e, secrets = listOf(sourceUrl))
                 _importMessages.emit("Entry saved. MangaBaka: ${e.message ?: "Unknown error"}")
             }
         }

@@ -40,21 +40,20 @@ import com.omnitrack.app.domain.model.ReleaseChannel
 internal fun MainSettingsPage(
     isIgnoringBatteryOptimizations: Boolean,
     onBatteryOptimizationClick: () -> Unit,
-    needsProgressReauth: Boolean,
-    progressFolder: String?,
-    progressFolderName: String?,
-    linkedCount: Int,
     currentShareStyle: ShareFormatStyle,
     releaseChannel: ReleaseChannel,
     liveLoggingActive: Boolean,
     lokiActive: Boolean,
     lokiStatus: String,
+    lokiTestStatus: String?,
+    lokiTestRunning: Boolean,
     lokiTokenStatus: String,
     onReleaseChannelChange: (ReleaseChannel) -> Unit,
     onLiveLoggingChange: (Boolean) -> Unit,
     onLokiClick: () -> Unit,
     onLokiConfigure: () -> Unit,
     onLokiTest: () -> Unit,
+    onOpenAppLogs: (Boolean) -> Unit,
     onOpenMangaBaka: () -> Unit,
     onOpenAniList: () -> Unit,
     onOpenMoonReader: () -> Unit,
@@ -111,7 +110,12 @@ internal fun MainSettingsPage(
                         }
                         TextButton(onClick = onLokiConfigure, enabled = !lokiActive) { Text("Configure") }
                     }
-                    TextButton(onClick = onLokiTest, enabled = lokiActive) { Text("Send test log") }
+                    TextButton(onClick = onLokiTest, enabled = lokiActive && !lokiTestRunning) { Text("Send test log") }
+                    lokiTestStatus?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                    Row {
+                        TextButton(onClick = { onOpenAppLogs(false) }) { Text("Recent logs") }
+                        TextButton(onClick = { onOpenAppLogs(true) }) { Text("Saved fatal log") }
+                    }
                 }
             }
         }
