@@ -1,5 +1,6 @@
 package com.omnitrack.app.ui.library.editor
 
+import com.omnitrack.app.data.AppLogger
 import com.omnitrack.app.domain.model.CreateEntryCommand
 import com.omnitrack.app.domain.model.CreatePlatformCommand
 import com.omnitrack.app.domain.model.CreateSeriesCommand
@@ -8,6 +9,7 @@ import com.omnitrack.app.domain.model.EntryCreator
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.ui.viewmodel.SeriesViewModel
 import com.omnitrack.app.ui.viewmodel.MangaBakaOwner
+import kotlinx.coroutines.CancellationException
 
 internal suspend fun saveMediaEntry(
     viewModel: SeriesViewModel,
@@ -18,7 +20,7 @@ internal suspend fun saveMediaEntry(
     importedMangaBakaId: Long?,
     mangaBakaLinkUrl: String?,
     onCreated: (String) -> Unit
-) {
+) = try {
     check(editorEntry?.aliasScopeUnverified != true) {
         "Refresh the library and reopen this entry before editing its aliases."
     }
@@ -163,4 +165,10 @@ internal suspend fun saveMediaEntry(
             )
         }
     }
+    AppLogger.info("[MediaEntrySave] Entry save completed")
+} catch (e: CancellationException) {
+    throw e
+} catch (e: Exception) {
+    AppLogger.error("[MediaEntrySave] Entry save failed", e)
+    throw e
 }

@@ -1,14 +1,22 @@
 package com.omnitrack.app.ui.viewmodel
 
 import android.content.Context
+import com.omnitrack.app.BuildConfig
+import com.omnitrack.app.data.AppLogger
 import com.omnitrack.app.data.OmniTrackPreferenceKeys
 import com.omnitrack.app.data.OmniTrackPreferences
+import com.omnitrack.app.data.LokiLogPush
 import com.omnitrack.app.data.TrackerSyncDiagnosticLog
 import com.omnitrack.app.domain.model.HistoryTimeframe
 import com.omnitrack.app.domain.model.PublishingStatus
+import com.omnitrack.app.domain.model.ReleaseChannel
 import com.omnitrack.app.utils.LibrarySortOption
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.map
+
+data class LokiTokenStatus(val configured: Boolean, val hasOverride: Boolean, val error: String? = null)
 
 data class SettingsState(
     val progressFolder: String?,
@@ -22,6 +30,8 @@ data class SettingsState(
     val selectedMediaType: String?,
     val selectedUserStatus: String?,
     val selectedStatsPeriod: HistoryTimeframe,
+    val releaseChannel: ReleaseChannel,
+    val liveLoggingActive: Boolean,
     val revision: Long
 )
 
@@ -56,6 +66,8 @@ class SettingsStateHolder(context: Context) {
             selectedStatsPeriod = HistoryTimeframe.entries.find {
                 it.name == preferences.getString(OmniTrackPreferenceKeys.SelectedStatsPeriod)
             } ?: HistoryTimeframe.DAYS_30,
+            releaseChannel = preferences.releaseChannel(),
+            liveLoggingActive = preferences.isLiveLoggingActive(),
             revision = revision
         )
     }
@@ -66,6 +78,36 @@ class SettingsStateHolder(context: Context) {
     fun close() = preferences.removeListener(listener)
 
     fun recentSyncDiagnostics(): String = TrackerSyncDiagnosticLog.recent(appContext)
+
+    val lokiActive = LokiLogPush.active
+    val lokiStatus = LokiLogPush.status
+    val lokiTokenStatus = preferences.lokiTokenOverride
+        .map { LokiTokenStatus(!(it ?: BuildConfig.GRAFANA_LOKI_TOKEN).isNullOrBlank(), it != null) }
+        .catch { emit(LokiTokenStatus(false, false, "Could not read the Loki token")) }
+
+    fun setReleaseChannel(channel: ReleaseChannel) {
+        if (channel != ReleaseChannel.BETA) LokiLogPush.stop()
+        preferences.setReleaseChannel(channel)
+    }
+
+    fun setLiveLoggingActive(active: Boolean) {
+        if (!active) LokiLogPush.stop()
+        preferences.setLiveLoggingActive(active)
+    }
+
+    suspend fun startLokiLogging(
+        url: String = BuildConfig.GRAFANA_LOKI_URL,
+        user: String = BuildConfig.GRAFANA_LOKI_USER
+    ) = LokiLogPush.start(preferences, url, user, preferences.lokiToken())
+
+    suspend fun setLokiTokenOverride(token: String?) = preferences.setLokiTokenOverride(token)
+
+    fun sendLokiTestLog() {
+        check(LokiLogPush.active.value) { "Start Loki upload first" }
+        AppLogger.info("Loki test log")
+    }
+
+    fun stopLokiLogging() = LokiLogPush.stop()
 
     fun linkedFileUri(entryId: String): String? =
         preferences.getString(OmniTrackPreferenceKeys.moonReaderFileUri(entryId))

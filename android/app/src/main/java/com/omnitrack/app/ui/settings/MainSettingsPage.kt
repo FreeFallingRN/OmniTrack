@@ -22,6 +22,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -33,6 +34,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.omnitrack.app.domain.model.ReleaseChannel
 
 @Composable
 internal fun MainSettingsPage(
@@ -43,6 +45,16 @@ internal fun MainSettingsPage(
     progressFolderName: String?,
     linkedCount: Int,
     currentShareStyle: ShareFormatStyle,
+    releaseChannel: ReleaseChannel,
+    liveLoggingActive: Boolean,
+    lokiActive: Boolean,
+    lokiStatus: String,
+    lokiTokenStatus: String,
+    onReleaseChannelChange: (ReleaseChannel) -> Unit,
+    onLiveLoggingChange: (Boolean) -> Unit,
+    onLokiClick: () -> Unit,
+    onLokiConfigure: () -> Unit,
+    onLokiTest: () -> Unit,
     onOpenMangaBaka: () -> Unit,
     onOpenAniList: () -> Unit,
     onOpenMoonReader: () -> Unit,
@@ -55,6 +67,54 @@ internal fun MainSettingsPage(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         UpdateSettingsCard()
+
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Beta channel", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("Enable beta features", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Switch(
+                        checked = releaseChannel == ReleaseChannel.BETA,
+                        onCheckedChange = { onReleaseChannelChange(if (it) ReleaseChannel.BETA else ReleaseChannel.STABLE) }
+                    )
+                }
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Live logging", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("Show app logs in Logcat (beta only)", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Switch(
+                        checked = liveLoggingActive,
+                        enabled = releaseChannel == ReleaseChannel.BETA,
+                        onCheckedChange = onLiveLoggingChange
+                    )
+                }
+                if (releaseChannel == ReleaseChannel.BETA) {
+                    androidx.compose.material3.Surface(
+                        shape = RoundedCornerShape(50),
+                        color = MaterialTheme.colorScheme.secondaryContainer
+                    ) {
+                        Text(lokiTokenStatus, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelMedium)
+                    }
+                    Text(lokiStatus, style = MaterialTheme.typography.bodyMedium)
+                    Row {
+                        TextButton(onClick = onLokiClick, enabled = liveLoggingActive || lokiActive) {
+                            Text(if (lokiActive) "Stop Loki upload" else "Start Loki upload")
+                        }
+                        TextButton(onClick = onLokiConfigure, enabled = !lokiActive) { Text("Configure") }
+                    }
+                    TextButton(onClick = onLokiTest, enabled = lokiActive) { Text("Send test log") }
+                }
+            }
+        }
 
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),

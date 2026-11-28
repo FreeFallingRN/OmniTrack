@@ -2,8 +2,8 @@ package com.omnitrack.app.utils
 
 import android.content.Context
 import android.net.Uri
-import android.util.Log
 import androidx.documentfile.provider.DocumentFile
+import com.omnitrack.app.data.AppLogger
 import com.omnitrack.app.data.MangaBakaPreferences
 import com.omnitrack.app.data.MangaBakaProgressSync
 import com.omnitrack.app.data.OmniTrackPreferences
@@ -45,7 +45,7 @@ internal suspend fun hasMoonReaderFolderAccess(context: Context, uri: Uri): Bool
         runCatching {
             context.contentResolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission } &&
                 DocumentFile.fromTreeUri(context, uri)?.canRead() == true
-        }.onFailure { Log.w("MoonReaderSync", "Could not check folder access", it) }.getOrDefault(false)
+        }.onFailure { AppLogger.warn("[MoonReaderSync] Could not check folder access", it) }.getOrDefault(false)
     } == true
 
 internal const val MOON_READER_FOLDER_EXPIRED = "Folder access expired \u2014 tap to re-grant access"
@@ -128,10 +128,21 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
             }
             check(editor.commit()) { "Could not save Moon+ Reader state for ${current.title}" }
         }
+        AppLogger.info("[MoonReaderSync] Imported progress for entry ${current.id}")
     }
 
     suspend fun sync(manual: Boolean, notify: suspend (String) -> Unit): MoonReaderSyncResult {
-        val result = syncFlight.run { syncLocked(notify) }
+        val result = try {
+            syncFlight.run { syncLocked(notify) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            AppLogger.error("[MoonReaderSync] Sync failed", e)
+            throw e
+        }
+        AppLogger.info("[MoonReaderSync] Sync completed: ${result.updated} updated, ${result.skipped} skipped, ${result.errors} errors")
+        if (result.skipped > 0) AppLogger.warn("[MoonReaderSync] Skipped ${result.skipped} items: ${result.details.joinToString("; ")}")
+        if (result.errors > 0) AppLogger.error("[MoonReaderSync] Sync reported ${result.errors} errors: ${result.details.joinToString("; ")}")
         if (manual) {
             val message = if (result.updated == 0 && result.skipped == 0 && result.errors == 0) {
                 "Moon+ Reader: already up to date"
@@ -220,6 +231,7 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
             val progress = match.progress
             val lastTime = prefs.getLong(OmniTrackPreferenceKeys.moonReaderTimestamp(entry.id), -1L)
             val lastSpine = prefs.getInt(OmniTrackPreferenceKeys.moonReaderSpine(entry.id), -1)
+            AppLogger.debug("[MoonReaderSync] Entry ${entry.id} watermark timestamp=$lastTime spine=$lastSpine; incoming timestamp=${progress.timestamp} spine=${progress.spineChapterIndex}")
             if (progress.timestamp < lastTime ||
                 (progress.timestamp == lastTime && progress.spineChapterIndex <= lastSpine)) {
                 successfulMatches[entry.id] = match
@@ -249,7 +261,7 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
           } catch (e: MoonReaderFolderAccessException) {
               throw e
           } catch (e: Exception) {
-              Log.e("MoonReaderSync", "Could not sync ${match.entry.title}", e)
+              AppLogger.error("[MoonReaderSync] Could not sync ${match.entry.title}", e)
               errors.add("${match.entry.title}: ${e.message ?: "sync failed"}")
           }
         }
@@ -260,6 +272,7 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            AppLogger.error("[MoonReaderSync] Batch progress update failed; retrying individually", e)
             updatedIds = emptySet()
             for ((entryId, chapter) in progressUpdates) {
                 try {
@@ -271,7 +284,7 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
                 } catch (itemError: Exception) {
                     val title = scan.matches.first { it.entry.id == entryId }.entry.title
                     successfulMatches.remove(entryId)
-                    Log.e("MoonReaderSync", "Could not sync $title", itemError)
+                    AppLogger.error("[MoonReaderSync] Could not sync $title", itemError)
                     errors.add("$title: ${itemError.message ?: "sync failed"}")
                 }
             }
@@ -302,7 +315,7 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
             throw e
         } catch (e: Exception) {
             stateSaved = false
-            Log.e("MoonReaderSync", "Could not save Moon+ Reader sync state", e)
+            AppLogger.error("[MoonReaderSync] Could not save Moon+ Reader sync state", e)
             errors.addAll(successfulMatches.values.map { "${it.entry.title}: could not save sync state" })
         }
         val updates = updatedIds.size
@@ -318,10 +331,6 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
         val skipped = skippedDetails.size - (if (scan.hasProblems) 1 else 0) + scan.skipped
         val errorCount = errors.size + scan.errors
         val details = skippedDetails + errors
-        if (skipped > 0 || errorCount > 0) {
-            val message = "Moon+ Reader: $updates updated, $skipped skipped, $errorCount errors. ${details.joinToString("; ")}"
-            Log.w("MoonReaderSync", message)
-        }
         MoonReaderSyncResult(
             updates, skipped, errorCount, details,
             filesScanned = scan.filesScanned,

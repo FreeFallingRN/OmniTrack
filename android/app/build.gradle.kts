@@ -23,6 +23,17 @@ val supabaseUrl: String = (localProperties.getProperty("SUPABASE_URL")
 val supabaseAnonKey: String = (localProperties.getProperty("SUPABASE_ANON_KEY")
     ?: System.getenv("SUPABASE_ANON_KEY") ?: "").trim()
 
+fun lokiProperty(name: String, default: String = ""): String =
+    (System.getenv(name) ?: localProperties.getProperty(name) ?: default).trim()
+
+fun buildConfigString(value: String): String =
+    "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"")
+        .replace("\n", "\\n").replace("\r", "\\r") + "\""
+
+val lokiToken = lokiProperty("GRAFANA_LOKI_TOKEN")
+val lokiUrl = lokiProperty("GRAFANA_LOKI_URL", "https://logs-prod-050-prod-eu-west-4.grafana.net/loki/api/v1/push")
+val lokiUser = lokiProperty("GRAFANA_LOKI_USER", "1901073")
+
 // Resolve or auto-decode keystore file
 val releaseStoreFile = rootProject.file("omnitrack-release.jks")
 val rawBase64Secret = System.getenv("KEYSTORE_BASE64") ?: ""
@@ -65,6 +76,9 @@ extensions.configure<ApplicationExtension> {
 
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
+        buildConfigField("String", "GRAFANA_LOKI_TOKEN", buildConfigString(lokiToken))
+        buildConfigField("String", "GRAFANA_LOKI_URL", buildConfigString(lokiUrl))
+        buildConfigField("String", "GRAFANA_LOKI_USER", buildConfigString(lokiUser))
     }
 
     val releaseSigningConfig = signingConfigs.create("release") {
@@ -103,6 +117,7 @@ tasks.withType<KotlinCompile>().configureEach {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
 

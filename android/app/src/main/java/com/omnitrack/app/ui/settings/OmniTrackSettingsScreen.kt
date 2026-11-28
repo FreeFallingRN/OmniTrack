@@ -21,9 +21,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -37,10 +39,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
+import com.omnitrack.app.BuildConfig
 import com.omnitrack.app.ui.LocalFeatureServices
 import com.omnitrack.app.ui.mangabaka.MangaBakaScreen
 import com.omnitrack.app.ui.anilist.AniListScreen
@@ -77,12 +82,16 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
     val settings = LocalFeatureServices.current.settings
     val moonReader = LocalFeatureServices.current.moonReader
     val settingsState by settings.state.collectAsState()
+    val lokiActive by settings.lokiActive.collectAsState()
+    val lokiStatus by settings.lokiStatus.collectAsState()
+    val lokiTokenStatus by settings.lokiTokenStatus.collectAsState(initial = null)
     val entries by viewModel.mediaEntries.collectAsState()
     val needsProgressReauth by moonReader.needsProgressFolderReauth.collectAsState()
     val scope = rememberCoroutineScope()
 
     var currentRoute by remember { mutableStateOf(SettingsPage.MAIN) }
     var showSyncDiagnostics by remember { mutableStateOf(false) }
+    var showLokiConfig by remember { mutableStateOf(false) }
     var syncDiagnostics by remember { mutableStateOf("[]") }
     BackHandler(enabled = currentRoute != SettingsPage.MAIN) {
         currentRoute = SettingsPage.MAIN
@@ -182,6 +191,39 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                 progressFolderName = progressFolderName,
                 linkedCount = linkedCount,
                 currentShareStyle = currentShareStyle,
+                releaseChannel = settingsState.releaseChannel,
+                liveLoggingActive = settingsState.liveLoggingActive,
+                lokiActive = lokiActive,
+                lokiStatus = lokiStatus,
+                lokiTokenStatus = lokiTokenStatus?.let {
+                    it.error ?: if (it.configured) "Token configured" else "Token not configured"
+                } ?: "Checking token...",
+                onReleaseChannelChange = settings::setReleaseChannel,
+                onLiveLoggingChange = settings::setLiveLoggingActive,
+                onLokiClick = {
+                    if (lokiActive) {
+                        settings.stopLokiLogging()
+                    } else {
+                        scope.launch {
+                            try {
+                                settings.startLokiLogging()
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                Toast.makeText(context, e.message ?: "Could not start Loki upload", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }
+                },
+                onLokiConfigure = { showLokiConfig = true },
+                onLokiTest = {
+                    try {
+                        settings.sendLokiTestLog()
+                        Toast.makeText(context, "Test log queued", Toast.LENGTH_SHORT).show()
+                    } catch (e: IllegalStateException) {
+                        Toast.makeText(context, e.message ?: "Could not send test log", Toast.LENGTH_LONG).show()
+                    }
+                },
                 onOpenMangaBaka = { currentRoute = SettingsPage.MANGABAKA },
                 onOpenAniList = { currentRoute = SettingsPage.ANILIST },
                 onOpenMoonReader = { currentRoute = SettingsPage.MOON_READER },
@@ -213,6 +255,72 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                 onBack = { currentRoute = SettingsPage.MAIN }
             )
         }
+    }
+    if (showLokiConfig) {
+        var url by remember { mutableStateOf(BuildConfig.GRAFANA_LOKI_URL) }
+        var user by remember { mutableStateOf(BuildConfig.GRAFANA_LOKI_USER) }
+        var token by remember { mutableStateOf("") }
+        var error by remember { mutableStateOf<String?>(null) }
+        AlertDialog(
+            onDismissRequest = { showLokiConfig = false },
+            title = { Text("Grafana Loki upload") },
+            text = {
+                Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                    Text("Logs may contain sensitive information. Leave the token blank to keep the current token.")
+                    OutlinedTextField(value = url, onValueChange = { url = it }, label = { Text("HTTPS push URL") }, singleLine = true)
+                    OutlinedTextField(value = user, onValueChange = { user = it }, label = { Text("User") }, singleLine = true)
+                    OutlinedTextField(value = token, onValueChange = { token = it }, label = { Text("Token override") },
+                        singleLine = true, visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
+                    TextButton(onClick = {
+                        scope.launch {
+                            try {
+                                settings.setLokiTokenOverride(token.trim())
+                                token = ""
+                                error = null
+                                Toast.makeText(context, "Token override saved", Toast.LENGTH_SHORT).show()
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                error = e.message ?: "Could not save the token override"
+                            }
+                        }
+                    }, enabled = token.isNotBlank()) { Text("Save token override") }
+                    if (lokiTokenStatus?.hasOverride == true) {
+                        TextButton(onClick = {
+                            scope.launch {
+                                try {
+                                    settings.setLokiTokenOverride(null)
+                                    token = ""
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    error = e.message ?: "Could not clear the token override"
+                                }
+                            }
+                        }) { Text("Clear token override") }
+                    }
+                    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        try {
+                            if (token.isNotBlank()) settings.setLokiTokenOverride(token.trim())
+                            settings.startLokiLogging(url, user)
+                            token = ""
+                            showLokiConfig = false
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            error = e.message ?: "Could not start Loki upload"
+                        }
+                    }
+                }) { Text("Start") }
+            },
+            dismissButton = { TextButton(onClick = { showLokiConfig = false }) { Text("Cancel") } }
+        )
     }
     if (showSyncDiagnostics) {
         AlertDialog(

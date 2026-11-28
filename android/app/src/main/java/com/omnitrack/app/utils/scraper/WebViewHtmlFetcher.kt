@@ -11,6 +11,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import com.omnitrack.app.data.AppLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -50,6 +51,11 @@ internal class WebViewHtmlFetcher {
                     if (!cont.isActive || finished) return
                     finished = true
                     trace?.log("webView: $message")
+                    if (blocked) {
+                        AppLogger.warn("[WebViewHtmlFetcher] Fetch blocked: $message")
+                    } else {
+                        AppLogger.error("[WebViewHtmlFetcher] Fetch failed: $message")
+                    }
                     cont.resumeWithException(
                         if (blocked) SiteBlockedException(message, mainFrameStatus)
                         else IllegalStateException("Could not fetch metadata from this source ($message)")
@@ -66,6 +72,7 @@ internal class WebViewHtmlFetcher {
 
                 fun pollDom(attempt: Int, generation: Int) {
                     if (!cont.isActive || finished || generation != pageGeneration) return
+                    AppLogger.debug("[WebViewHtmlFetcher] DOM poll attempt=$attempt generation=$generation")
                     webView.evaluateJavascript(
                         "(function(){ return JSON.stringify({title: document.title, html: document.documentElement.outerHTML}); })()"
                     ) { rawJson ->
@@ -127,6 +134,7 @@ internal class WebViewHtmlFetcher {
                             mainFrameStatus = status
                             if (status == 403) {
                                 trace?.log("webView: main-frame HTTP 403; waiting for DOM")
+                                AppLogger.warn("[WebViewHtmlFetcher] Main-frame HTTP 403; waiting for DOM")
                             } else {
                                 failFetch("HTTP $status", blocked = status == 429)
                             }

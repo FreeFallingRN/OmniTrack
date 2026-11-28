@@ -1,6 +1,5 @@
 package com.omnitrack.app.ui.library.editor
 
-import android.util.Log
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -56,6 +55,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.omnitrack.app.data.AppLogger
 import com.omnitrack.app.domain.model.Author
 import com.omnitrack.app.domain.model.Platform
 import com.omnitrack.app.domain.model.Series
@@ -240,6 +240,7 @@ fun MediaEntryEditorSheet(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            AppLogger.error("[MediaEntryEditor] Could not load editor metadata", e)
             error = e.message ?: "Could not load series and authors"
         }
     }
@@ -296,6 +297,7 @@ fun MediaEntryEditorSheet(
             newPlatformName, positionError
         )
         if (validationError != null) {
+            AppLogger.warn("[MediaEntryEditor] Save validation failed: $validationError")
             if (mergeTargetEntry == null && positionError != null && validationError == positionError) {
                 showSeriesDetails = true
             }
@@ -400,10 +402,11 @@ fun MediaEntryEditorSheet(
                                     val result = mediaLookup.scrape(url, type, requireFetchedMetadata = true).draft
                                     check(result.title.isNotBlank()) { "The source did not return a title." }
                                     rescraped = result
+                                    AppLogger.info("[MediaEntryEditor] Rescrape completed for entry ${existing.id}")
                                 } catch (e: CancellationException) {
                                     throw e
                                 } catch (e: Exception) {
-                                    Log.e("MediaEntryEditor", "Rescrape failed", e)
+                                    AppLogger.error("[MediaEntryEditor] Rescrape failed", e)
                                     error = e.message ?: "Could not fetch details from the source."
                                 } finally {
                                     rescraping = false
@@ -727,11 +730,14 @@ fun MediaEntryEditorSheet(
                             findingCover = true
                             val found = mediaLookup.findCover(sourceUrl)
                             findingCover = false
-                            if (found == null) error = "No cover image found."
-                            else coverUrl = found
+                            if (found == null) {
+                                AppLogger.warn("[MediaEntryEditor] Cover lookup returned no image")
+                                error = "No cover image found."
+                            } else coverUrl = found
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
+                            AppLogger.error("[MediaEntryEditor] Cover lookup failed", e)
                             findingCover = false
                             error = e.message ?: "Could not find cover image"
                         }
@@ -801,6 +807,7 @@ fun MediaEntryEditorSheet(
             totalUnitName = draft.unitName,
             onDismiss = { rescraped = null },
             onApply = { selected ->
+                AppLogger.debug("[MediaEntryEditor] Applying ${selected.size} rescraped fields")
                 if (RescrapeField.TITLE in selected) title = draft.title
                 if (RescrapeField.COVER in selected) coverUrl = draft.coverUrl.orEmpty()
                 if (RescrapeField.STATUS in selected && draft.publishingStatus in PublishingStatus.values) {

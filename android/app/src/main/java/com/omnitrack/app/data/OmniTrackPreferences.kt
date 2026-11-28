@@ -2,10 +2,20 @@ package com.omnitrack.app.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
+import com.omnitrack.app.BuildConfig
+import com.omnitrack.app.domain.model.ReleaseChannel
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.io.File
 
 @Serializable
 data class AniListLink(
@@ -28,6 +38,8 @@ sealed class PreferenceKey<T> protected constructor(internal val name: String) {
 }
 
 object OmniTrackPreferenceKeys {
+    val ReleaseChannel = PreferenceKey.StringKey("release_channel")
+    val LiveLogging = PreferenceKey.IntKey("live_logging")
     val SortOption = PreferenceKey.StringKey("sort_option")
     val SortDirection = PreferenceKey.StringKey("sort_direction")
     val PublishingStatusFilter = PreferenceKey.StringKey("publishing_status_filter")
@@ -91,6 +103,20 @@ enum class PreferenceChange {
 class OmniTrackPreferences(context: Context) {
     private val preferences = context.applicationContext
         .getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+    private val lokiPreferences = lokiDataStore(context.applicationContext)
+
+    val lokiTokenOverride = lokiPreferences.data.map { it[LOKI_TOKEN] }
+
+    suspend fun lokiToken(): String = lokiTokenOverride.first() ?: BuildConfig.GRAFANA_LOKI_TOKEN
+
+    suspend fun setLokiTokenOverride(token: String?) {
+        require(token == null || (token.length in 4..4096 && token.none { it.isISOControl() })) {
+            "Enter a valid Loki token"
+        }
+        lokiPreferences.edit { prefs ->
+            if (token == null) prefs.remove(LOKI_TOKEN) else prefs[LOKI_TOKEN] = token
+        }
+    }
 
     fun getString(key: PreferenceKey.StringKey, defaultValue: String? = null): String? =
         preferences.getString(key.name, defaultValue)
@@ -102,6 +128,26 @@ class OmniTrackPreferences(context: Context) {
         preferences.getInt(key.name, defaultValue)
 
     fun contains(key: PreferenceKey<*>): Boolean = preferences.contains(key.name)
+
+    fun releaseChannel(): ReleaseChannel =
+        ReleaseChannel.entries.find { it.name == getString(OmniTrackPreferenceKeys.ReleaseChannel) }
+            ?: ReleaseChannel.STABLE
+
+    fun isLiveLoggingActive(): Boolean =
+        releaseChannel() == ReleaseChannel.BETA && getInt(OmniTrackPreferenceKeys.LiveLogging) == 1
+
+    fun setReleaseChannel(channel: ReleaseChannel) = synchronized(channelLock) {
+        val editor = edit().putString(OmniTrackPreferenceKeys.ReleaseChannel, channel.name)
+        if (channel == ReleaseChannel.STABLE) editor.putInt(OmniTrackPreferenceKeys.LiveLogging, 0)
+        editor.apply()
+    }
+
+    fun setLiveLoggingActive(active: Boolean) = synchronized(channelLock) {
+        require(!active || releaseChannel() == ReleaseChannel.BETA) {
+            "Live logging requires the beta channel"
+        }
+        edit().putInt(OmniTrackPreferenceKeys.LiveLogging, if (active) 1 else 0).apply()
+    }
 
     fun aniListLinks(userId: Int): Map<Int, AniListLink> {
         val saved = getString(OmniTrackPreferenceKeys.aniListLinks(userId)) ?: return emptyMap()
@@ -190,5 +236,15 @@ class OmniTrackPreferences(context: Context) {
 
     companion object {
         const val PREFERENCES_NAME = "omnitrack_prefs"
+        private val channelLock = Any()
+        private val LOKI_TOKEN = stringPreferencesKey("loki_token")
+        @Volatile private var lokiStore: DataStore<Preferences>? = null
+
+        private fun lokiDataStore(context: Context): DataStore<Preferences> =
+            lokiStore ?: synchronized(this) {
+                lokiStore ?: PreferenceDataStoreFactory.create(
+                    produceFile = { File(context.noBackupFilesDir, "loki.preferences_pb") }
+                ).also { lokiStore = it }
+            }
     }
 }

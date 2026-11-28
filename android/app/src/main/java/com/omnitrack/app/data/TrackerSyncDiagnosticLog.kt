@@ -39,12 +39,6 @@ object TrackerSyncDiagnosticLog {
     private const val KEY_ENTRIES = "entries"
     private const val MAX_ENTRIES = 30
     private val json = Json { prettyPrint = true }
-    private val secretPattern = Regex(
-        """(?i)(access[_-]?token|refresh[_-]?token|authorization|client[_-]?secret|password)(["']?\s*[:=]\s*["']?)[^"'\s,;&}]+"""
-    )
-    private val bearerPattern = Regex("""(?i)\bBearer\s+[^\s,;]+""")
-    private val querySecretPattern = Regex("""(?i)([?&](?:access_token|refresh_token|token|key|client_secret)=)[^&\s]+""")
-    private val jwtPattern = Regex("""\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b""")
 
     fun append(context: Context, entry: TrackerSyncDiagnosticEntry, secrets: Collection<String>) {
         try {
@@ -78,12 +72,6 @@ object TrackerSyncDiagnosticLog {
     private fun TrackerSyncDiagnosticSource.sanitized(secrets: Collection<String>) =
         copy(details = details.take(12).map { redact(it, secrets) })
 
-    private fun redact(value: String, secrets: Collection<String>): String = secrets
-        .filter { it.length >= 4 }
-        .fold(value) { message, secret -> message.replace(secret, "[REDACTED]") }
-        .replace(secretPattern, "$1$2[REDACTED]")
-        .replace(bearerPattern, "Bearer [REDACTED]")
-        .replace(querySecretPattern, "$1[REDACTED]")
-        .replace(jwtPattern, "[REDACTED]")
-        .take(200)
+    private fun redact(value: String, secrets: Collection<String>): String =
+        LogRedaction.redact(value, secrets).take(200)
 }

@@ -1,8 +1,8 @@
 package com.omnitrack.app.ui.viewmodel
 
 import android.content.Context
-import android.util.Log
 import android.widget.Toast
+import com.omnitrack.app.data.AppLogger
 import com.omnitrack.app.data.TrackerSyncCoordinator
 import com.omnitrack.app.data.TrackerSyncTrigger
 import com.omnitrack.app.data.TrackerStatusSync
@@ -183,7 +183,7 @@ class SeriesViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("SeriesViewModel", "Could not update progress", e)
+                AppLogger.error("[SeriesViewModel] Could not update progress", e)
                 Toast.makeText(appContext, e.message ?: "Could not update progress", Toast.LENGTH_LONG).show()
             }
         }
@@ -200,7 +200,7 @@ class SeriesViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("SeriesViewModel", "Could not update progress", e)
+                AppLogger.error("[SeriesViewModel] Could not update progress", e)
                 Toast.makeText(appContext, e.message ?: "Could not update progress", Toast.LENGTH_LONG).show()
             }
         }
@@ -213,7 +213,7 @@ class SeriesViewModel(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.e("SeriesViewModel", "Could not delete entry", e)
+            AppLogger.error("[SeriesViewModel] Could not delete entry", e)
             Result.failure(e)
         }
 
@@ -261,6 +261,7 @@ class SeriesViewModel(
         viewModelScope.launch {
             val errors = TrackerStatusSync(appContext, repository).sync()
             if (errors.isNotEmpty()) {
+                AppLogger.error("[SeriesViewModel] Status saved locally; tracker sync will retry: ${errors.joinToString("; ")}")
                 Toast.makeText(
                     appContext, "Status saved locally; sync will retry: ${errors.joinToString("; ")}",
                     Toast.LENGTH_LONG
@@ -293,12 +294,13 @@ class SeriesViewModel(
                     trackerRefreshRunning = true
                     try {
                         val summary = TrackerSyncCoordinator(appContext, repository).sync(TrackerSyncTrigger.PULL)
+                        AppLogger.info("[SeriesViewModel] Tracker refresh completed")
                         messages.add(summary.toToastMessage())
                         summary.issueMessage()?.let(issues::add)
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
-                        Log.e("SeriesViewModel", "Tracker refresh failed", e)
+                        AppLogger.error("[SeriesViewModel] Tracker refresh failed", e)
                         val message = "Tracker sync failed: ${e.message ?: "Please try again."}"
                         issues.add(message)
                         messages.add(message)
@@ -310,10 +312,11 @@ class SeriesViewModel(
                 syncIfRequested()
                 try {
                     repository.fetchFromSupabase()
+                    AppLogger.info("[SeriesViewModel] Library refresh completed")
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    Log.e("SeriesViewModel", "Library refresh failed", e)
+                    AppLogger.error("[SeriesViewModel] Library refresh failed", e)
                     val message = "Library: ${e.message ?: "refresh failed"}"
                     issues.add(message)
                     messages.add(message)
@@ -326,7 +329,7 @@ class SeriesViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("SeriesViewModel", "Refresh failed", e)
+                AppLogger.error("[SeriesViewModel] Refresh failed", e)
                 val message = "Refresh failed. Please try again."
                 _refreshError.value = message
                 Toast.makeText(appContext, message, Toast.LENGTH_LONG).show()

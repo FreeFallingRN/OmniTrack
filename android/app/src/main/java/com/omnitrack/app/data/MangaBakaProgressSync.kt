@@ -1,6 +1,5 @@
 package com.omnitrack.app.data
 
-import android.util.Log
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.model.UserStatus
 import com.omnitrack.app.domain.repository.SeriesRepository
@@ -25,7 +24,18 @@ class MangaBakaProgressSync(
     private val repository: SeriesRepository
 ) {
     suspend fun syncMangaBakaProgress(): MangaBakaSyncResult = withContext(Dispatchers.IO) {
-        syncFlight.run { syncMangaBakaProgressLocked() }
+        try {
+            syncFlight.run { syncMangaBakaProgressLocked() }.also { result ->
+                AppLogger.info("[MangaBakaSync] Sync completed: ${result.updated} updated, ${result.skipped.size} skipped, ${result.errors.size} errors")
+                if (result.skipped.isNotEmpty()) AppLogger.warn("[MangaBakaSync] Skipped: ${result.skipped.joinToString("; ")}")
+                if (result.errors.isNotEmpty()) AppLogger.error("[MangaBakaSync] Sync reported ${result.errors.size} errors")
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            AppLogger.error("[MangaBakaSync] Sync failed (${e.javaClass.simpleName})")
+            throw e
+        }
     }
 
     private suspend fun syncMangaBakaProgressLocked(): MangaBakaSyncResult =
@@ -97,7 +107,7 @@ class MangaBakaProgressSync(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    Log.e("MangaBakaSync", "Could not sync ${current.title}", e)
+                    AppLogger.error("[MangaBakaSync] Could not sync ${current.title}", e, listOf(credentials.accessToken))
                     errors.add("${current.title}: ${e.message ?: "sync failed"}")
                 }
             }
@@ -123,6 +133,7 @@ class MangaBakaProgressSync(
                 val value = repository.pendingTrackerStatus(link.entryId, "mangabaka_status", key) ?: break
                 val status = UserStatus.entries.firstOrNull { it.value == value }
                     ?: error("Invalid pending MangaBaka status: $value")
+                AppLogger.debug("[MangaBakaSync] Pushing pending status for series $seriesId")
                 service.updateStatus(credentials, seriesId, status)
                 repository.clearPendingTrackerStatus(link.entryId, "mangabaka_status", key, value)
             }

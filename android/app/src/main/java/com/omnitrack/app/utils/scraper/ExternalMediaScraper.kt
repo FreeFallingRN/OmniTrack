@@ -1,7 +1,7 @@
 package com.omnitrack.app.utils.scraper
 
 import android.content.Context
-import android.util.Log
+import com.omnitrack.app.data.AppLogger
 import com.omnitrack.app.data.MangaBakaPreferences
 import com.omnitrack.app.data.MediaHttpClient
 import com.omnitrack.app.data.mangaBakaAuthorization
@@ -58,8 +58,8 @@ object ExternalMediaScraper {
 
         fun flush(finalTitle: String?, finalCover: String?) {
             val summary = "title=\"${finalTitle.orEmpty()}\" cover=${if (!finalCover.isNullOrBlank()) "yes" else "no"}"
-            Log.d(
-                TAG,
+            AppLogger.debug(
+                "[$TAG] " +
                 buildString {
                     appendLine("[$adapterName] $url -> $summary")
                     events.forEach { appendLine("  - $it") }
@@ -86,7 +86,15 @@ object ExternalMediaScraper {
         if (host in listOf("mangabaka.org", "www.mangabaka.org", "mangabaka.dev", "dev.mangabaka.dev")) {
             require(adapter === MangaBakaAdapter) { "Invalid MangaBaka series URL" }
         }
-        val draft = scrapeDraft(context, rawUrl, url, host, adapter, mangaBakaOtherType)
+        val draft = try {
+            scrapeDraft(context, rawUrl, url, host, adapter, mangaBakaOtherType)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            AppLogger.error("[$TAG] Metadata scrape failed", e)
+            throw e
+        }
+        AppLogger.info("[$TAG] Metadata scrape completed using ${adapter?.name ?: GenericFallbackAdapter.name}")
         return ImportedMediaDraft(
             sourceUrl = rawUrl.trim(),
             normalizedUrl = if (adapter === MangaBakaAdapter) draft.sourceUrl else url,
@@ -132,7 +140,7 @@ object ExternalMediaScraper {
                 }.onFailure { e ->
                     if (e is CancellationException) throw e
                     trace.log("fastPath: error=${e.message}")
-                    Log.w(TAG, "${matchedAdapter.name} fast-path failed: ${e.message}")
+                    AppLogger.warn("[$TAG] ${matchedAdapter.name} fast-path failed; trying HTML", e)
                 }.getOrNull()
 
                 if (fastDraft != null && fastDraft.title.isNotBlank()) {
@@ -171,7 +179,7 @@ object ExternalMediaScraper {
                 }.onFailure { e ->
                     if (e is CancellationException) throw e
                     trace.log("adapterParse: error=${e.message}")
-                    Log.w(TAG, "${matchedAdapter.name} HTML parse failed: ${e.message}")
+                    AppLogger.warn("[$TAG] ${matchedAdapter.name} HTML parse failed; using fallback", e)
                 }.getOrNull()
 
                 if (rawDraft != null) {
@@ -232,6 +240,7 @@ object ExternalMediaScraper {
                 }.onFailure { e ->
                     if (e is CancellationException) throw e
                     trace.log("coverFastPath: error=${e.message}")
+                    AppLogger.warn("[$TAG] Cover fast-path failed; trying HTML", e)
                 }.getOrNull()?.let(adapter::normalizeDraft)
             }
             fastDraft?.coverUrl?.let { rawCover ->
@@ -247,6 +256,7 @@ object ExternalMediaScraper {
                 .onFailure { e ->
                     if (e is CancellationException) throw e
                     trace.log("coverHtml: error=${e.message}")
+                    AppLogger.error("[$TAG] Cover HTML fetch failed", e)
                 }
                 .getOrDefault("")
             trace.log("coverHtml: len=${html.length}")
@@ -257,6 +267,7 @@ object ExternalMediaScraper {
                 }.onFailure { e ->
                     if (e is CancellationException) throw e
                     trace.log("coverAdapter: error=${e.message}")
+                    AppLogger.warn("[$TAG] Cover adapter failed; trying generic metadata", e)
                 }.getOrNull()
             } else null
 
@@ -344,7 +355,7 @@ object ExternalMediaScraper {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.w(TAG, "Could not read MangaBaka credentials", e)
+                AppLogger.warn("[$TAG] Could not read MangaBaka credentials; trying public metadata", e)
                 null
             }
             val response = mangaBakaClient.get(url) {
@@ -354,6 +365,7 @@ object ExternalMediaScraper {
             }
             trace.log("json: status=${response.status.value} url=$url")
             if (response.status.value in listOf(401, 403) && credentials?.accessToken?.isNotBlank() == true) {
+                AppLogger.warn("[$TAG] MangaBaka metadata returned HTTP ${response.status.value}; trying public metadata")
                 val publicResponse = mangaBakaClient.get(url) {
                     header("Accept", "application/json")
                     header("User-Agent", "OmniTrack-Android/1.0")
@@ -371,10 +383,12 @@ object ExternalMediaScraper {
             } catch (e: SiteBlockedException) {
                 if (e.statusCode != 403) throw e
                 trace.log("httpFast: HTTP 403 -> starting WebView fallback")
+                AppLogger.warn("[$TAG] HTTP 403; starting WebView fallback")
                 return webViewHtmlFetcher.getHtml(context, url, trace)
             }
             if (fastHtml.isNotBlank()) return fastHtml
             trace.log("httpFast: empty -> starting WebView fallback")
+            AppLogger.warn("[$TAG] HTTP metadata was insufficient; starting WebView fallback")
             return webViewHtmlFetcher.getHtml(context, url, trace)
         }
     }

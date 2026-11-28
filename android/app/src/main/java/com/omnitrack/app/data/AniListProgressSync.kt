@@ -1,6 +1,5 @@
 package com.omnitrack.app.data
 
-import android.util.Log
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.domain.model.UserStatus
 import com.omnitrack.app.domain.repository.SeriesRepository
@@ -25,7 +24,18 @@ class AniListProgressSync(
     private val repository: SeriesRepository
 ) {
     suspend fun sync(): AniListSyncResult = withContext(Dispatchers.IO) {
-        syncFlight.run { syncLocked() }
+        try {
+            syncFlight.run { syncLocked() }.also { result ->
+                AppLogger.info("[AniListSync] Sync completed: ${result.updated} updated, ${result.skipped.size} skipped, ${result.errors.size} errors")
+                if (result.skipped.isNotEmpty()) AppLogger.warn("[AniListSync] Skipped: ${result.skipped.joinToString("; ")}")
+                if (result.errors.isNotEmpty()) AppLogger.error("[AniListSync] Sync reported ${result.errors.size} errors")
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            AppLogger.error("[AniListSync] Sync failed (${e.javaClass.simpleName})")
+            throw e
+        }
     }
 
     private suspend fun syncLocked(): AniListSyncResult =
@@ -68,7 +78,7 @@ class AniListProgressSync(
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
-                        Log.e("AniListSync", "Could not sync AniList URL", e)
+                        AppLogger.error("[AniListSync] Could not sync AniList URL", e, listOf(credentials.accessToken))
                         errors.add("${entry?.title}: ${e.message ?: "URL sync failed"}")
                         false
                     }
@@ -79,7 +89,7 @@ class AniListProgressSync(
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
-                        Log.e("AniListSync", "Could not sync AniList metadata", e)
+                        AppLogger.error("[AniListSync] Could not sync AniList metadata", e, listOf(credentials.accessToken))
                         errors.add("${entry?.title}: ${e.message ?: "metadata sync failed"}")
                         false
                     }
@@ -96,6 +106,7 @@ class AniListProgressSync(
                         updated++
                     }
                     val currentLinks = preferences.aniListLinks(credentials.userId)
+                    AppLogger.debug("[AniListSync] Saving watermark for media $mediaId: progress=${title.progress}, updatedAt=${title.updatedAt}")
                     preferences.saveAniListLinks(credentials.userId, currentLinks + (mediaId to link.copy(
                         initialSync = false, mediaListId = title.id, lastProgress = title.progress,
                         lastUpdatedAt = title.updatedAt
@@ -103,7 +114,7 @@ class AniListProgressSync(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    Log.e("AniListSync", "Could not sync AniList entry", e)
+                    AppLogger.error("[AniListSync] Could not sync AniList entry", e, listOf(credentials.accessToken))
                     errors.add("${entry?.title}: ${e.message ?: "sync failed"}")
                 }
             }
@@ -129,6 +140,7 @@ class AniListProgressSync(
                 val value = repository.pendingTrackerStatus(link.entryId, "anilist_status", key) ?: break
                 val status = UserStatus.entries.firstOrNull { it.value == value }
                     ?: error("Invalid pending AniList status: $value")
+                AppLogger.debug("[AniListSync] Pushing pending status for media $mediaId")
                 service.updateStatus(credentials, mediaId, status)
                 repository.clearPendingTrackerStatus(link.entryId, "anilist_status", key, value)
             }
