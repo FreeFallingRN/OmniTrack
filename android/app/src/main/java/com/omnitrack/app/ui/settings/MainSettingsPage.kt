@@ -47,7 +47,8 @@ internal fun MainSettingsPage(
     onOpenAniList: () -> Unit,
     onOpenMoonReader: () -> Unit,
     onOpenScrapeReports: () -> Unit,
-    onOpenShareStyle: () -> Unit
+    onOpenShareStyle: () -> Unit,
+    onOpenSyncDiagnostics: () -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -96,6 +97,7 @@ internal fun MainSettingsPage(
         }
         SettingsNavigationCard("Scrape reports", "Open scrape reports", onOpenScrapeReports)
         SettingsNavigationCard("Discord Share Style", currentShareStyle.label, "Open Discord Share Style", onOpenShareStyle)
+        SettingsNavigationCard("Sync diagnostics", "View or copy recent sync results", onOpenSyncDiagnostics)
     }
 }
 

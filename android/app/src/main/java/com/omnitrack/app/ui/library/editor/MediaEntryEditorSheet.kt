@@ -68,6 +68,7 @@ import com.omnitrack.app.ui.scrapeissues.ScrapeIssueReportDialog
 import com.omnitrack.app.ui.scraping.RescrapePreviewDialog
 import com.omnitrack.app.utils.ScrapedMediaDraft
 import com.omnitrack.app.utils.ImportedMediaDraft
+import com.omnitrack.app.utils.scraper.CoverNormalizer
 import com.omnitrack.app.ui.viewmodel.SeriesViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -133,7 +134,7 @@ fun MediaEntryEditorSheet(
     onDelete: (() -> Unit)? = null,
     saving: Boolean = false
 ) {
-    val draftKey = existing to prefill
+    val draftKey = existing?.id to if (existing == null) prefill else null
     var series by remember(draftKey) { mutableStateOf<List<Series>>(emptyList()) }
     var authors by remember(draftKey) { mutableStateOf<List<Author>>(emptyList()) }
     var platforms by remember(draftKey) { mutableStateOf<List<Platform>>(emptyList()) }
@@ -144,20 +145,6 @@ fun MediaEntryEditorSheet(
     val aniListProgressLocked = existing?.type == MediaType.ANIME &&
         aniListState.links.values.any { it.entryId == existing.id }
     var metadataLoaded by remember(draftKey) { mutableStateOf(false) }
-
-    LaunchedEffect(viewModel, draftKey) {
-        try {
-            series = viewModel.getSeries()
-            authors = viewModel.getAuthors()
-            platforms = viewModel.getPlatforms()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            error = e.message ?: "Could not load series and authors"
-        } finally {
-            metadataLoaded = true
-        }
-    }
 
     var title by remember(draftKey) { mutableStateOf(existing?.title ?: prefill?.title.orEmpty()) }
     var altTitles by remember(draftKey) {
@@ -209,53 +196,51 @@ fun MediaEntryEditorSheet(
     var showSeriesDetails by remember(draftKey) { mutableStateOf(false) }
     var showReportDialog by remember(draftKey) { mutableStateOf(false) }
 
-    // Populate multi-creator rows once authors finish loading
-    LaunchedEffect(draftKey, metadataLoaded) {
-        if (!metadataLoaded) return@LaunchedEffect
-
-        val sourceCreators: List<Pair<String, String>> = when {
-            existing != null && existing.creators.isNotEmpty() ->
-                existing.creators.map { it.name to it.role }
-            existing != null && existing.authors.isNotEmpty() ->
-                existing.authors.map { it to "author" }
-            prefill != null && prefill.creators.isNotEmpty() ->
-                prefill.creators.map { it.name to it.role }
-            else -> emptyList()
-        }
-
-        if (sourceCreators.isNotEmpty()) {
+    LaunchedEffect(viewModel, draftKey) {
+        try {
+            series = viewModel.getSeries()
+            authors = viewModel.getAuthors()
+            platforms = viewModel.getPlatforms()
+            val sourceCreators: List<Pair<String, String>> = when {
+                existing != null && existing.creators.isNotEmpty() ->
+                    existing.creators.map { it.name to it.role }
+                existing != null && existing.authors.isNotEmpty() ->
+                    existing.authors.map { it to "author" }
+                prefill != null && prefill.creators.isNotEmpty() ->
+                    prefill.creators.map { it.name to it.role }
+                else -> emptyList()
+            }
             creatorRows = creatorRowsForNames(sourceCreators, authors)
-        }
-    }
-
-    LaunchedEffect(draftKey, metadataLoaded) {
-        if (!metadataLoaded) return@LaunchedEffect
-        val normalizedHint = prefill?.platformHint?.replace(" ", "")?.trim()
-        val matched = platforms.firstOrNull {
-            it.id == existing?.platformId ||
+            val normalizedHint = prefill?.platformHint?.replace(" ", "")?.trim()
+            val matchedPlatform = platforms.firstOrNull {
+                it.id == existing?.platformId ||
                     (!normalizedHint.isNullOrBlank() && it.name.replace(" ", "").trim().equals(normalizedHint, ignoreCase = true))
-        }
-        if (matched != null) {
-            platformId = matched.id
-            createPlatform = false
-        } else if (!prefill?.platformHint.isNullOrBlank()) {
-            platformId = null
-            createPlatform = true
-            newPlatformName = prefill.platformHint.trim()
-        }
-    }
-
-    LaunchedEffect(draftKey, metadataLoaded) {
-        if (!metadataLoaded || existing != null) return@LaunchedEffect
-        val seriesTitle = prefill?.seriesTitle?.trim()?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
-        val matched = series.firstOrNull { it.title.trim().equals(seriesTitle, ignoreCase = true) }
-        if (matched != null) {
-            seriesId = matched.id
-            createSeries = false
-        } else {
-            seriesId = null
-            createSeries = true
-            newSeriesTitle = seriesTitle
+            }
+            if (matchedPlatform != null) {
+                platformId = matchedPlatform.id
+                createPlatform = false
+            } else if (!prefill?.platformHint.isNullOrBlank()) {
+                platformId = null
+                createPlatform = true
+                newPlatformName = prefill.platformHint.trim()
+            }
+            val seriesTitle = prefill?.seriesTitle?.trim()?.takeIf { existing == null && it.isNotBlank() }
+            if (seriesTitle != null) {
+                val matchedSeries = series.firstOrNull { it.title.trim().equals(seriesTitle, ignoreCase = true) }
+                if (matchedSeries != null) {
+                    seriesId = matchedSeries.id
+                    createSeries = false
+                } else {
+                    seriesId = null
+                    createSeries = true
+                    newSeriesTitle = seriesTitle
+                }
+            }
+            metadataLoaded = true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            error = e.message ?: "Could not load series and authors"
         }
     }
 
@@ -381,7 +366,7 @@ fun MediaEntryEditorSheet(
             }
             Button(
                 onClick = ::saveEntry,
-                enabled = !saving,
+                enabled = !saving && metadataLoaded,
                 contentPadding = PaddingValues(horizontal = 16.dp)
             ) {
                 if (saving) {
@@ -790,7 +775,10 @@ fun MediaEntryEditorSheet(
             if (draft.title.isNotBlank() && draft.title != title) {
                 add(RescrapeChange(RescrapeField.TITLE, "Title", title, draft.title))
             }
-            if (!draft.coverUrl.isNullOrBlank() && draft.coverUrl != coverUrl) {
+            if (!draft.coverUrl.isNullOrBlank() &&
+                CoverNormalizer.canonicalizeForComparison(draft.coverUrl) !=
+                CoverNormalizer.canonicalizeForComparison(coverUrl)
+            ) {
                 add(RescrapeChange(RescrapeField.COVER, "Cover URL", coverUrl, draft.coverUrl))
             }
             if (draft.publishingStatus in PublishingStatus.values && draft.publishingStatus != publishingStatus) {

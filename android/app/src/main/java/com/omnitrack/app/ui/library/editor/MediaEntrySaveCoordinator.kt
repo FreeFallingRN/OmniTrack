@@ -41,9 +41,7 @@ internal suspend fun saveMediaEntry(
         }
         match
     }
-    val authors = if (mergeTarget != null || (groupedMatch != null && groupedMatch.seriesId == null)) {
-        viewModel.getAuthors()
-    } else emptyList()
+    val authors = viewModel.getAuthors()
     val knownAuthors = authors.associate { it.name.trim().lowercase() to it.id }.toMutableMap()
     val authorNames = authors.associate { it.id to it.name.trim().lowercase() }.toMutableMap()
 
@@ -67,7 +65,7 @@ internal suspend fun saveMediaEntry(
     }
 
     val importedCreatorIds = mutableMapOf<String, String>()
-    val resolvedCreators: List<Pair<String, String>> = form.creators.mapNotNull { row ->
+    val resolvedCreators: List<Pair<String, String>> = form.creators.map { row ->
         val id = if (row.createNew && row.newAuthorName.isNotBlank()) {
             val name = row.newAuthorName.trim()
             val key = name.lowercase()
@@ -79,7 +77,7 @@ internal suspend fun saveMediaEntry(
         } else {
             row.authorId
         }
-        id?.let { it to row.role }
+        checkNotNull(id) { "Could not resolve creator." } to row.role
     }
     val resolvedPlatformId = mergeTarget?.platformId ?: form.platformId ?: viewModel.createPlatform(
         CreatePlatformCommand(

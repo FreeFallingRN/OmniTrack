@@ -1,11 +1,14 @@
 package com.omnitrack.app.ui.settings
 
 import android.content.Context
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
@@ -13,7 +16,16 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -25,6 +37,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
@@ -69,6 +82,8 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
     val scope = rememberCoroutineScope()
 
     var currentRoute by remember { mutableStateOf(SettingsPage.MAIN) }
+    var showSyncDiagnostics by remember { mutableStateOf(false) }
+    var syncDiagnostics by remember { mutableStateOf("[]") }
     BackHandler(enabled = currentRoute != SettingsPage.MAIN) {
         currentRoute = SettingsPage.MAIN
     }
@@ -171,7 +186,11 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                 onOpenAniList = { currentRoute = SettingsPage.ANILIST },
                 onOpenMoonReader = { currentRoute = SettingsPage.MOON_READER },
                 onOpenScrapeReports = { currentRoute = SettingsPage.SCRAPE_REPORTS },
-                onOpenShareStyle = { currentRoute = SettingsPage.SHARE_STYLE }
+                onOpenShareStyle = { currentRoute = SettingsPage.SHARE_STYLE },
+                onOpenSyncDiagnostics = {
+                    syncDiagnostics = settings.recentSyncDiagnostics()
+                    showSyncDiagnostics = true
+                }
             )
 
             SettingsPage.SCRAPE_REPORTS -> ScrapeIssueReportsScreen {
@@ -194,5 +213,28 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                 onBack = { currentRoute = SettingsPage.MAIN }
             )
         }
+    }
+    if (showSyncDiagnostics) {
+        AlertDialog(
+            onDismissRequest = { showSyncDiagnostics = false },
+            title = { Text("Recent sync diagnostics") },
+            text = {
+                Column(
+                    Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()).padding(end = 8.dp)
+                ) {
+                    Text(syncDiagnostics, style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("Sync diagnostics", syncDiagnostics))
+                    Toast.makeText(context, "Sync diagnostics copied", Toast.LENGTH_SHORT).show()
+                }) { Text("Copy") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSyncDiagnostics = false }) { Text("Close") }
+            }
+        )
     }
 }

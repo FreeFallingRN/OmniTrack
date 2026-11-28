@@ -14,6 +14,7 @@ import com.omnitrack.app.data.AniListPreferences
 import com.omnitrack.app.data.MangaBakaPreferences
 import com.omnitrack.app.data.OmniTrackPreferences
 import com.omnitrack.app.data.TrackerSyncCoordinator
+import com.omnitrack.app.data.TrackerSyncTrigger
 import com.omnitrack.app.data.local.AppDatabase
 import com.omnitrack.app.data.repository.SeriesRepositoryImpl
 import java.util.concurrent.TimeUnit
@@ -48,7 +49,7 @@ class TrackerSyncWorker(context: Context, params: WorkerParameters) : CoroutineW
                     MangaBakaPreferences(appContext), OmniTrackPreferences(appContext),
                     AniListPreferences(appContext)
                 )
-                val summary = TrackerSyncCoordinator(appContext, repository).sync()
+                val summary = TrackerSyncCoordinator(appContext, repository).sync(TrackerSyncTrigger.PERIODIC)
                 val data = workDataOf(
                     "updated" to summary.updated,
                     "skipped" to summary.skipped,

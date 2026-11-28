@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import android.widget.Toast
 import com.omnitrack.app.data.TrackerSyncCoordinator
+import com.omnitrack.app.data.TrackerSyncTrigger
 import com.omnitrack.app.data.TrackerStatusSync
 import com.omnitrack.app.worker.TrackerSyncWorker
 import com.omnitrack.app.worker.TrackerStatusSyncWorker
@@ -291,7 +292,7 @@ class SeriesViewModel(
                     trackerRefreshRequested = false
                     trackerRefreshRunning = true
                     try {
-                        val summary = TrackerSyncCoordinator(appContext, repository).sync()
+                        val summary = TrackerSyncCoordinator(appContext, repository).sync(TrackerSyncTrigger.PULL)
                         messages.add(summary.toToastMessage())
                         summary.issueMessage()?.let(issues::add)
                     } catch (e: CancellationException) {

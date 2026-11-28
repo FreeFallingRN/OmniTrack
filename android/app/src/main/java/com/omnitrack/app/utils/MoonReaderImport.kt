@@ -39,7 +39,13 @@ data class MoonReaderScan(
     val skipped: Int,
     val errors: Int,
     val ambiguous: List<MoonReaderAmbiguous> = emptyList(),
-    val unmatched: List<MoonReaderProgress> = emptyList()
+    val unmatched: List<MoonReaderProgress> = emptyList(),
+    val filesScanned: Int = 0,
+    val filesSkipped: Int = 0,
+    val unmatchedCount: Int = 0,
+    val reviewCount: Int = 0,
+    val unmatchedDetails: List<String> = emptyList(),
+    val reviewDetails: List<String> = emptyList()
 ) {
     val hasProblems: Boolean get() = skipped > 0 || errors > 0
 }
@@ -130,6 +136,8 @@ object MoonReaderImport {
             var ambiguous = 0
             var unmatched = 0
             val mappingProblems = mutableListOf<String>()
+            val unmatchedDetails = mutableListOf<String>()
+            val reviewDetails = mutableListOf<String>()
             val filesByUri = files.groupBy { it.uri.toString() }
             val filesByName = files.groupBy { it.name }
             val linkedCandidates = linkedFiles?.let { links ->
@@ -145,13 +153,17 @@ object MoonReaderImport {
                     when (matching.size) {
                         0 -> {
                             unmatched++
-                            mappingProblems.add("${entry.title}: linked file not found")
+                            val detail = "${entry.title}: linked file not found"
+                            mappingProblems.add(detail)
+                            unmatchedDetails.add(detail)
                             null
                         }
                         1 -> entry.id to matching.single()
                         else -> {
                             ambiguous++
-                            mappingProblems.add("${entry.title}: multiple matching files")
+                            val detail = "${entry.title}: multiple matching files"
+                            mappingProblems.add(detail)
+                            reviewDetails.add(detail)
                             null
                         }
                     }
@@ -207,9 +219,19 @@ object MoonReaderImport {
             } else found.mapNotNull { item ->
                 val matches = byTitle[normalize(item.title)].orEmpty().distinctBy { it.id }
                 when (matches.size) {
-                    0 -> { unmatched++; unmatchedItems.add(item); null }
+                    0 -> {
+                        unmatched++
+                        unmatchedItems.add(item)
+                        unmatchedDetails.add(item.title)
+                        null
+                    }
                     1 -> MoonReaderMatch(matches.single(), item)
-                    else -> { ambiguous++; ambiguousItems.add(MoonReaderAmbiguous(item, matches)); null }
+                    else -> {
+                        ambiguous++
+                        ambiguousItems.add(MoonReaderAmbiguous(item, matches))
+                        reviewDetails.add(item.title)
+                        null
+                    }
                 }
             }
             val matches = candidates.groupBy { it.entry.id }.values.mapNotNull { group ->
@@ -220,9 +242,15 @@ object MoonReaderImport {
                 if (newest.map { it.progress.spineChapterIndex to it.progress.percent }.distinct().size > 1 ||
                     (tree && newest.mapNotNull { it.progress.fileUri }.distinct().size > 1)) {
                     if (linkedFiles == null) {
-                        group.forEach { ambiguousItems.add(MoonReaderAmbiguous(it.progress, listOf(it.entry))) }
+                        group.forEach {
+                            ambiguousItems.add(MoonReaderAmbiguous(it.progress, listOf(it.entry)))
+                            reviewDetails.add(it.progress.title)
+                        }
                         ambiguous += group.size
-                    } else ambiguous++
+                    } else {
+                        ambiguous++
+                        reviewDetails.add("${group.first().entry.title}: conflicting positions")
+                    }
                     null
                 } else {
                     val chosen = newest.first()
@@ -244,7 +272,17 @@ object MoonReaderImport {
                 unmatched + ambiguous,
                 problems,
                 ambiguousItems,
-                unmatchedItems
+                unmatchedItems,
+                filesScanned = filesToRead.size,
+                filesSkipped = if (linkedFiles != null) {
+                    (linkedFiles.size - filesToRead.size).coerceAtLeast(0)
+                } else {
+                    (files.size - filesToRead.size).coerceAtLeast(0)
+                },
+                unmatchedCount = unmatched,
+                reviewCount = ambiguous,
+                unmatchedDetails = unmatchedDetails,
+                reviewDetails = reviewDetails
             )
         }
 

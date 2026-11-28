@@ -3,6 +3,7 @@ package com.omnitrack.app.ui.viewmodel
 import android.content.Context
 import com.omnitrack.app.data.OmniTrackPreferenceKeys
 import com.omnitrack.app.data.OmniTrackPreferences
+import com.omnitrack.app.data.TrackerSyncDiagnosticLog
 import com.omnitrack.app.domain.model.HistoryTimeframe
 import com.omnitrack.app.domain.model.PublishingStatus
 import com.omnitrack.app.utils.LibrarySortOption
@@ -25,7 +26,8 @@ data class SettingsState(
 )
 
 class SettingsStateHolder(context: Context) {
-    private val preferences = OmniTrackPreferences(context)
+    private val appContext = context.applicationContext
+    private val preferences = OmniTrackPreferences(appContext)
     private fun snapshot(revision: Long): SettingsState {
         val storedSortOption = preferences.getString(OmniTrackPreferenceKeys.SortOption)
         val sortOption = LibrarySortOption.fromKey(storedSortOption)
@@ -62,6 +64,8 @@ class SettingsStateHolder(context: Context) {
     private val listener = preferences.addListener { _state.value = snapshot(_state.value.revision + 1) }
 
     fun close() = preferences.removeListener(listener)
+
+    fun recentSyncDiagnostics(): String = TrackerSyncDiagnosticLog.recent(appContext)
 
     fun linkedFileUri(entryId: String): String? =
         preferences.getString(OmniTrackPreferenceKeys.moonReaderFileUri(entryId))

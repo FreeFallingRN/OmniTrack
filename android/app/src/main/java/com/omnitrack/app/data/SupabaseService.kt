@@ -45,6 +45,16 @@ object SupabaseService {
         }
     }
 
+    private suspend inline fun <reified T> getAllPages(path: String): List<T> {
+        val result = mutableListOf<T>()
+        val pageSize = 100
+        do {
+            val page: List<T> = client.get("$supabaseUrl/rest/v1/$path&limit=$pageSize&offset=${result.size}").body()
+            result.addAll(page)
+        } while (page.isNotEmpty())
+        return result
+    }
+
     suspend fun getSeries(): List<SeriesDto> {
         return client.get(
             "$supabaseUrl/rest/v1/series?select=id,title,clean_title,rating,created_at,updated_at&order=updated_at.desc"
@@ -52,7 +62,7 @@ object SupabaseService {
     }
 
     suspend fun getSeriesTitles(): List<SeriesTitleDto> {
-        return client.get("$supabaseUrl/rest/v1/series?select=id,title").body()
+        return getAllPages("series?select=id,title&order=id.asc")
     }
 
     suspend fun getSeriesById(id: String): SeriesDto {
@@ -69,9 +79,9 @@ object SupabaseService {
     }
 
     suspend fun getAllMediaEntries(): List<MediaEntryDto> {
-        return client.get(
-            "$supabaseUrl/rest/v1/media_entries?select=*,platform:platforms(id,name,website_url,logo_url)&order=sequence_number.asc"
-        ).body()
+        return getAllPages(
+            "media_entries?select=*,platform:platforms(id,name,website_url,logo_url)&order=sequence_number.asc,id.asc"
+        )
     }
 
     suspend fun getPlatforms(): List<PlatformDto> {
@@ -221,16 +231,16 @@ object SupabaseService {
     }
 
     suspend fun getAuthors(): List<AuthorDto> =
-        client.get("$supabaseUrl/rest/v1/authors?select=*&order=name.asc").body()
+        getAllPages("authors?select=*&order=name.asc,id.asc")
 
     suspend fun getEntryAuthors(entryId: String): List<EntryAuthorDto> =
         client.get("$supabaseUrl/rest/v1/entry_authors?entry_id=eq.$entryId&select=*").body()
 
     suspend fun getAllEntryAuthors(): List<EntryAuthorDto> =
-        client.get("$supabaseUrl/rest/v1/entry_authors?select=entry_id,author_id,role").body()
+        getAllPages("entry_authors?select=entry_id,author_id,role&order=entry_id.asc,author_id.asc,role.asc")
 
     suspend fun getAlternateTitles(): List<AlternateTitleDto> =
-        client.get("$supabaseUrl/rest/v1/alternate_titles?select=id,series_id,entry_id,title,clean_title,language,is_primary").body()
+        getAllPages("alternate_titles?select=id,series_id,entry_id,title,clean_title,language,is_primary&order=id.asc")
 
     suspend fun createAuthor(
         name: String,
@@ -314,8 +324,9 @@ object SupabaseService {
         isCanon: Boolean,
         alternativeTitles: List<String> = emptyList()
     ) {
-        client.patch("$supabaseUrl/rest/v1/media_entries?id=eq.$id") {
+        val updated: List<MediaEntryDto> = client.patch("$supabaseUrl/rest/v1/media_entries?id=eq.$id") {
             contentType(ContentType.Application.Json)
+            header("Prefer", "return=representation")
             setBody(
                 UpdateEntryRequest(
                     title = title.trim(),
@@ -332,7 +343,8 @@ object SupabaseService {
                     isCanon = isCanon
                 )
             )
-        }
+        }.body()
+        check(updated.size == 1) { "Entry no longer exists or could not be updated" }
         replaceEntryAuthors(id, creators)
         replaceEntryAlternateTitles(id, seriesId, alternativeTitles)
     }

@@ -53,7 +53,17 @@ internal class MoonReaderFolderAccessException(val folder: String) : IllegalStat
 
 internal class MoonReaderProviderTimeoutException : IllegalStateException("Moon+ Reader provider timed out")
 
-data class MoonReaderSyncResult(val updated: Int, val skipped: Int, val errors: Int, val details: List<String>)
+data class MoonReaderSyncResult(
+    val updated: Int,
+    val skipped: Int,
+    val errors: Int,
+    val details: List<String>,
+    val filesScanned: Int = 0,
+    val filesSkipped: Int = 0,
+    val filesMatched: Int = 0,
+    val unmatchedItems: List<String> = emptyList(),
+    val reviewItems: List<String> = emptyList()
+)
 
 class MoonReaderSync(context: Context, private val repository: SeriesRepository) {
     private val context = context.applicationContext
@@ -312,7 +322,14 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
             val message = "Moon+ Reader: $updates updated, $skipped skipped, $errorCount errors. ${details.joinToString("; ")}"
             Log.w("MoonReaderSync", message)
         }
-        MoonReaderSyncResult(updates, skipped, errorCount, details)
+        MoonReaderSyncResult(
+            updates, skipped, errorCount, details,
+            filesScanned = scan.filesScanned,
+            filesSkipped = scan.filesSkipped,
+            filesMatched = scan.matches.size,
+            unmatchedItems = scan.unmatchedDetails,
+            reviewItems = scan.reviewDetails
+        )
     }
 
     companion object {

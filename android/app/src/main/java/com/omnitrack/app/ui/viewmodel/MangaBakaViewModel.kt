@@ -338,14 +338,6 @@ class MangaBakaViewModel(
                 "other" -> selectedType ?: error("Choose whether this title is a novel or comic")
                 else -> error("Unsupported MangaBaka media type: ${title.series.type}")
             }
-            val publishingStatus = when (title.series.status) {
-                "upcoming" -> "announced"
-                "releasing", "unknown" -> "releasing"
-                "hiatus" -> "hiatus"
-                "completed" -> "completed"
-                "cancelled" -> "discontinued"
-                else -> error("Unsupported MangaBaka publication status: ${title.series.status}")
-            }
             val (mainTitle, alternativeTitles) = mangaBakaImportTitles(title.series.titles.orEmpty(), title.title)
             ImportedMediaDraft(
                 sourceUrl = seriesUrl,
@@ -356,7 +348,7 @@ class MangaBakaViewModel(
                     alternativeTitles = alternativeTitles,
                     type = type,
                     platformHint = "MangaBaka",
-                    publishingStatus = publishingStatus,
+                    publishingStatus = mangaBakaPublishingStatus(title),
                     coverUrl = title.series.cover?.x250 ?: title.series.cover?.raw,
                     sourceUrl = mangaBakaSeriesUrl(title),
                     totalChapters = title.series.totalChapters
@@ -369,9 +361,21 @@ class MangaBakaViewModel(
             draft = imported.draft.copy(
                 userStatus = status,
                 currentUnit = if (imported.draft.type == MediaType.NOVEL) imported.draft.currentUnit else progress,
-                totalChapters = imported.draft.totalChapters ?: title.series.totalChapters
+                totalChapters = imported.draft.totalChapters ?: title.series.totalChapters,
+                publishingStatus = imported.draft.publishingStatus.ifBlank { mangaBakaPublishingStatus(title) },
+                coverUrl = imported.draft.coverUrl?.takeIf { it.isNotBlank() }
+                    ?: title.series.cover?.x250 ?: title.series.cover?.raw
             )
         )
+    }
+
+    private fun mangaBakaPublishingStatus(title: MangaBakaTitle): String = when (title.series.status) {
+        "upcoming" -> "announced"
+        "releasing", "unknown" -> "releasing"
+        "hiatus" -> "hiatus"
+        "completed" -> "completed"
+        "cancelled" -> "discontinued"
+        else -> error("Unsupported MangaBaka publication status: ${title.series.status}")
     }
 
     fun consumeEditorDraft() {
@@ -438,6 +442,17 @@ class MangaBakaViewModel(
         val imported = hydrateTitle(title)
         val draft = imported.draft
         check(draft.title.isNotBlank()) { "Title is missing" }
+        val batchAlternativeTitles = title.series.titles.orEmpty()
+            .filter {
+                it.title.isNotBlank() &&
+                    (it.language.equals("en", ignoreCase = true) ||
+                        it.language.startsWith("en-", ignoreCase = true))
+            }
+            .map { it.title.trim() }
+        val alternativeTitles = (draft.alternativeTitles + batchAlternativeTitles)
+            .map { it.trim() }
+            .filter { it.isNotBlank() && !it.equals(draft.title.trim(), ignoreCase = true) }
+            .distinctBy { it.lowercase() }
         findBatchDuplicate(title, draft)?.let { return "Possible existing entry '${it.title}'; link or review manually" }
         if (draft.creators.none { it.name.isNotBlank() }) {
             return "${imported.warning?.let { "$it " }.orEmpty()}" +
@@ -477,7 +492,7 @@ class MangaBakaViewModel(
                     type = draft.type.value,
                     sequenceNumber = draft.sequenceNumber,
                     userStatus = draft.userStatus ?: "planning",
-                    publishingStatus = draft.publishingStatus.ifBlank { "releasing" },
+                    publishingStatus = draft.publishingStatus,
                     currentUnit = draft.currentUnit ?: 0.0,
                     unitName = draft.unitName,
                     sourceUrl = draft.sourceUrl,
@@ -485,7 +500,7 @@ class MangaBakaViewModel(
                     coverUrl = draft.coverUrl
                 ),
                 creators,
-                draft.alternativeTitles
+                alternativeTitles
             )
         } catch (e: CancellationException) {
             throw e

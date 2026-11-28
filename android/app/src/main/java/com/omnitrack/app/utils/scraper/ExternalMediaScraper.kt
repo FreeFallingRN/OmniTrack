@@ -311,7 +311,9 @@ object ExternalMediaScraper {
         return primary.copy(
             title = primary.title.ifBlank { fallback.title },
             alternativeTitles = primary.alternativeTitles.ifEmpty { fallback.alternativeTitles },
-            creators = primary.creators.ifEmpty { fallback.creators },
+            creators = (primary.creators + fallback.creators).distinctBy {
+                it.name.trim().lowercase() to it.role.trim().lowercase()
+            },
             platformHint = resolvedPlatform,
             publishingStatus = primary.publishingStatus.ifBlank { fallback.publishingStatus },
             coverUrl = CoverNormalizer.normalize(primary.coverUrl ?: fallback.coverUrl, baseUrl = url),
