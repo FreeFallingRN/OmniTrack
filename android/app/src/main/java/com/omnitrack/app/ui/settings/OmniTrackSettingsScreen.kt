@@ -326,16 +326,33 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
     if (showLokiConfig) {
         var url by remember { mutableStateOf(BuildConfig.GRAFANA_LOKI_URL) }
         var user by remember { mutableStateOf(BuildConfig.GRAFANA_LOKI_USER) }
+        var configLoaded by remember { mutableStateOf(false) }
         val token = remember { TextFieldState() }
         var error by remember { mutableStateOf<String?>(null) }
+        LaunchedEffect(Unit) {
+            try {
+                url = settings.lokiUrl()
+                user = settings.lokiUser()
+                configLoaded = true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                error = "Could not load saved Loki endpoint settings"
+                configLoaded = true
+            }
+        }
         AlertDialog(
             onDismissRequest = { showLokiConfig = false },
             title = { Text("Grafana Loki upload") },
             text = {
                 Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
                     Text("Logs may contain sensitive information. Leave the token blank to keep the current token.")
-                    OutlinedTextField(value = url, onValueChange = { url = it }, label = { Text("HTTPS push URL") }, singleLine = true)
-                    OutlinedTextField(value = user, onValueChange = { user = it }, label = { Text("User") }, singleLine = true)
+                    OutlinedTextField(value = url, onValueChange = { url = it }, label = { Text("HTTPS push URL") }, singleLine = true, enabled = configLoaded)
+                    OutlinedTextField(value = user, onValueChange = { user = it }, label = { Text("User") }, singleLine = true, enabled = configLoaded)
+                    TextButton(onClick = {
+                        url = BuildConfig.GRAFANA_LOKI_URL
+                        user = BuildConfig.GRAFANA_LOKI_USER
+                    }, enabled = configLoaded) { Text("Use build defaults") }
                     OutlinedSecureTextField(state = token, label = { Text("Token override") },
                         textObfuscationMode = TextObfuscationMode.Hidden,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
@@ -384,7 +401,7 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                             error = e.message ?: "Could not start Loki upload"
                         }
                     }
-                }) { Text("Start") }
+                }, enabled = configLoaded) { Text("Start") }
             },
             dismissButton = { TextButton(onClick = { showLokiConfig = false }) { Text("Cancel") } }
         )

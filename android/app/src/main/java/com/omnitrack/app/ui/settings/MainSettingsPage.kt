@@ -76,8 +76,11 @@ internal fun MainSettingsPage(
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Beta channel", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text("Enable beta features", style = MaterialTheme.typography.bodyMedium)
+                        Text("Beta mode", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            "Enable beta-only features and live logging; this does not change the installed APK or GitHub update channel",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
                     }
                     Switch(
                         checked = releaseChannel == ReleaseChannel.BETA,
@@ -87,7 +90,7 @@ internal fun MainSettingsPage(
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Live logging", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text("Show app logs in Logcat (beta only)", style = MaterialTheme.typography.bodyMedium)
+                        Text("Write app logs to Logcat and allow Loki uploads (beta only)", style = MaterialTheme.typography.bodyMedium)
                     }
                     Switch(
                         checked = liveLoggingActive,

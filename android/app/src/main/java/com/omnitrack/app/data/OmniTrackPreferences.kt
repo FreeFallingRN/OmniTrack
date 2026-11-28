@@ -106,8 +106,12 @@ class OmniTrackPreferences(context: Context) {
     private val lokiPreferences = lokiDataStore(context.applicationContext)
 
     val lokiTokenOverride = lokiPreferences.data.map { it[LOKI_TOKEN] }
+    val lokiUrlOverride = lokiPreferences.data.map { it[LOKI_URL] }
+    val lokiUserOverride = lokiPreferences.data.map { it[LOKI_USER] }
 
     suspend fun lokiToken(): String = lokiTokenOverride.first() ?: BuildConfig.GRAFANA_LOKI_TOKEN
+    suspend fun lokiUrl(): String = lokiUrlOverride.first() ?: BuildConfig.GRAFANA_LOKI_URL
+    suspend fun lokiUser(): String = lokiUserOverride.first() ?: BuildConfig.GRAFANA_LOKI_USER
 
     suspend fun setLokiTokenOverride(token: String?) {
         require(token == null || (token.length in 4..4096 && token.none { it.isISOControl() })) {
@@ -115,6 +119,13 @@ class OmniTrackPreferences(context: Context) {
         }
         lokiPreferences.edit { prefs ->
             if (token == null) prefs.remove(LOKI_TOKEN) else prefs[LOKI_TOKEN] = token
+        }
+    }
+
+    suspend fun setLokiEndpointOverrides(url: String, user: String) {
+        lokiPreferences.edit { prefs ->
+            if (url == BuildConfig.GRAFANA_LOKI_URL) prefs.remove(LOKI_URL) else prefs[LOKI_URL] = url
+            if (user == BuildConfig.GRAFANA_LOKI_USER) prefs.remove(LOKI_USER) else prefs[LOKI_USER] = user
         }
     }
 
@@ -238,6 +249,8 @@ class OmniTrackPreferences(context: Context) {
         const val PREFERENCES_NAME = "omnitrack_prefs"
         private val channelLock = Any()
         private val LOKI_TOKEN = stringPreferencesKey("loki_token")
+        private val LOKI_URL = stringPreferencesKey("loki_url")
+        private val LOKI_USER = stringPreferencesKey("loki_user")
         @Volatile private var lokiStore: DataStore<Preferences>? = null
 
         private fun lokiDataStore(context: Context): DataStore<Preferences> =

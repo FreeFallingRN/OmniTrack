@@ -97,10 +97,15 @@ class SettingsStateHolder(context: Context) {
         preferences.setLiveLoggingActive(active)
     }
 
-    suspend fun startLokiLogging(
-        url: String = BuildConfig.GRAFANA_LOKI_URL,
-        user: String = BuildConfig.GRAFANA_LOKI_USER
-    ) = LokiLogPush.start(preferences, url, user, preferences.lokiToken())
+    suspend fun startLokiLogging() =
+        LokiLogPush.start(preferences, preferences.lokiUrl(), preferences.lokiUser(), preferences.lokiToken())
+
+    suspend fun startLokiLogging(url: String, user: String) =
+        LokiLogPush.start(preferences, url, user, preferences.lokiToken())
+
+    suspend fun lokiUrl(): String = preferences.lokiUrl()
+
+    suspend fun lokiUser(): String = preferences.lokiUser()
 
     suspend fun setLokiTokenOverride(token: String?) = preferences.setLokiTokenOverride(token)
 

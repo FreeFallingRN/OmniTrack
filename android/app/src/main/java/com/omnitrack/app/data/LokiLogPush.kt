@@ -24,6 +24,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.buildJsonArray
@@ -45,6 +47,7 @@ internal object LokiLogPush {
     private const val COOLDOWN_MS = 30_000L
     private const val MAX_BACKOFF_MS = 5 * 60_000L
     private val lock = Any()
+    private val startMutex = Mutex()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val client = HttpClient(CIO) {
         followRedirects = false
@@ -72,32 +75,35 @@ internal object LokiLogPush {
     private val _active = MutableStateFlow(false)
     val active = _active.asStateFlow()
 
-    fun start(preferences: OmniTrackPreferences, url: String, user: String, token: String) {
-        val uri = try {
-            URI(url.trim())
-        } catch (e: URISyntaxException) {
-            throw IllegalArgumentException("Enter a valid HTTPS Loki push URL", e)
+    suspend fun start(preferences: OmniTrackPreferences, url: String, user: String, token: String) =
+        startMutex.withLock {
+            val uri = try {
+                URI(url.trim())
+            } catch (e: URISyntaxException) {
+                throw IllegalArgumentException("Enter a valid HTTPS Loki push URL", e)
+            }
+            require(url.length <= 2048 && uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrBlank() &&
+                uri.userInfo == null && uri.rawQuery == null && uri.rawFragment == null &&
+                uri.rawPath == "/loki/api/v1/push") { "Enter an HTTPS Loki push URL without credentials or query parameters" }
+            require(user.isNotBlank() && user.length <= 128 && ':' !in user && user.none { it.isISOControl() }) { "Enter a valid Loki user" }
+            require(token.length in 4..4096 && token.none { it.isISOControl() }) { "Enter a valid Loki token" }
+            require(preferences.isLiveLoggingActive()) { "Enable Beta live logging first" }
+            synchronized(lock) { check(config == null) { "Loki upload is already running" } }
+            preferences.setLokiEndpointOverrides(uri.toASCIIString(), user)
+            val basic = Base64.encodeToString("$user:$token".toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+            synchronized(lock) {
+                check(config == null) { "Loki upload is already running" }
+                this.preferences = preferences
+                config = Config(uri.toASCIIString(), "Basic $basic", token)
+                sessionBytes = 0
+                sessionLimitReached = false
+                retryDelay = COOLDOWN_MS
+                lastAttempt = -COOLDOWN_MS
+                _active.value = true
+                _status.value = "Loki upload active"
+                schedule()
+            }
         }
-        require(url.length <= 2048 && uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrBlank() &&
-            uri.userInfo == null && uri.rawQuery == null && uri.rawFragment == null &&
-            uri.rawPath == "/loki/api/v1/push") { "Enter an HTTPS Loki push URL without credentials or query parameters" }
-        require(user.isNotBlank() && user.length <= 128 && ':' !in user && user.none { it.isISOControl() }) { "Enter a valid Loki user" }
-        require(token.length in 4..4096 && token.none { it.isISOControl() }) { "Enter a valid Loki token" }
-        require(preferences.isLiveLoggingActive()) { "Enable Beta live logging first" }
-        val basic = Base64.encodeToString("$user:$token".toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-        synchronized(lock) {
-            check(config == null) { "Loki upload is already running" }
-            this.preferences = preferences
-            config = Config(uri.toASCIIString(), "Basic $basic", token)
-            sessionBytes = 0
-            sessionLimitReached = false
-            retryDelay = COOLDOWN_MS
-            lastAttempt = -COOLDOWN_MS
-            _active.value = true
-            _status.value = "Loki upload active"
-            schedule()
-        }
-    }
 
     fun stop() = synchronized(lock) {
         config = null
