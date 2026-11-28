@@ -549,6 +549,67 @@ class SeriesRepositoryImpl(
             recordSyncHistory = true
         )
 
+    override suspend fun updateMoonReaderChaptersIfHigher(progress: Map<String, Double>): Set<String> =
+        progressMutex.withLock {
+            if (progress.isEmpty()) return@withLock emptySet()
+
+            val today = LocalDate.now().toString()
+            val changes = progress.mapNotNull { (id, nextUnit) ->
+                require(nextUnit.isFinite() && nextUnit >= 0.0) { "Invalid Moon+ Reader chapter for $id" }
+                val current = checkNotNull(mediaEntryDao.getEntryById(id)) {
+                    "Linked entry $id no longer exists"
+                }
+                check((current.type == MediaType.NOVEL.value || current.type == MediaType.COMIC.value) &&
+                    (current.unitName.trim().equals("chapter", true) ||
+                        current.unitName.trim().equals("chapters", true)) &&
+                    !(current.type == MediaType.COMIC.value && mangaBakaPreferences.isMangaBakaLinked(id))) {
+                    "${current.title} can no longer sync from Moon+ Reader"
+                }
+                if (nextUnit <= current.currentUnit) return@mapNotNull null
+
+                var previousUnit = current.currentUnit
+                var historySource = ProgressSource.TRACKING_SYNC
+                val existingHistory = progressHistoryDao.getEntryHistoryForDate(id, today)
+                if (existingHistory != null &&
+                    ProgressSource.fromValue(existingHistory.source).isActiveConsumption
+                ) {
+                    previousUnit = existingHistory.previousUnit +
+                        (current.currentUnit - existingHistory.newUnit).coerceAtLeast(0.0)
+                    historySource = ProgressSource.fromValue(existingHistory.source)
+                }
+                Triple(id, nextUnit, previousUnit to historySource)
+            }
+            if (changes.isEmpty()) return@withLock emptySet()
+
+            database.withTransaction {
+                val pendingDao = database.pendingMutationDao()
+                for ((id, nextUnit, history) in changes) {
+                    mediaEntryDao.updateProgress(id, nextUnit)
+                    val pendingStatus = pendingDao.get(id, "progress", "")?.userStatus
+                    pendingDao.upsert(PendingMutation(id, "progress", userStatus = pendingStatus))
+                    progressHistoryDao.upsert(
+                        ProgressHistoryEntity(
+                            entryId = id,
+                            activityDate = today,
+                            previousUnit = history.first,
+                            newUnit = nextUnit,
+                            source = history.second.value
+                        )
+                    )
+                    pendingDao.upsert(PendingMutation(id, "history", today))
+                }
+            }
+
+            try {
+                retryPendingMutations()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("SeriesRepository", "Failed to sync pending progress to Supabase", e)
+            }
+            changes.mapTo(mutableSetOf()) { it.first }
+        }
+
     override suspend fun updateMoonReaderProgress(id: String, newProgress: Double, source: ProgressSource) {
         recordProgressInternal(
             id,

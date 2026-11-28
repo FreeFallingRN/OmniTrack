@@ -130,17 +130,16 @@ object MoonReaderImport {
             var ambiguous = 0
             var unmatched = 0
             val mappingProblems = mutableListOf<String>()
+            val filesByUri = files.groupBy { it.uri.toString() }
+            val filesByName = files.groupBy { it.name }
             val linkedCandidates = linkedFiles?.let { links ->
+                val linkNameCounts = links.values.groupingBy { it.name }.eachCount()
+                val claimedUris = links.values.mapTo(mutableSetOf()) { it.uri }
                 entries.mapNotNull { entry ->
                     val link = links[entry.id] ?: return@mapNotNull null
-                    val exact = files.filter { it.uri.toString() == link.uri }
-                    val named = if (links.values.count { it.name == link.name } == 1) {
-                        files.filter { file ->
-                            file.name == link.name &&
-                                links.none { (id, other) ->
-                                    id != entry.id && other.uri == file.uri.toString()
-                                }
-                        }
+                    val exact = filesByUri[link.uri].orEmpty()
+                    val named = if (linkNameCounts[link.name] == 1) {
+                        filesByName[link.name].orEmpty().filter { it.uri.toString() !in claimedUris }
                     } else emptyList()
                     val matching = if (exact.isNotEmpty()) exact else named
                     when (matching.size) {
@@ -166,7 +165,7 @@ object MoonReaderImport {
                         (file.fileSize ?: -1L) != link.fileSize || link.timestamp < 0
                 }.values.distinctBy { it.uri }
             } else files
-            val semaphore = Semaphore(16)
+            val semaphore = Semaphore(5)
             val results = coroutineScope {
                 filesToRead.map { file ->
                     async {

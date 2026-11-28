@@ -194,7 +194,8 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
         } catch (e: SecurityException) {
             throw MoonReaderFolderAccessException(folder)
         }
-        var updates = 0
+        val successfulMatches = linkedMapOf<String, MoonReaderMatch>()
+        val progressUpdates = linkedMapOf<String, Double>()
         for (match in scan.matches) {
           try {
             if (!hasFolderAccess(uri)) throw MoonReaderFolderAccessException(folder)
@@ -207,21 +208,11 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
                 continue
             }
             val progress = match.progress
-            val fileUri = requireNotNull(progress.fileUri).toString()
             val lastTime = prefs.getLong(OmniTrackPreferenceKeys.moonReaderTimestamp(entry.id), -1L)
             val lastSpine = prefs.getInt(OmniTrackPreferenceKeys.moonReaderSpine(entry.id), -1)
             if (progress.timestamp < lastTime ||
                 (progress.timestamp == lastTime && progress.spineChapterIndex <= lastSpine)) {
-                val editor = prefs.edit()
-                    .putString(OmniTrackPreferenceKeys.moonReaderFileUri(entry.id), fileUri)
-                    .putString(OmniTrackPreferenceKeys.moonReaderFileName(entry.id), requireNotNull(progress.fileName))
-                if (progress.lastModified != null && progress.lastModified > 0) {
-                    editor.putLong(OmniTrackPreferenceKeys.moonReaderLastModified(entry.id), progress.lastModified)
-                } else editor.remove(OmniTrackPreferenceKeys.moonReaderLastModified(entry.id))
-                if (progress.fileSize != null && progress.fileSize >= 0) {
-                    editor.putLong(OmniTrackPreferenceKeys.moonReaderFileSize(entry.id), progress.fileSize)
-                } else editor.remove(OmniTrackPreferenceKeys.moonReaderFileSize(entry.id))
-                check(editor.commit()) { "Could not save Moon+ Reader file reference for ${entry.title}" }
+                successfulMatches[entry.id] = match
                 continue
             }
             val spineOffset = OmniTrackPreferenceKeys.moonReaderSpineOffset(entry.id)
@@ -241,24 +232,8 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
                 continue
             }
             val chapter = chapterValue.toDouble()
-            val updated = repository.updateMoonReaderChapterIfHigher(entry.id, chapter)
-            if (updated) updates++
-            val editor = prefs.edit()
-                .putString(OmniTrackPreferenceKeys.moonReaderFileUri(entry.id), fileUri)
-                .putString(OmniTrackPreferenceKeys.moonReaderFileName(entry.id), requireNotNull(progress.fileName))
-                .putLong(OmniTrackPreferenceKeys.moonReaderTimestamp(entry.id), progress.timestamp)
-                .putInt(OmniTrackPreferenceKeys.moonReaderSpine(entry.id), progress.spineChapterIndex)
-            if (progress.lastModified != null && progress.lastModified > 0) {
-                editor.putLong(OmniTrackPreferenceKeys.moonReaderLastModified(entry.id), progress.lastModified)
-            } else editor.remove(OmniTrackPreferenceKeys.moonReaderLastModified(entry.id))
-            if (progress.fileSize != null && progress.fileSize >= 0) {
-                editor.putLong(OmniTrackPreferenceKeys.moonReaderFileSize(entry.id), progress.fileSize)
-            } else editor.remove(OmniTrackPreferenceKeys.moonReaderFileSize(entry.id))
-            check(editor.commit()) { "Could not save Moon+ Reader sync state for ${entry.title}" }
-            if (updated) {
-                val formatted = if (chapter % 1.0 == 0.0) chapter.toLong().toString() else chapter.toString()
-                notify("Moon+ Reader: updated ${entry.title} to Ch. $formatted")
-            }
+            successfulMatches[entry.id] = match
+            progressUpdates[entry.id] = chapter
           } catch (e: CancellationException) {
               throw e
           } catch (e: MoonReaderFolderAccessException) {
@@ -267,6 +242,67 @@ class MoonReaderSync(context: Context, private val repository: SeriesRepository)
               Log.e("MoonReaderSync", "Could not sync ${match.entry.title}", e)
               errors.add("${match.entry.title}: ${e.message ?: "sync failed"}")
           }
+        }
+
+        var updatedIds: Set<String>
+        try {
+            updatedIds = repository.updateMoonReaderChaptersIfHigher(progressUpdates)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            updatedIds = emptySet()
+            for ((entryId, chapter) in progressUpdates) {
+                try {
+                    if (repository.updateMoonReaderChapterIfHigher(entryId, chapter)) {
+                        updatedIds = updatedIds + entryId
+                    }
+                } catch (itemError: CancellationException) {
+                    throw itemError
+                } catch (itemError: Exception) {
+                    val title = scan.matches.first { it.entry.id == entryId }.entry.title
+                    successfulMatches.remove(entryId)
+                    Log.e("MoonReaderSync", "Could not sync $title", itemError)
+                    errors.add("$title: ${itemError.message ?: "sync failed"}")
+                }
+            }
+        }
+
+        val editor = prefs.edit()
+        for ((entryId, match) in successfulMatches) {
+            val progress = match.progress
+            editor.putString(OmniTrackPreferenceKeys.moonReaderFileUri(entryId), requireNotNull(progress.fileUri).toString())
+                .putString(OmniTrackPreferenceKeys.moonReaderFileName(entryId), requireNotNull(progress.fileName))
+            if (entryId in progressUpdates) {
+                editor.putLong(OmniTrackPreferenceKeys.moonReaderTimestamp(entryId), progress.timestamp)
+                    .putInt(OmniTrackPreferenceKeys.moonReaderSpine(entryId), progress.spineChapterIndex)
+            }
+            if (progress.lastModified != null && progress.lastModified > 0) {
+                editor.putLong(OmniTrackPreferenceKeys.moonReaderLastModified(entryId), progress.lastModified)
+            } else editor.remove(OmniTrackPreferenceKeys.moonReaderLastModified(entryId))
+            if (progress.fileSize != null && progress.fileSize >= 0) {
+                editor.putLong(OmniTrackPreferenceKeys.moonReaderFileSize(entryId), progress.fileSize)
+            } else editor.remove(OmniTrackPreferenceKeys.moonReaderFileSize(entryId))
+        }
+        var stateSaved = true
+        try {
+            if (successfulMatches.isNotEmpty()) {
+                check(editor.commit()) { "Could not save Moon+ Reader sync state" }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            stateSaved = false
+            Log.e("MoonReaderSync", "Could not save Moon+ Reader sync state", e)
+            errors.addAll(successfulMatches.values.map { "${it.entry.title}: could not save sync state" })
+        }
+        val updates = updatedIds.size
+        if (stateSaved) {
+            for (entryId in updatedIds) {
+                val match = successfulMatches[entryId] ?: continue
+                val chapter = progressUpdates.getValue(entryId)
+                val formatted = if (chapter % 1.0 == 0.0) chapter.toLong().toString() else chapter.toString()
+                notify("Moon+ Reader: updated ${match.entry.title} to Ch. $formatted")
+            }
         }
         if (scan.hasProblems) skippedDetails.add(scan.message)
         val skipped = skippedDetails.size - (if (scan.hasProblems) 1 else 0) + scan.skipped
