@@ -15,16 +15,24 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoStories
+import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Nightlight
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,137 +42,142 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.omnitrack.app.domain.model.ReleaseChannel
 
 @Composable
 internal fun MainSettingsPage(
-    isIgnoringBatteryOptimizations: Boolean,
-    onBatteryOptimizationClick: () -> Unit,
     currentShareStyle: ShareFormatStyle,
-    releaseChannel: ReleaseChannel,
-    liveLoggingActive: Boolean,
-    lokiActive: Boolean,
-    lokiStatus: String,
-    lokiTestStatus: String?,
-    lokiTestRunning: Boolean,
-    lokiTokenStatus: String,
-    onReleaseChannelChange: (ReleaseChannel) -> Unit,
-    onLiveLoggingChange: (Boolean) -> Unit,
-    onLokiClick: () -> Unit,
-    onLokiConfigure: () -> Unit,
-    onLokiTest: () -> Unit,
-    onOpenAppLogs: (Boolean) -> Unit,
+    isIgnoringBatteryOptimizations: Boolean,
+    onOpenBackgroundSync: () -> Unit,
     onOpenMangaBaka: () -> Unit,
     onOpenAniList: () -> Unit,
     onOpenMoonReader: () -> Unit,
-    onOpenScrapeReports: () -> Unit,
     onOpenShareStyle: () -> Unit,
+    onOpenAppUpdates: () -> Unit,
+    onOpenDeveloperLogging: () -> Unit,
+    onOpenScrapeReports: () -> Unit,
     onOpenSyncDiagnostics: () -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        UpdateSettingsCard()
+        SettingsGroup("Sync & Tracking") {
+            SettingsNavigationRow(
+                "Background sync",
+                Icons.Default.BatteryChargingFull,
+                if (isIgnoringBatteryOptimizations) "Battery optimization is disabled" else "Allow reliable background sync",
+                onOpenBackgroundSync
+            )
+            SettingsNavigationRow("MangaBaka", Icons.Default.AutoStories, "Manage comic progress sync", onOpenMangaBaka)
+            SettingsNavigationRow("AniList", AniListIcon, "Manage AniList tracking", onOpenAniList)
+            SettingsNavigationRow("Moon+ Reader", Icons.Default.Nightlight, "Manage Moon+ Reader sync", onOpenMoonReader)
+        }
 
+        SettingsGroup("Sharing & Appearance") {
+            SettingsNavigationRow("Discord Share Style", Icons.Default.Palette, currentShareStyle.label, onOpenShareStyle)
+        }
+
+        SettingsGroup("Codebase") {
+            SettingsNavigationRow("App Updates", Icons.Default.SystemUpdate, "Check for the latest app release", onOpenAppUpdates)
+            SettingsNavigationRow("Developer & Logging", Icons.Default.Code, "Beta mode, live logging, and Loki", onOpenDeveloperLogging)
+        }
+
+        SettingsGroup("Diagnostics") {
+            SettingsNavigationRow("Scrape reports", Icons.Default.BugReport, "Review recent scraper issues", onOpenScrapeReports)
+            SettingsNavigationRow("Sync diagnostics", Icons.Default.Description, "View or copy recent sync results", onOpenSyncDiagnostics)
+        }
+    }
+}
+
+@Composable
+internal fun BackgroundSyncSettingsPage(
+    isIgnoringBatteryOptimizations: Boolean,
+    onBatteryOptimizationClick: () -> Unit,
+    onBack: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        SettingsPageHeader("Background sync", onBack)
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
             shape = RoundedCornerShape(14.dp),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Beta mode", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Icon(Icons.Default.Sync, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Column {
                         Text(
-                            "Enable beta-only features and live logging; this does not change the installed APK or GitHub update channel",
-                            style = MaterialTheme.typography.bodyMedium
+                            if (isIgnoringBatteryOptimizations) "Background sync active" else "Battery optimization is enabled",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "Unrestricted background activity helps Moon+ Reader, MangaBaka, and AniList sync reliably.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Switch(
-                        checked = releaseChannel == ReleaseChannel.BETA,
-                        onCheckedChange = { onReleaseChannelChange(if (it) ReleaseChannel.BETA else ReleaseChannel.STABLE) }
-                    )
                 }
-                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Live logging", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text("Write app logs to Logcat and allow Loki uploads (beta only)", style = MaterialTheme.typography.bodyMedium)
-                    }
-                    Switch(
-                        checked = liveLoggingActive,
-                        enabled = releaseChannel == ReleaseChannel.BETA,
-                        onCheckedChange = onLiveLoggingChange
-                    )
-                }
-                if (releaseChannel == ReleaseChannel.BETA) {
-                    androidx.compose.material3.Surface(
-                        shape = RoundedCornerShape(50),
-                        color = MaterialTheme.colorScheme.secondaryContainer
-                    ) {
-                        Text(lokiTokenStatus, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                            style = MaterialTheme.typography.labelMedium)
-                    }
-                    Text(lokiStatus, style = MaterialTheme.typography.bodyMedium)
-                    Row {
-                        TextButton(onClick = onLokiClick, enabled = liveLoggingActive || lokiActive) {
-                            Text(if (lokiActive) "Stop Loki upload" else "Start Loki upload")
-                        }
-                        TextButton(onClick = onLokiConfigure, enabled = !lokiActive) { Text("Configure") }
-                    }
-                    TextButton(onClick = onLokiTest, enabled = lokiActive && !lokiTestRunning) { Text("Send test log") }
-                    lokiTestStatus?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
-                    Row {
-                        TextButton(onClick = { onOpenAppLogs(false) }) { Text("Recent logs") }
-                        TextButton(onClick = { onOpenAppLogs(true) }) { Text("Saved fatal log") }
-                    }
+                Button(onClick = onBatteryOptimizationClick) {
+                    Text(if (isIgnoringBatteryOptimizations) "Manage battery settings" else "Allow background activity")
                 }
             }
         }
+    }
+}
 
+@Composable
+private fun SettingsGroup(title: String, content: @Composable () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
             shape = RoundedCornerShape(14.dp),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp).padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Background sync", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text(
-                        if (isIgnoringBatteryOptimizations) "Background sync active — battery optimization disabled"
-                        else "Allow unrestricted background activity so Moon+ Reader, MangaBaka and AniList sync reliably",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                TextButton(onClick = onBatteryOptimizationClick) {
-                    Text(if (isIgnoringBatteryOptimizations) "Manage" else "Allow")
-                }
-            }
+            Column { content() }
         }
+    }
+}
 
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Tracking", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                SettingsNavigationRow("MangaBaka", Icons.Default.AutoStories, "Open MangaBaka", onOpenMangaBaka)
-                SettingsNavigationRow("AniList", AniListIcon, "Open AniList", onOpenAniList)
-                SettingsNavigationRow("Moon+ Reader", Icons.Default.Nightlight, "Open Moon+ Reader settings", onOpenMoonReader)
-            }
+@Composable
+private fun SettingsNavigationRow(
+    title: String,
+    icon: ImageVector,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 72.dp)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        SettingsNavigationCard("Scrape reports", "Open scrape reports", onOpenScrapeReports)
-        SettingsNavigationCard("Discord Share Style", currentShareStyle.label, "Open Discord Share Style", onOpenShareStyle)
-        SettingsNavigationCard("Sync diagnostics", "View or copy recent sync results", onOpenSyncDiagnostics)
+        Icon(Icons.Default.ChevronRight, contentDescription = "Open $title", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+internal fun SettingsPageHeader(title: String, onBack: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        IconButton(onClick = onBack) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurface)
+        }
+        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -194,58 +207,3 @@ private val AniListIcon = ImageVector.Builder(
         close()
     }
 }.build()
-
-@Composable
-private fun SettingsNavigationRow(
-    title: String,
-    icon: ImageVector,
-    contentDescription: String,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 56.dp)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Icon(Icons.Default.ChevronRight, contentDescription = contentDescription, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun SettingsNavigationCard(
-    title: String,
-    subtitle: String,
-    contentDescription: String = title,
-    onClick: () -> Unit
-) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
-        shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp).padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                if (subtitle != title) {
-                    Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            Icon(Icons.Default.ChevronRight, contentDescription = contentDescription, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-@Composable
-private fun SettingsNavigationCard(
-    title: String,
-    contentDescription: String,
-    onClick: () -> Unit
-) = SettingsNavigationCard(title, title, contentDescription, onClick)

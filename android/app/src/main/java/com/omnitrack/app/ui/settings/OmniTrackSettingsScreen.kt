@@ -67,6 +67,9 @@ import androidx.core.net.toUri
 
 enum class SettingsPage {
     MAIN,
+    BACKGROUND_SYNC,
+    APP_UPDATES,
+    DEVELOPER_LOGGING,
     SHARE_STYLE,
     SCRAPE_REPORTS,
     MOON_READER,
@@ -197,6 +200,22 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
     ) { route ->
         when (route) {
             SettingsPage.MAIN -> MainSettingsPage(
+                currentShareStyle = currentShareStyle,
+                isIgnoringBatteryOptimizations = isIgnoringBatteryOptimizations,
+                onOpenBackgroundSync = { currentRoute = SettingsPage.BACKGROUND_SYNC },
+                onOpenMangaBaka = { currentRoute = SettingsPage.MANGABAKA },
+                onOpenAniList = { currentRoute = SettingsPage.ANILIST },
+                onOpenMoonReader = { currentRoute = SettingsPage.MOON_READER },
+                onOpenShareStyle = { currentRoute = SettingsPage.SHARE_STYLE },
+                onOpenAppUpdates = { currentRoute = SettingsPage.APP_UPDATES },
+                onOpenDeveloperLogging = { currentRoute = SettingsPage.DEVELOPER_LOGGING },
+                onOpenScrapeReports = { currentRoute = SettingsPage.SCRAPE_REPORTS },
+                onOpenSyncDiagnostics = {
+                    syncDiagnostics = settings.recentSyncDiagnostics()
+                    showSyncDiagnostics = true
+                }
+            )
+            SettingsPage.BACKGROUND_SYNC -> BackgroundSyncSettingsPage(
                 isIgnoringBatteryOptimizations = isIgnoringBatteryOptimizations,
                 onBatteryOptimizationClick = {
                     val settingsIntent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
@@ -213,7 +232,12 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                         }.onFailure { runCatching { context.startActivity(settingsIntent) } }
                     }
                 },
-                currentShareStyle = currentShareStyle,
+                onBack = { currentRoute = SettingsPage.MAIN }
+            )
+            SettingsPage.APP_UPDATES -> UpdateSettingsCard {
+                currentRoute = SettingsPage.MAIN
+            }
+            SettingsPage.DEVELOPER_LOGGING -> DeveloperLoggingSettingsPage(
                 releaseChannel = settingsState.releaseChannel,
                 liveLoggingActive = settingsState.liveLoggingActive,
                 lokiActive = lokiActive,
@@ -272,17 +296,8 @@ fun OmniTrackSettingsScreen(viewModel: SeriesViewModel) {
                         }
                     }
                 },
-                onOpenMangaBaka = { currentRoute = SettingsPage.MANGABAKA },
-                onOpenAniList = { currentRoute = SettingsPage.ANILIST },
-                onOpenMoonReader = { currentRoute = SettingsPage.MOON_READER },
-                onOpenScrapeReports = { currentRoute = SettingsPage.SCRAPE_REPORTS },
-                onOpenShareStyle = { currentRoute = SettingsPage.SHARE_STYLE },
-                onOpenSyncDiagnostics = {
-                    syncDiagnostics = settings.recentSyncDiagnostics()
-                    showSyncDiagnostics = true
-                }
+                onBack = { currentRoute = SettingsPage.MAIN }
             )
-
             SettingsPage.SCRAPE_REPORTS -> ScrapeIssueReportsScreen {
                 currentRoute = SettingsPage.MAIN
             }
