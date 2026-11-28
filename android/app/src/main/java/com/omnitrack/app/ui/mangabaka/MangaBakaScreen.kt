@@ -21,6 +21,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.TextObfuscationMode
+import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -33,11 +36,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedSecureTextField
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -51,13 +54,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.LifecycleOwner
 import com.omnitrack.app.data.MangaBakaTitle
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.feature.mangabaka.matching.findMangaBakaMatch
@@ -86,7 +85,7 @@ fun MangaBakaScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
     var localError by remember { mutableStateOf("") }
     var showTokenDialog by remember { mutableStateOf(false) }
     var batchTitles by remember { mutableStateOf<List<MangaBakaTitle>?>(null) }
-    var personalToken by remember { mutableStateOf("") }
+    val personalToken = remember { TextFieldState() }
     val entriesById = remember(entries) { entries.associateBy { it.id } }
     val availableEntries = remember(entries, state.links) {
         val linkedIds = state.links.values.map { it.entryId }.toSet()
@@ -118,15 +117,6 @@ fun MangaBakaScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
         }
     }
     val unlinkedTitles = titles.filterNot { state.links.containsKey(it.series.id) }
-
-    DisposableEffect(context, viewModel) {
-        val lifecycle = (context as? LifecycleOwner)?.lifecycle
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) owner.syncMangaBakaProgress()
-        }
-        lifecycle?.addObserver(observer)
-        onDispose { lifecycle?.removeObserver(observer) }
-    }
 
     BackHandler(onBack = onBack)
     LazyColumn(
@@ -241,30 +231,28 @@ fun MangaBakaScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
         if (showTokenDialog) {
             AlertDialog(
                 onDismissRequest = {
-                    personalToken = ""
+                    personalToken.clearText()
                     showTokenDialog = false
                 },
                 title = { Text("MangaBaka personal access token") },
                 text = {
-                    OutlinedTextField(
-                        value = personalToken,
-                        onValueChange = { personalToken = it },
+                    OutlinedSecureTextField(
+                        state = personalToken,
                         label = { Text("Personal access token") },
-                        visualTransformation = PasswordVisualTransformation(),
-                        singleLine = true
+                        textObfuscationMode = TextObfuscationMode.Hidden
                     )
                 },
                 confirmButton = {
-                    TextButton(enabled = personalToken.isNotBlank(), onClick = {
-                        val token = personalToken
-                        personalToken = ""
+                    TextButton(enabled = personalToken.text.isNotBlank(), onClick = {
+                        val token = personalToken.text.toString()
+                        personalToken.clearText()
                         showTokenDialog = false
                         scope.launch { owner.mangaBaka.connectPersonalToken(token) }
                     }) { Text("Connect") }
                 },
                 dismissButton = {
                     TextButton(onClick = {
-                        personalToken = ""
+                        personalToken.clearText()
                         showTokenDialog = false
                     }) { Text("Cancel") }
                 }

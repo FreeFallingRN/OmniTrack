@@ -19,16 +19,12 @@ import com.omnitrack.app.domain.model.CreateEntryCommand
 import com.omnitrack.app.domain.model.CreatePlatformCommand
 import com.omnitrack.app.domain.repository.SeriesRepository
 import com.omnitrack.app.feature.anilist.matching.findAniListMatch
-import com.omnitrack.app.worker.AniListSyncWorker
 import com.omnitrack.app.worker.TrackerStatusSyncWorker
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -89,18 +85,6 @@ class AniListOwner(
                 }
             } finally {
                 _state.update { it.copy(initialized = true) }
-            }
-        }
-        viewModelScope.launch {
-            combine(state, repository.getMediaEntriesStream()) { state, entries ->
-                if (!state.initialized) null else state.autoSync && state.connected &&
-                    state.links.values.any { link -> entries.any { it.id == link.entryId } }
-            }.distinctUntilChanged().collect { enabled ->
-                when (enabled) {
-                    true -> AniListSyncWorker.schedule(context)
-                    false -> AniListSyncWorker.cancel(context)
-                    null -> Unit
-                }
             }
         }
     }

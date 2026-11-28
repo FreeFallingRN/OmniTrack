@@ -8,15 +8,11 @@ import androidx.lifecycle.viewModelScope
 import com.omnitrack.app.data.MangaBakaTitle
 import com.omnitrack.app.domain.repository.SeriesRepository
 import com.omnitrack.app.feature.MediaLookupService
-import com.omnitrack.app.worker.MangaBakaSyncWorker
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -34,18 +30,6 @@ class MangaBakaOwner(
 
     init {
         viewModelScope.launch { mangaBaka.initialize() }
-        viewModelScope.launch {
-            combine(mangaBaka.state, repository.getMediaEntriesStream()) { state, entries ->
-                if (!state.initialized) null else
-                    state.connected && state.links.values.any { link -> entries.any { it.id == link.entryId } }
-            }.distinctUntilChanged().collect { enabled ->
-                when (enabled) {
-                    true -> MangaBakaSyncWorker.schedule(appContext)
-                    false -> MangaBakaSyncWorker.cancel(appContext)
-                    null -> Unit
-                }
-            }
-        }
     }
 
     override fun onCleared() {

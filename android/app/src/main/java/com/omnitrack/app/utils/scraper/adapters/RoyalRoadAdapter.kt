@@ -129,6 +129,5 @@ object RoyalRoadAdapter : MediaSourceAdapter {
         is JsonPrimitive -> if (element.isString) listOf(element.content) else emptyList()
         is JsonObject -> element["name"]?.let(::jsonLdNames).orEmpty()
         is JsonArray -> element.flatMap(::jsonLdNames)
-        else -> emptyList()
     }
 }

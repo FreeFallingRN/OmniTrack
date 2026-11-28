@@ -85,7 +85,7 @@ class MainActivity : ComponentActivity() {
                 return when (modelClass) {
                     MangaBakaOwner::class.java -> MangaBakaOwner(applicationContext, repository, seriesViewModel.isRefreshing, mediaLookup)
                     AniListOwner::class.java -> AniListOwner(applicationContext, repository, seriesViewModel.isRefreshing)
-                    MoonReaderViewModel::class.java -> MoonReaderViewModel(applicationContext, repository, seriesViewModel.isRefreshing)
+                    MoonReaderViewModel::class.java -> MoonReaderViewModel(applicationContext, repository)
                     else -> throw IllegalArgumentException("Unknown feature ViewModel: $modelClass")
                 } as T
             }
@@ -180,15 +180,6 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         if (::settings.isInitialized) settings.close()
         super.onDestroy()
-    }
-
-    override fun onResume() {
-        super.onResume()
-        if (::seriesViewModel.isInitialized) {
-            moonReader.syncMoonReader()
-            mangaBaka.syncMangaBakaProgress()
-            aniList.sync()
-        }
     }
 
     private fun extractSharedUrl(intent: Intent?): String? {

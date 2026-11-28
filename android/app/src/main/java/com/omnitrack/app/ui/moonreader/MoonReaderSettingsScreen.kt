@@ -76,6 +76,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import com.omnitrack.app.utils.MOON_READER_FOLDER_EXPIRED
 import com.omnitrack.app.utils.moonReaderProviderCall
+import androidx.core.net.toUri
 
 internal suspend fun folderDisplayName(context: Context, uri: Uri): String {
     val documentId = DocumentsContract.getTreeDocumentId(uri)
@@ -139,7 +140,6 @@ fun MoonReaderSettingsScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
     val mangaBaka = LocalFeatureServices.current.mangaBaka
     val settingsState by settings.state.collectAsState()
     val entries by viewModel.mediaEntries.collectAsState()
-    val syncing by moonReader.moonReaderBusy.collectAsState()
     val needsProgressReauth by moonReader.needsProgressFolderReauth.collectAsState()
     val needsBooksReauth by moonReader.needsBooksFolderReauth.collectAsState()
     val scope = rememberCoroutineScope()
@@ -249,11 +249,11 @@ fun MoonReaderSettingsScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
                     folder = uri.toString()
                     folderName = name
                     moonReader.setMoonReaderFolderAccess(uri.toString(), books = false, valid = true)
-                    moonReader.updateMoonReaderSchedule()
+                    moonReader.refreshMoonReaderFolderAccess()
                     if (previous != null && previous != folder && previous != booksFolder) {
                         try {
                             context.contentResolver.releasePersistableUriPermission(
-                                Uri.parse(previous), Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                previous.toUri(), Intent.FLAG_GRANT_READ_URI_PERMISSION
                             )
                         } catch (e: SecurityException) {
                             Log.w("MoonReaderSync", "Could not release previous folder permission", e)
@@ -345,21 +345,15 @@ fun MoonReaderSettingsScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Button(
-                        onClick = { moonReader.syncMoonReader(manual = true) },
-                        enabled = folder != null && !needsProgressReauth && !busy && !syncing
-                    ) {
-                        Text("Sync now")
-                    }
                     OutlinedButton(
                         onClick = { folder?.let { scan(Uri.parse(it)) } },
-                        enabled = folder != null && !busy && !syncing && !needsProgressReauth
+                        enabled = folder != null && !busy && !needsProgressReauth
                     ) {
                         Text("Sync & match")
                     }
                 }
                 Text(
-                    "Sync & match scans for matches. Link selected books to sync their progress; use Sync now for already linked books.",
+                    "Sync & match scans for matches. Link selected books to sync their progress.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -387,7 +381,7 @@ fun MoonReaderSettingsScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
                                     )
                                 }
                                 TextButton(
-                                    enabled = !busy && !syncing,
+                                    enabled = !busy,
                                     colors = actionColors,
                                     contentPadding = actionPadding,
                                     onClick = {
@@ -409,7 +403,7 @@ fun MoonReaderSettingsScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
                         }
                     }
                 }
-                if (busy || syncing) Text("Working…", style = MaterialTheme.typography.bodyMedium)
+                if (busy) Text("Working…", style = MaterialTheme.typography.bodyMedium)
             }
         }
 
@@ -436,7 +430,7 @@ fun MoonReaderSettingsScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
                 }
                 OutlinedButton(
                     onClick = { folderPicker.launch(initialFolderDocumentUri(folder)) },
-                    enabled = !busy && (!syncing || needsProgressReauth)
+                    enabled = !busy
                 ) { Text("Change progress folder") }
             }
         }
@@ -464,7 +458,7 @@ fun MoonReaderSettingsScreen(viewModel: SeriesViewModel, onBack: () -> Unit) {
                 }
                 OutlinedButton(
                     onClick = { booksFolderPicker.launch(initialFolderDocumentUri(booksFolder)) },
-                    enabled = !busy && !syncing
+                    enabled = !busy
                 ) { Text("Change EPUB folder") }
             }
         }

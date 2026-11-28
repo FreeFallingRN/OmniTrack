@@ -2,8 +2,6 @@ package com.omnitrack.app.ui.viewmodel
 
 import android.content.Context
 import android.net.Uri
-import android.os.SystemClock
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.omnitrack.app.data.OmniTrackPreferenceKeys
@@ -13,7 +11,6 @@ import com.omnitrack.app.domain.repository.SeriesRepository
 import com.omnitrack.app.domain.model.MediaEntry
 import com.omnitrack.app.domain.model.MediaType
 import com.omnitrack.app.utils.MOON_READER_FOLDER_EXPIRED
-import com.omnitrack.app.utils.MoonReaderFolderAccessException
 import com.omnitrack.app.utils.MoonReaderMatch
 import com.omnitrack.app.utils.MoonReaderAmbiguous
 import com.omnitrack.app.utils.MoonReaderProgress
@@ -22,12 +19,9 @@ import com.omnitrack.app.utils.MoonReaderScan
 import com.omnitrack.app.utils.MoonReaderSync
 import com.omnitrack.app.utils.hasMoonReaderFolderAccess
 import com.omnitrack.app.utils.moonReaderProviderCall
-import com.omnitrack.app.worker.MoonReaderSyncWorker
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
@@ -36,33 +30,29 @@ import kotlinx.coroutines.launch
 
 class MoonReaderViewModel(
     context: Context,
-    private val repository: SeriesRepository,
-    private val isRefreshing: StateFlow<Boolean>
+    private val repository: SeriesRepository
 ) : ViewModel() {
     private val appContext = context.applicationContext
     private val prefs = OmniTrackPreferences(appContext)
     private val sync = MoonReaderSync(appContext, repository)
-    private val _moonReaderBusy = MutableStateFlow(false)
-    val moonReaderBusy = _moonReaderBusy.asStateFlow()
     private val _needsProgressFolderReauth = MutableStateFlow(false)
     val needsProgressFolderReauth = _needsProgressFolderReauth.asStateFlow()
     private val _needsBooksFolderReauth = MutableStateFlow(false)
     val needsBooksFolderReauth = _needsBooksFolderReauth.asStateFlow()
     private val _moonReaderMessages = MutableSharedFlow<String>(extraBufferCapacity = 16)
     val moonReaderMessages = _moonReaderMessages.asSharedFlow()
-    private var lastCheck: Long? = null
-    private var scheduleJob: Job? = null
+    private var folderAccessJob: Job? = null
     private val listener = prefs.addListener { change ->
         if (change == PreferenceChange.ALL ||
             change == PreferenceChange.MOON_READER_FOLDER ||
             change == PreferenceChange.MOON_READER_FILE_URI) {
-            updateMoonReaderSchedule()
+            refreshMoonReaderFolderAccess()
         }
     }
 
     init {
         viewModelScope.launch {
-            repository.getMediaEntriesStream().collect { updateMoonReaderSchedule() }
+            repository.getMediaEntriesStream().collect { refreshMoonReaderFolderAccess() }
         }
     }
 
@@ -71,19 +61,16 @@ class MoonReaderViewModel(
         super.onCleared()
     }
 
-    fun updateMoonReaderSchedule() {
-        scheduleJob?.cancel()
-        scheduleJob = viewModelScope.launch {
+    fun refreshMoonReaderFolderAccess() {
+        folderAccessJob?.cancel()
+        folderAccessJob = viewModelScope.launch {
             val entries = repository.getMediaEntriesStream().first()
             val folder = prefs.getString(OmniTrackPreferenceKeys.MoonReaderFolder)
             val linked = entries.any {
                 prefs.getString(OmniTrackPreferenceKeys.moonReaderFileUri(it.id)) != null
             }
             if (linked && folder != null) {
-                MoonReaderSyncWorker.schedule(appContext)
                 checkMoonReaderFolder(folder, books = false)
-            } else {
-                MoonReaderSyncWorker.cancel(appContext)
             }
         }
     }
@@ -161,26 +148,4 @@ class MoonReaderViewModel(
         return result.copy(matches = matches, ambiguous = result.ambiguous + deferred) to values
     }
 
-    fun syncMoonReader(manual: Boolean = false) {
-        if (_moonReaderBusy.value) return
-        val now = SystemClock.elapsedRealtime()
-        if (!manual && lastCheck?.let { now - it < 60_000L } == true) return
-        lastCheck = now
-        _moonReaderBusy.value = true
-        viewModelScope.launch {
-            try {
-                isRefreshing.first { !it }
-                sync.sync(manual) { _moonReaderMessages.emit(it) }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: MoonReaderFolderAccessException) {
-                setMoonReaderFolderAccess(e.folder, books = false, valid = false)
-            } catch (e: Exception) {
-                Log.e("MoonReaderSync", "Moon+ Reader sync failed", e)
-                _moonReaderMessages.emit("Moon+ Reader sync failed: ${e.message ?: "Unknown error"}")
-            } finally {
-                _moonReaderBusy.value = false
-            }
-        }
-    }
 }
